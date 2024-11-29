@@ -15,6 +15,7 @@ import smtplib
 from tldr import get_paper_tldr
 from llama_cpp import Llama
 from tqdm import tqdm
+from loguru import logger
 
 def get_zotero_corpus(id:str,key:str) -> list[dict]:
     zot = zotero.Zotero(id, 'user', key)
@@ -51,28 +52,47 @@ def get_paper_code_url(paper:arxiv.Result) -> str:
         return None
     return repo_list['results'][0]['url']
 
-def get_arxiv_paper(query:str, start:datetime.datetime, end:datetime.datetime) -> list[arxiv.Result]:
+def get_arxiv_paper(query:str, start:datetime.datetime, end:datetime.datetime, debug:bool=False) -> list[arxiv.Result]:
     client = arxiv.Client()
     search = arxiv.Search(query=query, sort_by=arxiv.SortCriterion.SubmittedDate)
     retry_num = 5
-    while retry_num > 0:
-        papers = []
-        try:
-            for i in client.results(search):
-                published_date = i.published
-                if published_date < end and published_date >= start:
+    if not debug:
+        while retry_num > 0:
+            papers = []
+            try:
+                for i in client.results(search):
+                    published_date = i.published
+                    if published_date < end and published_date >= start:
+                        i.arxiv_id = re.sub(r'v\d+$', '', i.get_short_id())
+                        i.code_url = get_paper_code_url(i)
+                        papers.append(i)
+                    elif published_date < start:
+                        break
+                break
+            except Exception as e:
+                logger.warning(f'Got error: {e}. Try again...')
+                sleep(180)
+                retry_num -= 1
+                if retry_num == 0:
+                    raise e
+    else:
+        logger.debug("Retrieve 5 arxiv papers regardless of the date.")
+        while retry_num > 0:
+            papers = []
+            try:
+                for i in client.results(search):
                     i.arxiv_id = re.sub(r'v\d+$', '', i.get_short_id())
                     i.code_url = get_paper_code_url(i)
                     papers.append(i)
-                elif published_date < start:
-                    break
-            break
-        except Exception as e:
-            print(f'Got error: {e}. Try again...')
-            sleep(180)
-            retry_num -= 1
-            if retry_num == 0:
-                raise e
+                    if len(papers) == 5:
+                        break
+                break
+            except Exception as e:
+                logger.warning(f'Got error: {e}. Try again...')
+                sleep(180)
+                retry_num -= 1
+                if retry_num == 0:
+                    raise e
     return papers
 
 def send_email(sender:str, receiver:str, password:str,smtp_server:str,smtp_port:int, html:str,):
@@ -103,25 +123,30 @@ if __name__ == '__main__':
     parser.add_argument('--sender', type=str, help='Sender email address',default=os.environ.get('SENDER'))
     parser.add_argument('--receiver', type=str, help='Receiver email address',default=os.environ.get('RECEIVER'))
     parser.add_argument('--password', type=str, help='Sender email password',default=os.environ.get('SENDER_PASSWORD'))
+    parser.add_argument('--debug', action='store_true', help='Debug mode')
     args = parser.parse_args()
     assert args.zotero_id is not None
     assert args.zotero_key is not None
     assert args.arxiv_query is not None
+    if args.debug:
+        logger.debug("Debug mode is on.")
     today = datetime.datetime.now(tz=datetime.timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     yesterday = today - datetime.timedelta(days=1)
-    print("Retrieving Zotero corpus...")
+    logger.info("Retrieving Zotero corpus...")
     corpus = get_zotero_corpus(args.zotero_id, args.zotero_key)
-    print("Retrieving Arxiv papers...")
-    papers = get_arxiv_paper(args.arxiv_query, yesterday, today)
+    logger.info(f"Retrieved {len(corpus)} papers from Zotero.")
+    logger.info("Retrieving Arxiv papers...")
+    papers = get_arxiv_paper(args.arxiv_query, yesterday, today, args.debug)
     if len(papers) == 0:
-        print("No new papers found.")
+        logger.info("No new papers found. Yesterday maybe a holiday and no one submit their work :). If this is not the case, please check the ARXIV_QUERY.")
+        logger.info("No email will be sent. Enjoy a relaxing day!")
         exit(0)
-    print("Reranking papers...")
+    logger.info("Reranking papers...")
     papers = rerank_paper(papers, corpus)
     if args.max_paper_num != -1:
         papers = papers[:args.max_paper_num]
     
-    print("Generating TLDRs...")
+    logger.info("Generating TLDRs...")
     llm = Llama.from_pretrained(
         repo_id="Qwen/Qwen2.5-3B-Instruct-GGUF",
         filename="qwen2.5-3b-instruct-q4_k_m.gguf",
@@ -133,7 +158,6 @@ if __name__ == '__main__':
         p.tldr = get_paper_tldr(p, llm)
 
     html = render_email(papers)
-    print("Sending email...")
+    logger.info("Sending email...")
     send_email(args.sender, args.receiver, args.password, args.smtp_server, args.smtp_port, html)
-    with open('email.html', 'w') as f:
-        f.write(html)
+    logger.success("Email sent successfully! If you don't receive the email, please check the configuration and the junk box.")
