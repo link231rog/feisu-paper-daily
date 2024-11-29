@@ -55,6 +55,9 @@ def get_paper_tldr(paper:arxiv.Result, model:Llama) -> str:
     prompt = prompt.replace('__ABSTRACT__', paper.summary)
     prompt = prompt.replace('__INTRODUCTION__', introduction)
     prompt = prompt.replace('__CONCLUSION__', conclusion)
+    prompt_tokens = model.tokenize(prompt.encode('utf-8'))
+    prompt_tokens = prompt_tokens[:3800] # truncate to 3800 tokens
+    prompt = model.detokenize(prompt_tokens).decode('utf-8')
     response = model.create_chat_completion(
         messages=[
           {"role": "system", "content": "You are an assistant who perfectly summarizes scientific paper, and gives the core idea of the paper to the user."},
