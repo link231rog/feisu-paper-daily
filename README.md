@@ -21,6 +21,9 @@
     <br> 
 </p>
 
+> [!IMPORTANT]
+> Please keep an eye on this repo, and merge your forked repo in time when there is any update of this upstream, in order to enjoy new features and fix found bugs.
+
 ## 🧐 About <a name = "about"></a>
 
 > Track new scientific researches of your interest by just forking (and staring) this repo!😊
@@ -67,7 +70,7 @@ Then check the log and the receiver email after it finishes.
 By default, the workflow runs on 22:00 UTC everyday. You can change this time by editting the workflow config `.github/workflows/main.yml`.
 
 > [!NOTE]
-> There is no new arxiv paper at weekends, in which case you may see "No new papers found" in the log.
+> There is no new arxiv paper at weekends, in which case you may see "No new papers found" in the log. You can change the search range in [main.py](https://github.com/TideDra/zotero-arxiv-daily/blob/d24480b58cd20de83416b60bd3c2f3adbdcb8861/main.py#L111) to retreive papers submitted in pervious days, so that you can test the following workflow. Just remember to recover the search range after everything is tested OK.
 
 ### Local Running
 Supported by [uv](https://github.com/astral-sh/uv), this workflow can easily run on your local device if uv is installed:
