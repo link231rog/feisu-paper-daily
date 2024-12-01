@@ -56,7 +56,7 @@ Here are all the variables you need to set:
 | ZOTERO_KEY |  str  | An Zotero API key with read access. Get a key from [here](https://www.zotero.org/settings/security).  | AB5tZ877P2j7Sm2Mragq041H   |
 | ARXIV_QUERY | str  | The search query for retrieving arxiv papers. Refer to the [official document](https://info.arxiv.org/help/api/user-manual.html#query_details) for details. The example queries papers about AI, CV, NLP, ML. Find the abbr of your research area from [here](https://arxiv.org/category_taxonomy).  | cat:cs.AI OR cat:cs.CV OR cat:cs.LG OR cat:cs.CL |
 | SMTP_SERVER | str | The SMTP server that sends the email. I recommend to utilize a seldom-used email for this. Ask your email provider (Gmail, QQ, Outlook, ...) for its SMTP server| smtp.qq.com |
-| SMTP_PORT | int | The port of SMTP server. | 25 |
+| SMTP_PORT | int | The port of SMTP server. | 25 **QQ should use port 465. An error occurs for the port 587**|
 | SENDER | str | The email account of the SMTP server that sends you email. | abc@qq.com |
 | SENDER_PASSWORD | str | The password of the sender account. Note that it's not necessarily the password for logging in the e-mail client, but the authentication code for SMTP service. Ask your email provider for this.   | abcdefghijklmn |
 | RECEIVER | str | The e-mail address that receives the paper list. | abc@outlook.com |
