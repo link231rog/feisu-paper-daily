@@ -14,7 +14,7 @@ from email.utils import parseaddr, formataddr
 import smtplib
 from tldr import get_paper_tldr
 from llama_cpp import Llama
-from tqdm import tqdm
+from tqdm import tqdm, trange
 from loguru import logger
 
 def get_zotero_corpus(id:str,key:str) -> list[dict]:
@@ -52,6 +52,72 @@ def get_paper_code_url(paper:arxiv.Result) -> str:
         return None
     return repo_list['results'][0]['url']
 
+def get_arxiv_paper_from_web(query:str, start:datetime.datetime, end:datetime.datetime) -> list[arxiv.Result]:
+    cats = re.findall(r'cat:(\w+)?\.\w+?', query)
+    cats = set(cats)
+    query_list = query.split(' ')
+    real_query = []
+    for q in query_list:
+        if q in ["OR","AND","ANDNOT"]:
+            if real_query[-1] in ["OR","AND","ANDNOT"]:
+                #This means previous filter is skipped
+                real_query.pop()
+            real_query.append(q)
+        if q.startswith("cat:"):
+            real_query.append(q)
+
+    if real_query[-1] in ["OR","AND","ANDNOT"]:
+        real_query.pop()
+
+    logger.info(f"Retrieving arXiv papers from {start} to {end} with {' '.join(real_query)}. Other query filters are ignored.")
+    all_paper_ids = []
+    for cat in cats:
+        url = f"https://arxiv.org/list/{cat}/new" #! This only retrieves the latest papers submitted in yesterday
+        response = requests.get(url)
+        if response.status_code != 200:
+            logger.warning(f"Cannot retrieve papers from {url}.")
+            continue
+        html = response.text
+        paper_ids = re.findall(r'arXiv:(\d+\.\d+)', html)
+        all_paper_ids.extend(paper_ids)
+
+    def is_valid(paper:arxiv.Result):
+        published_date = paper.published
+        if not (published_date < end and published_date >= start):
+            return False
+        stack = []
+        op_dict = {
+            "AND": lambda x,y: x and y,
+            "OR": lambda x,y: x or y,
+            "ANDNOT": lambda x,y: x and not y
+        }
+        for q in real_query:
+            if q.startswith("cat:"):
+                if len(stack) == 0:
+                    stack.append(q[4:] in paper.categories)
+                else:
+                    op = stack.pop()
+                    x = stack.pop()
+                    assert op in ["AND","OR","ANDNOT"], f"Invalid query {query}"
+                    assert x in [True,False], f"Invalid query {query}"
+                    stack.append(op_dict[op](x,q[4:] in paper.categories))
+            elif q in ["AND","OR","ANDNOT"]:
+                stack.append(q)
+        assert len(stack) == 1 and (stack[0] in [True, False]), f"Invalid query {query}"
+        return stack.pop()
+    
+    client = arxiv.Client()
+    results = []
+    for i in trange(0,len(all_paper_ids),50,desc="Filtering papers"):
+        search = arxiv.Search(id_list=all_paper_ids[i:i+50])
+        for i in client.results(search):
+            if is_valid(i):
+                i.arxiv_id = re.sub(r'v\d+$', '', i.get_short_id())
+                i.code_url = get_paper_code_url(i)
+                results.append(i)
+    return results 
+        
+
 def get_arxiv_paper(query:str, start:datetime.datetime, end:datetime.datetime, debug:bool=False) -> list[arxiv.Result]:
     client = arxiv.Client()
     search = arxiv.Search(query=query, sort_by=arxiv.SortCriterion.SubmittedDate)
@@ -75,6 +141,9 @@ def get_arxiv_paper(query:str, start:datetime.datetime, end:datetime.datetime, d
                 retry_num -= 1
                 if retry_num == 0:
                     raise e
+        if len(papers) == 0:
+            logger.warning("Cannot retrieve new papers from arXiv API. Try to retrieve from web page.")
+            papers = get_arxiv_paper_from_web(query, start, end)
     else:
         logger.debug("Retrieve 5 arxiv papers regardless of the date.")
         while retry_num > 0:
