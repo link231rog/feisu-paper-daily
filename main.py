@@ -36,16 +36,16 @@ def get_zotero_corpus(id:str,key:str) -> list[dict]:
     return corpus
 
 def filter_corpus(corpus:list[dict], pattern:str) -> list[dict]:
-    pattern = pattern.replace(',','\n')
     _,filename = mkstemp()
     with open(filename,'w') as file:
         file.write(pattern)
     matcher = parse_gitignore(filename,base_dir='./')
     new_corpus = []
     for c in corpus:
-        match_results = [matcher.match(p) for p in c['paths']]
+        match_results = [matcher(p) for p in c['paths']]
         if not any(match_results):
             new_corpus.append(c)
+    os.remove(filename)
     return new_corpus
 
 def get_paper_code_url(paper:arxiv.Result) -> str:
