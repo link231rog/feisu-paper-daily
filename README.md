@@ -37,6 +37,7 @@
 - List of papers sorted by relevance with your recent research interest.
 - Fast deployment via fork this repo and set environment variables in the Github Action Page.
 - Support LLM API for generating TL;DR of papers.
+- Ignore unwanted Zotero papers using gitignore-style pattern.
 
 ## 📷 Screenshot
 ![screenshot](./assets/screenshot.png)
@@ -46,10 +47,10 @@
 1. Fork (and star😘) this repo.
 ![fork](./assets/fork.png)
 
-2. Set Github Action environment variables (repository secrets).
+2. Set Github Action environment variables.
 ![secrets](./assets/secrets.png)
 
-Here are all the variables you need to set:
+Below are all the secrets you need to set. They are invisible to anyone including you once they are set, for security.
 
 | Key | Type | Description | Example |
 | :--- | :---  | :---  | :--- |
@@ -66,6 +67,13 @@ Here are all the variables you need to set:
 | OPENAI_API_KEY | str | API Key when using the API to access LLMs. You can get FREE API for using advanced open source LLMs in [SiliconFlow](https://cloud.siliconflow.cn/i/b3XhBRAm). | sk-xxx |
 | OPENAI_API_BASE | str | API URL when using the API to access LLMs. If not filled in, the default is the OpenAI URL. | https://api.siliconflow.cn/v1 |
 | MODEL_NAME | str | Model name when using the API to access LLMs. If not filled in, the default is gpt-4o. Qwen/Qwen2.5-7B-Instruct is recommended when using [SiliconFlow](https://cloud.siliconflow.cn/i/b3XhBRAm). | Qwen/Qwen2.5-7B-Instruct |
+
+There are also some public variables (Repository Variables) you can set, which are easy to edit.
+![vars](./assets/repo_var.png)
+
+| Key | Type | Description | Example |
+| :--- | :---  | :---  | :--- |
+| ZOTERO_IGNORE | str | Gitignore-style patterns marking the Zotero collections that should be ignored. One rule one line. Learn more about [gitignore](https://git-scm.com/docs/gitignore). | AI Agent/<br>**/survey<br>!LLM/survey |
 
 That's all! Now you can test the workflow by manually triggering it:
 ![test](./assets/test.png)

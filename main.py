@@ -17,12 +17,36 @@ from llama_cpp import Llama
 from tqdm import tqdm, trange
 from loguru import logger
 from openai import OpenAI
+from gitignore_parser import parse_gitignore
+from tempfile import mkstemp
 
 def get_zotero_corpus(id:str,key:str) -> list[dict]:
     zot = zotero.Zotero(id, 'user', key)
+    collections = {c['key']:c for c in zot.collections()}
     corpus = zot.everything(zot.items(itemType='conferencePaper || journalArticle || preprint'))
     corpus = [c for c in corpus if c['data']['abstractNote'] != '']
+    def get_collection_path(col_key:str) -> str:
+        if p := collections[col_key]['data']['parentCollection']:
+            return get_collection_path(p) + ' / ' + collections[col_key]['data']['name']
+        else:
+            return collections[col_key]['data']['name']
+    for c in corpus:
+        paths = [get_collection_path(col) for col in c['data']['collections']]
+        c['paths'] = paths
     return corpus
+
+def filter_corpus(corpus:list[dict], pattern:str) -> list[dict]:
+    _,filename = mkstemp()
+    with open(filename,'w') as file:
+        file.write(pattern)
+    matcher = parse_gitignore(filename,base_dir='./')
+    new_corpus = []
+    for c in corpus:
+        match_results = [matcher(p) for p in c['paths']]
+        if not any(match_results):
+            new_corpus.append(c)
+    os.remove(filename)
+    return new_corpus
 
 def get_paper_code_url(paper:arxiv.Result) -> str:
     retry_num = 5
@@ -190,6 +214,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Recommender system for academic papers')
     parser.add_argument('--zotero_id', type=str, help='Zotero user ID',default=os.environ.get('ZOTERO_ID'))
     parser.add_argument('--zotero_key', type=str, help='Zotero API key',default=os.environ.get('ZOTERO_KEY'))
+    parser.add_argument('--zotero_ignore',type=str,help='Zotero collection to ignore, using gitignore-style pattern.',default=os.environ.get('ZOTERO_IGNORE'))
     parser.add_argument('--max_paper_num', type=int, help='Maximum number of papers to recommend',default=os.environ.get('MAX_PAPER_NUM',100))
     parser.add_argument('--arxiv_query', type=str, help='Arxiv search query',default=os.environ.get('ARXIV_QUERY'))
     parser.add_argument('--smtp_server', type=str, help='SMTP server',default=os.environ.get('SMTP_SERVER'))
@@ -236,6 +261,10 @@ if __name__ == '__main__':
     logger.info("Retrieving Zotero corpus...")
     corpus = get_zotero_corpus(args.zotero_id, args.zotero_key)
     logger.info(f"Retrieved {len(corpus)} papers from Zotero.")
+    if args.zotero_ignore:
+        logger.info(f"Ignoring papers in:\n {args.zotero_ignore}...")
+        corpus = filter_corpus(corpus, args.zotero_ignore)
+        logger.info(f"Remaining {len(corpus)} papers after filtering.")
     logger.info("Retrieving Arxiv papers...")
     papers = get_arxiv_paper(args.arxiv_query, yesterday, today, args.debug)
     if len(papers) == 0:
