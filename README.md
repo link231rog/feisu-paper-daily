@@ -100,6 +100,12 @@ uv run main.py
 > [!WARNING]
 > Other package managers like pip or conda are not tested. You can still use them to install this workflow because there is a `pyproject.toml`, while potential problems exist.
 
+## 🚀 Sync with the latest version
+This project is in active development. You can subscribe this repo via `Watch` so that you can be notified once we publish new release.
+
+![Watch](./assets/subscribe_release.png)
+
+
 ## 📖 How it works
 *Zotero-arXiv-Daily* firstly retrieves all the papers in your Zotero libarary and all the papers released in the previous day, via corresponding API. Then it calculates the embedding of each paper's abstract via an embedding model. The score of a paper is its weighted average similarity over all your Zotero papers (newer paper added to the libarary has higher weight).
 
@@ -117,6 +123,11 @@ Distributed under the AGPLv3 License. See `LICENSE` for detail.
 - [arxiv](https://github.com/lukasschwab/arxiv.py)
 - [sentence_transformers](https://github.com/UKPLab/sentence-transformers)
 - [llama-cpp-python](https://github.com/abetlen/llama-cpp-python)
+
+## ☕ Buy Me A Coffee
+If you find this project helpful, welcome to sponsor me via WeChat or via [ko-fi](https://ko-fi.com/tidedra).
+![wechat_qr](assets/wechat_sponsor.JPG)
+
 
 ## 🌟 Star History
 
