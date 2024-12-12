@@ -22,7 +22,8 @@ from tempfile import mkstemp
 
 def get_zotero_corpus(id:str,key:str) -> list[dict]:
     zot = zotero.Zotero(id, 'user', key)
-    collections = {c['key']:c for c in zot.collections()}
+    collections = zot.everything(zot.collections())
+    collections = {c['key']:c for c in collections}
     corpus = zot.everything(zot.items(itemType='conferencePaper || journalArticle || preprint'))
     corpus = [c for c in corpus if c['data']['abstractNote'] != '']
     def get_collection_path(col_key:str) -> str:
