@@ -211,41 +211,51 @@ def send_email(sender:str, receiver:str, password:str,smtp_server:str,smtp_port:
     server.sendmail(sender, [receiver], msg.as_string())
     server.quit()
 
+
+def get_env(key:str,default=None):
+    # handle environment variables generated at Workflow runtime
+    # Unset environment variables are passed as '', we should treat them as None
+    v = os.environ.get(key)
+    if v == '' or v is None:
+        return default
+    return v
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Recommender system for academic papers')
-    parser.add_argument('--zotero_id', type=str, help='Zotero user ID',default=os.environ.get('ZOTERO_ID'))
-    parser.add_argument('--zotero_key', type=str, help='Zotero API key',default=os.environ.get('ZOTERO_KEY'))
-    parser.add_argument('--zotero_ignore',type=str,help='Zotero collection to ignore, using gitignore-style pattern.',default=os.environ.get('ZOTERO_IGNORE'))
-    parser.add_argument('--max_paper_num', type=int, help='Maximum number of papers to recommend',default=os.environ.get('MAX_PAPER_NUM',100))
-    parser.add_argument('--arxiv_query', type=str, help='Arxiv search query',default=os.environ.get('ARXIV_QUERY'))
-    parser.add_argument('--smtp_server', type=str, help='SMTP server',default=os.environ.get('SMTP_SERVER'))
-    parser.add_argument('--smtp_port', type=int, help='SMTP port',default=os.environ.get('SMTP_PORT'))
-    parser.add_argument('--sender', type=str, help='Sender email address',default=os.environ.get('SENDER'))
-    parser.add_argument('--receiver', type=str, help='Receiver email address',default=os.environ.get('RECEIVER'))
-    parser.add_argument('--password', type=str, help='Sender email password',default=os.environ.get('SENDER_PASSWORD'))
+    parser.add_argument('--zotero_id', type=str, help='Zotero user ID',default=get_env('ZOTERO_ID'))
+    parser.add_argument('--zotero_key', type=str, help='Zotero API key',default=get_env('ZOTERO_KEY'))
+    parser.add_argument('--zotero_ignore',type=str,help='Zotero collection to ignore, using gitignore-style pattern.',default=get_env('ZOTERO_IGNORE'))
+    parser.add_argument('--max_paper_num', type=int, help='Maximum number of papers to recommend',default=get_env('MAX_PAPER_NUM',100))
+    parser.add_argument('--arxiv_query', type=str, help='Arxiv search query',default=get_env('ARXIV_QUERY'))
+    parser.add_argument('--smtp_server', type=str, help='SMTP server',default=get_env('SMTP_SERVER'))
+    parser.add_argument('--smtp_port', type=int, help='SMTP port',default=get_env('SMTP_PORT'))
+    parser.add_argument('--sender', type=str, help='Sender email address',default=get_env('SENDER'))
+    parser.add_argument('--receiver', type=str, help='Receiver email address',default=get_env('RECEIVER'))
+    parser.add_argument('--password', type=str, help='Sender email password',default=get_env('SENDER_PASSWORD'))
     parser.add_argument(
         "--use_llm_api",
         type=bool,
         help="Use OpenAI API to generate TLDR",
-        default=os.environ.get("USE_LLM_API", False),
+        default=get_env("USE_LLM_API", False),
     )
     parser.add_argument(
         "--openai_api_key",
         type=str,
         help="OpenAI API key",
-        default=os.environ.get("OPENAI_API_KEY"),
+        default=get_env("OPENAI_API_KEY"),
     )
     parser.add_argument(
         "--openai_api_base",
         type=str,
         help="OpenAI API base URL",
-        default=os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1"),
+        default=get_env("OPENAI_API_BASE", "https://api.openai.com/v1"),
     )
     parser.add_argument(
         "--model_name",
         type=str,
         help="LLM Model Name",
-        default=os.environ.get("MODEL_NAME", "gpt-4o"),
+        default=get_env("MODEL_NAME", "gpt-4o"),
     )
     parser.add_argument('--debug', action='store_true', help='Debug mode')
     args = parser.parse_args()
