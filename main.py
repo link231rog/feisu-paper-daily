@@ -49,6 +49,16 @@ def filter_corpus(corpus:list[dict], pattern:str) -> list[dict]:
     os.remove(filename)
     return new_corpus
 
+def select_corpus(corpus:list[dict], tags: str) -> list[dict]:
+    tag = tags.split(',')
+    new_corpus = []
+    for c in corpus:
+      for p in c['paths']:
+        if p in tag:
+          new_corpus.append(c)
+          continue
+    return new_corpus
+
 def get_paper_code_url(paper:arxiv.Result) -> str:
     retry_num = 5
     while retry_num > 0:
@@ -226,6 +236,7 @@ if __name__ == '__main__':
     parser.add_argument('--zotero_id', type=str, help='Zotero user ID',default=get_env('ZOTERO_ID'))
     parser.add_argument('--zotero_key', type=str, help='Zotero API key',default=get_env('ZOTERO_KEY'))
     parser.add_argument('--zotero_ignore',type=str,help='Zotero collection to ignore, using gitignore-style pattern.',default=get_env('ZOTERO_IGNORE'))
+    parser.add_argument('--send_empty', type=bool, help='If get no arxiv paper, send empty email',default=get_env('SEND_EMPTY',False))
     parser.add_argument('--max_paper_num', type=int, help='Maximum number of papers to recommend',default=get_env('MAX_PAPER_NUM',100))
     parser.add_argument('--arxiv_query', type=str, help='Arxiv search query',default=get_env('ARXIV_QUERY'))
     parser.add_argument('--smtp_server', type=str, help='SMTP server',default=get_env('SMTP_SERVER'))
@@ -259,6 +270,7 @@ if __name__ == '__main__':
     )
     parser.add_argument('--debug', action='store_true', help='Debug mode')
     args = parser.parse_args()
+    
     assert args.zotero_id is not None
     assert args.zotero_key is not None
     assert args.arxiv_query is not None
@@ -280,35 +292,37 @@ if __name__ == '__main__':
     papers = get_arxiv_paper(args.arxiv_query, yesterday, today, args.debug)
     if len(papers) == 0:
         logger.info("No new papers found. Yesterday maybe a holiday and no one submit their work :). If this is not the case, please check the ARXIV_QUERY.")
-        logger.info("No email will be sent. Enjoy a relaxing day!")
-        exit(0)
-    logger.info("Reranking papers...")
-    papers = rerank_paper(papers, corpus)
-    if args.max_paper_num != -1:
-        papers = papers[:args.max_paper_num]
-
-    logger.info("Generating TLDRs...")
-    if args.use_llm_api:
-        logger.info("Using OpenAI API to generate TLDRs...")
-        llm = OpenAI(
-            api_key=args.openai_api_key,
-            base_url=args.openai_api_base,
-        )
-        for p in tqdm(papers):
-            p.tldr = get_paper_tldr(p, llm, model_name=args.model_name)
+        if not args.send_empty:
+          exit(0)
     else:
-        logger.info("Using Local LLM model to generate TLDRs...")
-        llm = Llama.from_pretrained(
-            repo_id="Qwen/Qwen2.5-3B-Instruct-GGUF",
-            filename="qwen2.5-3b-instruct-q4_k_m.gguf",
-            n_ctx=4096,
-            n_threads=4,
-            verbose=False
-        )
-        for p in tqdm(papers):
-            p.tldr = get_paper_tldr(p, llm)
+        logger.info("Reranking papers...")
+        papers = rerank_paper(papers, corpus)
+        if args.max_paper_num != -1:
+            papers = papers[:args.max_paper_num]
+
+        logger.info("Generating TLDRs...")
+        if args.use_llm_api:
+            logger.info("Using OpenAI API to generate TLDRs...")
+            llm = OpenAI(
+                api_key=args.openai_api_key,
+                base_url=args.openai_api_base,
+            )
+            for p in tqdm(papers):
+                p.tldr = get_paper_tldr(p, llm, model_name=args.model_name)
+        else:
+            logger.info("Using Local LLM model to generate TLDRs...")
+            llm = Llama.from_pretrained(
+                repo_id="Qwen/Qwen2.5-3B-Instruct-GGUF",
+                filename="qwen2.5-3b-instruct-q4_k_m.gguf",
+                n_ctx=4096,
+                n_threads=4,
+                verbose=False
+            )
+            for p in tqdm(papers):
+                p.tldr = get_paper_tldr(p, llm)
 
     html = render_email(papers)
     logger.info("Sending email...")
     send_email(args.sender, args.receiver, args.password, args.smtp_server, args.smtp_port, html)
     logger.success("Email sent successfully! If you don't receive the email, please check the configuration and the junk box.")
+
