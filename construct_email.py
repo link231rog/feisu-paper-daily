@@ -1,5 +1,12 @@
-import arxiv
+from paper import ArxivPaper
 import math
+from tqdm import tqdm
+from email.header import Header
+from email.mime.text import MIMEText
+from email.utils import parseaddr, formataddr
+import smtplib
+import datetime
+
 framework = """
 <!DOCTYPE HTML>
 <html>
@@ -106,19 +113,12 @@ def get_stars(score:float):
         return '<div class="star-wrapper">'+full_star * full_star_num + half_star * half_star_num + '</div>'
 
 
-def render_email(papers:list[arxiv.Result]):
+def render_email(papers:list[ArxivPaper]):
     parts = []
     if len(papers) == 0 :
         return framework.replace('__CONTENT__', get_empty_html())
     
-    for p in papers:
-        # crop the abstract
-        '''
-        summary = p.summary
-        summary = summary[:min(600, len(summary))]
-        if len(summary) == 600:
-            summary += '...'
-        '''
+    for p in tqdm(papers,desc='Rendering Email'):
         rate = get_stars(p.score)
         authors = [a.name for a in p.authors[:5]]
         authors = ', '.join(authors)
@@ -128,3 +128,24 @@ def render_email(papers:list[arxiv.Result]):
 
     content = '<br>' + '</br><br>'.join(parts) + '</br>'
     return framework.replace('__CONTENT__', content)
+
+def send_email(sender:str, receiver:str, password:str,smtp_server:str,smtp_port:int, html:str,):
+    def _format_addr(s):
+        name, addr = parseaddr(s)
+        return formataddr((Header(name, 'utf-8').encode(), addr))
+
+    msg = MIMEText(html, 'html', 'utf-8')
+    msg['From'] = _format_addr('Github Action <%s>' % sender)
+    msg['To'] = _format_addr('You <%s>' % receiver)
+    today = datetime.datetime.now().strftime('%Y/%m/%d')
+    msg['Subject'] = Header(f'Daily arXiv {today}', 'utf-8').encode()
+
+    try:
+        server = smtplib.SMTP(smtp_server, smtp_port)
+        server.starttls()
+    except smtplib.SMTPServerDisconnected:
+        server = smtplib.SMTP_SSL(smtp_server, smtp_port)
+
+    server.login(sender, password)
+    server.sendmail(sender, [receiver], msg.as_string())
+    server.quit()

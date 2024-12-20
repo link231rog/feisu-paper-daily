@@ -13,4 +13,6 @@ dependencies = [
     "sentence-transformers>=3.3.1",
     "openai>=1.57.0",
     "gitignore-parser>=0.1.11",
+    "tiktoken>=0.8.0",
+    "python-dotenv>=1.0.1",
 ]
