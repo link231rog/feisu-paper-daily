@@ -111,7 +111,6 @@ class ArxivPaper:
                     file_contents[t] = content
                 
                 if main_tex is not None:
-                    import pdb; pdb.set_trace()
                     main_source:str = file_contents[main_tex]
                     #find and replace all included sub-files
                     include_files = re.findall(r'\\input\{(.+?)\}', main_source) + re.findall(r'\\include\{(.+?)\}', main_source)
