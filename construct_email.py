@@ -1,5 +1,12 @@
-import arxiv
+from paper import ArxivPaper
 import math
+from tqdm import tqdm
+from email.header import Header
+from email.mime.text import MIMEText
+from email.utils import parseaddr, formataddr
+import smtplib
+import datetime
+
 framework = """
 <!DOCTYPE HTML>
 <html>
@@ -49,7 +56,7 @@ def get_empty_html():
   """
   return block_template
 
-def get_block_html(title:str, authors:str, rate:str,arxiv_id:str, abstract:str, pdf_url:str, code_url:str=None):
+def get_block_html(title:str, authors:str, rate:str,arxiv_id:str, abstract:str, pdf_url:str, code_url:str=None, affiliations:str=None):
     code = f'<a href="{code_url}" style="display: inline-block; text-decoration: none; font-size: 14px; font-weight: bold; color: #fff; background-color: #5bc0de; padding: 8px 16px; border-radius: 4px; margin-left: 8px;">Code</a>' if code_url else ''
     block_template = """
     <table border="0" cellpadding="0" cellspacing="0" width="100%" style="font-family: Arial, sans-serif; border: 1px solid #ddd; border-radius: 8px; padding: 16px; background-color: #f9f9f9;">
@@ -61,6 +68,8 @@ def get_block_html(title:str, authors:str, rate:str,arxiv_id:str, abstract:str, 
     <tr>
         <td style="font-size: 14px; color: #666; padding: 8px 0;">
             {authors}
+            <br>
+            <i>{affiliations}</i>
         </td>
     </tr>
     <tr>
@@ -87,7 +96,7 @@ def get_block_html(title:str, authors:str, rate:str,arxiv_id:str, abstract:str, 
     </tr>
 </table>
 """
-    return block_template.format(title=title, authors=authors,rate=rate,arxiv_id=arxiv_id, abstract=abstract, pdf_url=pdf_url, code=code)
+    return block_template.format(title=title, authors=authors,rate=rate,arxiv_id=arxiv_id, abstract=abstract, pdf_url=pdf_url, code=code, affiliations=affiliations)
 
 def get_stars(score:float):
     full_star = '<span class="full-star">⭐</span>'
@@ -106,25 +115,46 @@ def get_stars(score:float):
         return '<div class="star-wrapper">'+full_star * full_star_num + half_star * half_star_num + '</div>'
 
 
-def render_email(papers:list[arxiv.Result]):
+def render_email(papers:list[ArxivPaper]):
     parts = []
     if len(papers) == 0 :
         return framework.replace('__CONTENT__', get_empty_html())
     
-    for p in papers:
-        # crop the abstract
-        '''
-        summary = p.summary
-        summary = summary[:min(600, len(summary))]
-        if len(summary) == 600:
-            summary += '...'
-        '''
+    for p in tqdm(papers,desc='Rendering Email'):
         rate = get_stars(p.score)
         authors = [a.name for a in p.authors[:5]]
         authors = ', '.join(authors)
         if len(p.authors) > 5:
             authors += ', ...'
-        parts.append(get_block_html(p.title, authors,rate,p.arxiv_id ,p.tldr, p.pdf_url, p.code_url))
+        if p.affiliations is not None:
+            affiliations = p.affiliations[:5]
+            affiliations = ', '.join(affiliations)
+            if len(p.affiliations) > 5:
+                affiliations += ', ...'
+        else:
+            affiliations = 'Unknown Affiliation'
+        parts.append(get_block_html(p.title, authors,rate,p.arxiv_id ,p.tldr, p.pdf_url, p.code_url, affiliations))
 
     content = '<br>' + '</br><br>'.join(parts) + '</br>'
     return framework.replace('__CONTENT__', content)
+
+def send_email(sender:str, receiver:str, password:str,smtp_server:str,smtp_port:int, html:str,):
+    def _format_addr(s):
+        name, addr = parseaddr(s)
+        return formataddr((Header(name, 'utf-8').encode(), addr))
+
+    msg = MIMEText(html, 'html', 'utf-8')
+    msg['From'] = _format_addr('Github Action <%s>' % sender)
+    msg['To'] = _format_addr('You <%s>' % receiver)
+    today = datetime.datetime.now().strftime('%Y/%m/%d')
+    msg['Subject'] = Header(f'Daily arXiv {today}', 'utf-8').encode()
+
+    try:
+        server = smtplib.SMTP(smtp_server, smtp_port)
+        server.starttls()
+    except smtplib.SMTPServerDisconnected:
+        server = smtplib.SMTP_SSL(smtp_server, smtp_port)
+
+    server.login(sender, password)
+    server.sendmail(sender, [receiver], msg.as_string())
+    server.quit()
