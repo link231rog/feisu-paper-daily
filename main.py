@@ -8,9 +8,6 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 from pyzotero import zotero
 from recommender import rerank_paper
 from construct_email import render_email, send_email
-import requests
-import datetime
-import re
 from tqdm import trange,tqdm
 from loguru import logger
 from gitignore_parser import parse_gitignore
