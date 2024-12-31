@@ -101,7 +101,7 @@ class ArxivPaper:
             file_contents = {}
             for t in tex_files:
                 f = tar.extractfile(t)
-                content = f.read().decode('utf-8')
+                content = f.read().decode('utf-8',errors='ignore')
                 #remove comments
                 content = re.sub(r'%.*\n', '\n', content)
                 content = re.sub(r'\\begin{comment}.*?\\end{comment}', '', content, flags=re.DOTALL)
