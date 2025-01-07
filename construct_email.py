@@ -6,6 +6,7 @@ from email.mime.text import MIMEText
 from email.utils import parseaddr, formataddr
 import smtplib
 import datetime
+from loguru import logger
 
 framework = """
 <!DOCTYPE HTML>
@@ -152,7 +153,9 @@ def send_email(sender:str, receiver:str, password:str,smtp_server:str,smtp_port:
     try:
         server = smtplib.SMTP(smtp_server, smtp_port)
         server.starttls()
-    except smtplib.SMTPServerDisconnected:
+    except Exception as e:
+        logger.warning(f"Failed to use TLS. {e}")
+        logger.warning(f"Try to use SSL.")
         server = smtplib.SMTP_SSL(smtp_server, smtp_port)
 
     server.login(sender, password)
