@@ -5,7 +5,7 @@ from loguru import logger
 GLOBAL_LLM = None
 
 class LLM:
-    def __init__(self, api_key: str = None, base_url: str = None, model: str = None):
+    def __init__(self, api_key: str = None, base_url: str = None, model: str = None,lang: str = "English"):
         if api_key:
             self.llm = OpenAI(api_key=api_key, base_url=base_url)
         else:
@@ -17,6 +17,7 @@ class LLM:
                 verbose=False,
             )
         self.model = model
+        self.lang = lang
 
     def generate(self, messages: list[dict]) -> str:
         if isinstance(self.llm, OpenAI):
@@ -26,9 +27,9 @@ class LLM:
             response = self.llm.create_chat_completion(messages=messages,temperature=0)
             return response["choices"][0]["message"]["content"]
 
-def set_global_llm(api_key: str = None, base_url: str = None, model: str = None):
+def set_global_llm(api_key: str = None, base_url: str = None, model: str = None, lang: str = "English"):
     global GLOBAL_LLM
-    GLOBAL_LLM = LLM(api_key=api_key, base_url=base_url, model=model)
+    GLOBAL_LLM = LLM(api_key=api_key, base_url=base_url, model=model, lang=lang)
 
 def get_llm() -> LLM:
     if GLOBAL_LLM is None:

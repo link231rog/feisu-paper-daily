@@ -135,6 +135,12 @@ if __name__ == '__main__':
         help="LLM Model Name",
         default="gpt-4o",
     )
+    add_argument(
+        "--language",
+        type=str,
+        help="Language of TLDR",
+        default="English",
+    )
     parser.add_argument('--debug', action='store_true', help='Debug mode')
     args = parser.parse_args()
     assert (
@@ -168,10 +174,10 @@ if __name__ == '__main__':
             papers = papers[:args.max_paper_num]
         if args.use_llm_api:
             logger.info("Using OpenAI API as global LLM.")
-            set_global_llm(api_key=args.openai_api_key, base_url=args.openai_api_base, model=args.model_name)
+            set_global_llm(api_key=args.openai_api_key, base_url=args.openai_api_base, model=args.model_name, lang=args.language)
         else:
             logger.info("Using Local LLM as global LLM.")
-            set_global_llm()
+            set_global_llm(lang=args.language)
 
     html = render_email(papers)
     logger.info("Sending email...")
