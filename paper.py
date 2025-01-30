@@ -190,7 +190,9 @@ class ArxivPaper:
             if content is None:
                 content = "\n".join(self.tex.values())
             #search for affiliations
-            match = re.search(r'\\author.*?\\maketitle', content, flags=re.DOTALL)
+            possible_regions = [r'\\author.*?\\maketitle',r'\\begin{document}.*?\\begin{abstract}']
+            matches = [re.search(p, content, flags=re.DOTALL) for p in possible_regions]
+            match = next((m for m in matches if m), None)
             if match:
                 information_region = match.group(0)
             else:
