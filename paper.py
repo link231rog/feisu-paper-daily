@@ -242,6 +242,7 @@ class ArxivPaper:
                         "content": "You are an assistant who perfectly extracts affiliations of authors from the author information of a paper. You should return a python list of affiliations sorted by the author order, like ['TsingHua University','Peking University']. If an affiliation is consisted of multi-level affiliations, like 'Department of Computer Science, TsingHua University', you should return the top-level affiliation 'TsingHua University' only. Do not contain duplicated affiliations. If there is no affiliation found, you should return an empty list [ ]. You should only return the final list of affiliations, and do not return any intermediate results.",
                     },
                     {"role": "user", "content": prompt},
+                    {"role": "assistant", "content": "TLDR: "}
                 ]
             )
 
