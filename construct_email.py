@@ -6,6 +6,7 @@ from email.mime.text import MIMEText
 from email.utils import parseaddr, formataddr
 import smtplib
 import datetime
+import time
 from loguru import logger
 
 framework = """
@@ -136,6 +137,7 @@ def render_email(papers:list[ArxivPaper]):
         else:
             affiliations = 'Unknown Affiliation'
         parts.append(get_block_html(p.title, authors,rate,p.arxiv_id ,p.tldr, p.pdf_url, p.code_url, affiliations))
+        time.sleep(10)
 
     content = '<br>' + '</br><br>'.join(parts) + '</br>'
     return framework.replace('__CONTENT__', content)
