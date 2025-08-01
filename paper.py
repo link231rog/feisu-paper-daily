@@ -184,7 +184,6 @@ class ArxivPaper:
                 {"role": "user", "content": prompt},
             ]
         )
-        time.sleep(5)
         return tldr
 
     @cached_property
