@@ -4,6 +4,7 @@ from tempfile import TemporaryDirectory
 import arxiv
 import tarfile
 import re
+import time
 from llm import get_llm
 import requests
 from requests.adapters import HTTPAdapter, Retry
@@ -183,6 +184,7 @@ class ArxivPaper:
                 {"role": "user", "content": prompt},
             ]
         )
+        time.sleep(5)
         return tldr
 
     @cached_property
