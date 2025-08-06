@@ -125,10 +125,13 @@ def render_email(papers:list[ArxivPaper]):
     
     for p in tqdm(papers,desc='Rendering Email'):
         rate = get_stars(p.score)
-        authors = [a.name for a in p.authors[:5]]
-        authors = ', '.join(authors)
-        if len(p.authors) > 5:
-            authors += ', ...'
+        author_list = [a.name for a in p.authors]
+        num_authors = len(author_list)
+        
+        if num_authors <= 5:
+            authors = ', '.join(author_list)
+        else:
+            authors = ', '.join(author_list[:3] + ['...'] + author_list[-2:])
         if p.affiliations is not None:
             affiliations = p.affiliations[:5]
             affiliations = ', '.join(affiliations)
