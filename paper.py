@@ -82,6 +82,9 @@ class ArxivPaper:
                     # 如果是其他 HTTP 错误 (如 503)，这可能是临时性问题，值得记录下来
                     logger.error(f"HTTP Error {e.code} when downloading source for {self.arxiv_id}: {e.reason}")
                     raise # 重新抛出异常，因为这可能是个需要关注的严重问题
+            except Exception as e:
+                logger.error(f"Error when downloading source for {self.arxiv_id}: {e}")
+                return None
             try:
                 tar = stack.enter_context(tarfile.open(file))
             except tarfile.ReadError:
