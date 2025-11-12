@@ -1,0 +1,35 @@
+zotero:
+  user_id: ???
+  api_key: ???
+  include_path: null
+
+source:
+  arxiv:
+    query: ???
+
+email:
+  sender: ???
+  receiver: ???
+  smtp_server: ???
+  smtp_port: ???
+  sender_password: ???
+
+llm:
+  use_api: false
+  api:
+    key: null
+    base_url: null
+  model: Qwen/Qwen3-30B-A3B-Instruct-2507
+  filename: null
+  max_retries: 3
+  timeout: 180
+  generation_kwargs:
+    max_tokens: 16384
+    temperature: 0.4
+  language: English
+
+executor:
+  debug: false
+  send_empty: false
+  max_workers: 10
+  max_paper_num: 100
