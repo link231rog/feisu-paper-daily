@@ -3,3 +3,6 @@ zotero:
 source:
   arxiv:
     query: cs.AI+cs.CV+cs.LG+cs.CL
+
+executor:
+  source: ["arxiv"]

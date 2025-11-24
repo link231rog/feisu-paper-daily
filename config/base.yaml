@@ -15,12 +15,10 @@ email:
   sender_password: ???
 
 llm:
-  use_api: false
   api:
-    key: null
-    base_url: null
-  model: Qwen/Qwen3-30B-A3B-Instruct-2507
-  filename: null
+    key: ???
+    base_url: ???
+    model: Qwen/Qwen3-30B-A3B-Instruct-2507
   max_retries: 3
   timeout: 180
   generation_kwargs:
@@ -28,8 +26,18 @@ llm:
     temperature: 0.4
   language: English
 
+reranker:
+  local:
+    model: Qwen/Qwen3-Embedding-0.6B
+  api:
+    key: ???
+    base_url: ???
+    model: ???
+
 executor:
   debug: false
   send_empty: false
   max_workers: 10
   max_paper_num: 100
+  source: ???
+  reranker: local

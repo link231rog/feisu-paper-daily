@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from omegaconf import DictConfig
-from zotero_arxiv_daily.protocol import Paper, RawPaperItem
+from ..protocol import Paper, RawPaperItem
 from concurrent.futures import ThreadPoolExecutor
 
 class BaseRetriever(ABC):
@@ -29,3 +29,8 @@ def register_retriever(name:str):
         registered_retrievers[name] = cls
         return cls
     return decorator
+
+def get_retriever(name:str) -> BaseRetriever:
+    if name not in registered_retrievers:
+        raise ValueError(f"Retriever {name} not found")
+    return registered_retrievers[name]
