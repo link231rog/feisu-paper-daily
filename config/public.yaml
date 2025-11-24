@@ -1,5 +1,5 @@
 zotero:
-  ignore_collection: null
+  include_path: null
 source:
   arxiv:
     query: cs.AI+cs.CV+cs.LG+cs.CL

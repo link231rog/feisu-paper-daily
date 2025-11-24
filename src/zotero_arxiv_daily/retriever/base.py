@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from omegaconf import DictConfig
 from ..protocol import Paper, RawPaperItem
 from concurrent.futures import ThreadPoolExecutor
-
+from typing import Type
 class BaseRetriever(ABC):
     def __init__(self, config:DictConfig):
         self.config = config
@@ -30,7 +30,7 @@ def register_retriever(name:str):
         return cls
     return decorator
 
-def get_retriever(name:str) -> BaseRetriever:
+def get_retriever_cls(name:str) -> Type[BaseRetriever]:
     if name not in registered_retrievers:
         raise ValueError(f"Retriever {name} not found")
     return registered_retrievers[name]

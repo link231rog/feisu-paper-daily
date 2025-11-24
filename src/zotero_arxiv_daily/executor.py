@@ -2,22 +2,25 @@ from loguru import logger
 from pyzotero import zotero
 from omegaconf import DictConfig
 from .utils import glob_match
-from .retriever import get_retriever, BaseRetriever
+from .retriever import get_retriever_cls
 from .protocol import CorpusPaper
 import random
 from datetime import datetime
-from .reranker import get_reranker
+from .reranker import get_reranker_cls
+from .construct_email import render_email
+from .utils import send_email
+from openai import OpenAI
 class Executor:
     def __init__(self, config:DictConfig):
         self.config = config
-        self.retrievers: dict[str, BaseRetriever] = {
-            source: get_retriever(source)(config) for source in config.executor.source
+        self.retrievers = {
+            source: get_retriever_cls(source)(config) for source in config.executor.source
         }
-        self.reranker = get_reranker(config.executor.reranker)
-
+        self.reranker = get_reranker_cls(config.executor.reranker)(config)
+        self.openai_client = OpenAI(api_key=config.llm.api.key, base_url=config.llm.api.base_url)
     def fetch_zotero_corpus(self) -> list[CorpusPaper]:
         logger.info("Fetching zotero corpus")
-        zot = zotero.Zotero(self.config.zotero.id, 'user', self.config.zotero.api_key)
+        zot = zotero.Zotero(self.config.zotero.user_id, 'user', self.config.zotero.api_key)
         collections = zot.everything(zot.collections())
         collections = {c['key']:c for c in collections}
         corpus = zot.everything(zot.items(itemType='conferencePaper || journalArticle || preprint'))
@@ -56,11 +59,17 @@ class Executor:
     def run(self):
         corpus = self.fetch_zotero_corpus()
         corpus = self.filter_corpus(corpus)
-        source_papers = {}
+        all_papers = []
         for source, retriever in self.retrievers.items():
             logger.info(f"Retrieving {source} papers...")
             papers = retriever.retrieve_papers()
             if len(papers) == 0:
                 logger.info(f"No {source} papers found")
                 continue
-            source_papers[source] = papers
+            all_papers.extend(papers)
+        reranked_papers = self.reranker.rerank(all_papers, corpus)
+        for p in reranked_papers:
+            p.generate_tldr(self.openai_client, self.config.llm)
+            p.generate_affiliations(self.openai_client, self.config.llm)
+        email_content = render_email(reranked_papers)
+        send_email(self.config, email_content)
