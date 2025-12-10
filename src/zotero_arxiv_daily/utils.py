@@ -8,6 +8,9 @@ from email.utils import parseaddr, formataddr
 from loguru import logger
 import datetime
 from omegaconf import DictConfig
+import pymupdf.layout
+pymupdf.layout.activate()
+import pymupdf4llm
 def extract_tex_code_from_tar(file_path:str, paper_id:str) -> dict[str,str]:
     try:
         tar = tarfile.open(file_path)
@@ -77,6 +80,9 @@ def extract_tex_code_from_tar(file_path:str, paper_id:str) -> dict[str,str]:
         
     tar.close()
     return file_contents
+
+def extract_markdown_from_pdf(file_path:str) -> str:
+    return pymupdf4llm.to_markdown(file_path,use_ocr=False,header=False,footer=False,ignore_code=True)
 
 def glob_match(path:str, pattern:str) -> bool:
     re_pattern = glob.translate(pattern,recursive=True)

@@ -1,4 +1,3 @@
 defaults:
   - base
-  - private
-  - public
+  - custom

@@ -18,10 +18,20 @@ dependencies = [
     "pyzotero>=1.6.11",
     "scikit-learn>=1.7.1",
     "sentence-transformers>=5.0.0",
+    "torch",
     "openai>=1.99.1",
-    "llama-cpp-python>=0.3.2",
     "arxiv>=2.2.0",
+    "pymupdf4llm>=0.2.7",
+    "pymupdf-layout>=1.26.6",
 ]
+
+[tool.uv.sources]
+torch = { index = "pytorch" }
+
+[[tool.uv.index]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [dependency-groups]
 dev = [

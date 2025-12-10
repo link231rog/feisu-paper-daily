@@ -22,7 +22,7 @@ llm:
   generation_kwargs:
     max_tokens: 16384
     temperature: 0.4
-    model: gpt-4o-mini
+    model: ???
   language: English
 
 reranker:

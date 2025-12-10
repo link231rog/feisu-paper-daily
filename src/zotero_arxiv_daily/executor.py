@@ -52,13 +52,16 @@ class Executor:
                 new_corpus.append(c)
         samples = random.sample(new_corpus, min(5, len(new_corpus)))
         samples = '\n'.join([c.title + ' - ' + '\n'.join(c.paths) for c in samples])
-        logger.info(f"Selected {len(new_corpus)} zotero papers:\n{samples}")
+        logger.info(f"Selected {len(new_corpus)} zotero papers:\n{samples}\n...")
         return new_corpus
 
     
     def run(self):
         corpus = self.fetch_zotero_corpus()
         corpus = self.filter_corpus(corpus)
+        if len(corpus) == 0:
+            logger.error(f"No zotero papers found. Please check your zotero settings:\n{self.config.zotero}")
+            return
         all_papers = []
         for source, retriever in self.retrievers.items():
             logger.info(f"Retrieving {source} papers...")
