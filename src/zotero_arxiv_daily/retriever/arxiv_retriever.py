@@ -12,7 +12,7 @@ import os
 @register_retriever("arxiv")
 class ArxivRetriever(BaseRetriever):
     def _retrieve_raw_papers(self) -> list[ArxivResult]:
-        client = arxiv.Client(num_retries=10,delay_seconds=3)
+        client = arxiv.Client(num_retries=10,delay_seconds=60)
         query = self.config.source.arxiv.query
         # Get the latest paper from arxiv rss feed
         feed = feedparser.parse(f"https://rss.arxiv.org/atom/{query}")
