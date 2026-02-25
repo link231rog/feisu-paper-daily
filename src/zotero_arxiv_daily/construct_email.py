@@ -110,11 +110,14 @@ def render_email(papers:list[Paper]) -> str:
         return framework.replace('__CONTENT__', get_empty_html())
     
     for p in papers:
-        rate = get_stars(p.score)
-        authors = p.authors[:5]
-        authors = ', '.join(authors)
-        if len(p.authors) > 5:
-            authors += ', ...'
+        #rate = get_stars(p.score)
+        rate = round(p.score, 1) if p.score is not None else 'Unknown'
+        author_list = [a for a in p.authors]
+        num_authors = len(author_list)
+        if num_authors <= 5:
+            authors = ', '.join(author_list)
+        else:
+            authors = ', '.join(author_list[:3] + ['...'] + author_list[-2:])
         if p.affiliations is not None:
             affiliations = p.affiliations[:5]
             affiliations = ', '.join(affiliations)
@@ -122,7 +125,7 @@ def render_email(papers:list[Paper]) -> str:
                 affiliations += ', ...'
         else:
             affiliations = 'Unknown Affiliation'
-        parts.append(get_block_html(p.title, authors,rate,p.tldr, p.pdf_url, affiliations))
+        parts.append(get_block_html(p.title, authors, rate, p.tldr, p.pdf_url, affiliations))
 
     content = '<br>' + '</br><br>'.join(parts) + '</br>'
     return framework.replace('__CONTENT__', content)
