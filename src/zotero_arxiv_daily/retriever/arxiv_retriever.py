@@ -8,7 +8,7 @@ import feedparser
 from urllib.request import urlretrieve
 from tqdm import tqdm
 import os
-
+from loguru import logger
 @register_retriever("arxiv")
 class ArxivRetriever(BaseRetriever):
     def _retrieve_raw_papers(self) -> list[ArxivResult]:
@@ -42,7 +42,11 @@ class ArxivRetriever(BaseRetriever):
         with TemporaryDirectory() as temp_dir:
             path = os.path.join(temp_dir, "paper.pdf")
             urlretrieve(pdf_url, path)
-            full_text = extract_markdown_from_pdf(path)
+            try:
+                full_text = extract_markdown_from_pdf(path)
+            except Exception as e:
+                logger.warning(f"Failed to extract full text of {title}: {e}")
+                full_text = None
         return Paper(
             source="arxiv",
             title=title,
