@@ -24,7 +24,7 @@ class ArxivRetriever(BaseRetriever):
             all_paper_ids = all_paper_ids[:10]
 
         # Get full information of each paper from arxiv api
-        bar = tqdm(total=len(all_paper_ids),desc="Retrieving Arxiv papers")
+        bar = tqdm(total=len(all_paper_ids))
         for i in range(0,len(all_paper_ids),20):
             search = arxiv.Search(id_list=all_paper_ids[i:i+20])
             batch = list(client.results(search))

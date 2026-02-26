@@ -10,6 +10,7 @@ from .reranker import get_reranker_cls
 from .construct_email import render_email
 from .utils import send_email
 from openai import OpenAI
+from tqdm import tqdm
 class Executor:
     def __init__(self, config:DictConfig):
         self.config = config
@@ -69,10 +70,16 @@ class Executor:
             if len(papers) == 0:
                 logger.info(f"No {source} papers found")
                 continue
+            logger.info(f"Retrieved {len(papers)} {source} papers")
             all_papers.extend(papers)
+        logger.info(f"Total {len(all_papers)} papers retrieved from all sources")
+        logger.info("Reranking papers...")
         reranked_papers = self.reranker.rerank(all_papers, corpus)
-        for p in reranked_papers:
+        logger.info("Generating TLDR and affiliations...")
+        for p in tqdm(reranked_papers):
             p.generate_tldr(self.openai_client, self.config.llm)
             p.generate_affiliations(self.openai_client, self.config.llm)
+        logger.info("Sending email...")
         email_content = render_email(reranked_papers)
         send_email(self.config, email_content)
+        logger.info("Email sent successfully")

@@ -4,9 +4,10 @@ import logging
 from omegaconf import DictConfig
 import hydra
 from loguru import logger
+import dotenv
 from zotero_arxiv_daily.executor import Executor
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
+dotenv.load_dotenv()
 
 @hydra.main(version_base=None, config_path="../../config", config_name="default")
 def main(config:DictConfig):
