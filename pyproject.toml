@@ -23,6 +23,7 @@ dependencies = [
     "arxiv>=2.4.0",
     "pymupdf4llm>=0.3.4",
     "pymupdf-layout>=1.27.1",
+    "dotenv>=0.9.9",
 ]
 
 [tool.uv.sources]
