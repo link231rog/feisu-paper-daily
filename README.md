@@ -90,7 +90,7 @@ llm:
 
 source:
   arxiv:
-    query: cs.AI+cs.CV+cs.LG+cs.CL
+    category: ["cs.AI","cs.CV","cs.LG","cs.CL"]
 
 executor:
   source: ['arxiv']
@@ -107,7 +107,11 @@ zotero:
 
 source:
   arxiv:
-    query: ??? # The categories of target arxiv papers. Use `+` to concatenate multiple categories. Find the abbr of your research area from [here](https://arxiv.org/category_taxonomy). Example: cs.AI+cs.CV+cs.LG+cs.CL
+    category: null # The categories of target arxiv papers. Find the abbr of your research area from [here](https://arxiv.org/category_taxonomy). Example: ["cs.AI","cs.CV","cs.LG","cs.CL"]
+  biorxiv:
+    category: null # The categories of target biorxiv papers. Find categories from [here](https://www.biorxiv.org/). Example: ["biochemistry","animal behavior and cognition"]
+  medrxiv:
+    category: null # The categories of target medrxiv papers. Find categories from [here](https://www.medrxiv.org/) Example: ["psychiatry and clinical psychology", "neurology"]
 
 email:
   sender: ??? # The email account of the SMTP server that sends you email. Example: abc@qq.com
@@ -143,7 +147,7 @@ executor:
   send_empty: false # Whether to send an empty email even if no new papers today. Example: true
   max_workers: 10 # Concurrent workers for processing papers. Example: 10
   max_paper_num: 100 # The maximum number of the papers presented in the email. Example: 100
-  source: ??? # The sources of papers to retrieve. Example: ['arxiv']
+  source: ??? # The sources of papers to retrieve. Example: ['arxiv','biorxiv','medrxiv']
   reranker: local # The reranker to use. Example: 'local' or 'api'
 ```
 

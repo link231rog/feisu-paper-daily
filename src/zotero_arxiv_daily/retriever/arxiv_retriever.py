@@ -13,11 +13,11 @@ from loguru import logger
 class ArxivRetriever(BaseRetriever):
     def __init__(self, config):
         super().__init__(config)
-        if self.config.source.arxiv.query is None:
-            raise ValueError("query must be specified for arxiv.")
+        if self.config.source.arxiv.category is None:
+            raise ValueError("category must be specified for arxiv.")
     def _retrieve_raw_papers(self) -> list[ArxivResult]:
         client = arxiv.Client(num_retries=10,delay_seconds=10)
-        query = self.config.source.arxiv.query
+        query = '+'.join(self.config.source.arxiv.category)
         # Get the latest paper from arxiv rss feed
         feed = feedparser.parse(f"https://rss.arxiv.org/atom/{query}")
         if 'Feed error for query' in feed.feed.title:
