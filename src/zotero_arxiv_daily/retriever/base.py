@@ -8,13 +8,14 @@ class BaseRetriever(ABC):
     name: str
     def __init__(self, config:DictConfig):
         self.config = config
+        self.retriever_config = getattr(config.source,self.name)
 
     @abstractmethod
     def _retrieve_raw_papers(self) -> list[RawPaperItem]:
         pass
 
     @abstractmethod
-    def convert_to_paper(self, raw_paper:RawPaperItem) -> Paper:
+    def convert_to_paper(self, raw_paper:RawPaperItem) -> Paper | None:
         pass
 
     def retrieve_papers(self) -> list[Paper]:
@@ -23,7 +24,7 @@ class BaseRetriever(ABC):
         logger.info("Processing papers...")
         with ProcessPoolExecutor(max_workers=self.config.executor.max_workers) as exec_pool:
             papers = list(exec_pool.map(self.convert_to_paper, raw_papers))
-        return papers
+        return [p for p in papers if p is not None]
 
 registered_retrievers = {}
 

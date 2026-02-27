@@ -11,6 +11,10 @@ import os
 from loguru import logger
 @register_retriever("arxiv")
 class ArxivRetriever(BaseRetriever):
+    def __init__(self, config):
+        super().__init__(config)
+        if self.config.source.arxiv.query is None:
+            raise ValueError("query must be specified for arxiv.")
     def _retrieve_raw_papers(self) -> list[ArxivResult]:
         client = arxiv.Client(num_retries=10,delay_seconds=10)
         query = self.config.source.arxiv.query
@@ -48,7 +52,7 @@ class ArxivRetriever(BaseRetriever):
                 logger.warning(f"Failed to extract full text of {title}: {e}")
                 full_text = None
         return Paper(
-            source="arxiv",
+            source=self.name,
             title=title,
             authors=authors,
             abstract=abstract,
