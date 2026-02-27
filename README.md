@@ -40,6 +40,10 @@
 - Fast deployment via fork this repo and set environment variables in the Github Action Page.
 - Support LLM API for generating TL;DR of papers.
 - Ignore unwanted Zotero papers using glob pattern.
+- Support multiple sources of papers to retrieve:
+  - arxiv
+  - biorxiv
+  - medrxiv
 
 ## 📷 Screenshot
 ![screenshot](./assets/screenshot.png)
