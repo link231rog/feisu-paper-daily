@@ -77,8 +77,8 @@ zotero:
 email:
   sender: ${oc.env:SENDER}
   receiver: ${oc.env:RECEIVER}
-  smtp_server: smtp.qq.com # Use the SMTP server of your sender email provider.
-  smtp_port: 465 # Use the port of your SMTP server.
+  smtp_server: smtp.qq.com
+  smtp_port: 465
   sender_password: ${oc.env:SENDER_PASSWORD}
 
 llm:
@@ -87,10 +87,6 @@ llm:
     base_url: ${oc.env:OPENAI_API_BASE}
   generation_kwargs:
     model: gpt-4o-mini
-
-reranker:
-  local:
-    model: Qwen/Qwen3-Embedding-0.6B
 
 source:
   arxiv:
@@ -132,7 +128,11 @@ llm:
 
 reranker:
   local:
-    model: Qwen/Qwen3-Embedding-0.6B # The Hugging Face model name of the local embedding model. Example: Qwen/Qwen3-Embedding-0.6B
+    model: jinaai/jina-embeddings-v5-text-nano # The Hugging Face model name of the local embedding model. Example: jinaai/jina-embeddings-v5-text-nano
+    encode_kwargs:
+    # The kwargs for the encode method of the local embedding model. Details see [here](https://www.sbert.net/docs/package_reference/SentenceTransformer.html#sentence_transformers.SentenceTransformer.encode)
+      task: retrieval
+      prompt_name: document
   api:
     key: null # API Key of your embedding model API. Example: sk-xxx
     base_url: null # API URL of your embedding model API. Example: https://api.openai.com/v1
