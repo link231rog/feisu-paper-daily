@@ -97,6 +97,7 @@ source:
     category: ["cs.AI","cs.CV","cs.LG","cs.CL"]
 
 executor:
+  debug: ${oc.env:DEBUG,null}
   source: ['arxiv']
 ```
 >[!NOTE]
