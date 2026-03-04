@@ -2,7 +2,7 @@ from .base import BaseRetriever, register_retriever
 import arxiv
 from arxiv import Result as ArxivResult
 from ..protocol import Paper
-from ..utils import extract_markdown_from_pdf
+from ..utils import extract_markdown_from_pdf, extract_tex_code_from_tar
 from tempfile import TemporaryDirectory
 import feedparser
 from urllib.request import urlretrieve
@@ -43,14 +43,9 @@ class ArxivRetriever(BaseRetriever):
         authors = [a.name for a in raw_paper.authors]
         abstract = raw_paper.summary
         pdf_url = raw_paper.pdf_url
-        with TemporaryDirectory() as temp_dir:
-            path = os.path.join(temp_dir, "paper.pdf")
-            urlretrieve(pdf_url, path)
-            try:
-                full_text = extract_markdown_from_pdf(path)
-            except Exception as e:
-                logger.warning(f"Failed to extract full text of {title}: {e}")
-                full_text = None
+        full_text = extract_text_from_pdf(raw_paper)
+        if full_text is None:
+            full_text = extract_text_from_tar(raw_paper)
         return Paper(
             source=self.name,
             title=title,
@@ -60,3 +55,36 @@ class ArxivRetriever(BaseRetriever):
             pdf_url=pdf_url,
             full_text=full_text
         )
+
+def extract_text_from_pdf(paper: ArxivResult) -> str | None:
+    with TemporaryDirectory() as temp_dir:
+        path = os.path.join(temp_dir, "paper.pdf")
+        if paper.pdf_url is None:
+            logger.warning(f"No PDF URL available for {paper.title}")
+            return None
+        urlretrieve(paper.pdf_url, path)
+        try:
+            full_text = extract_markdown_from_pdf(path)
+        except Exception as e:
+            logger.warning(f"Failed to extract full text of {paper.title} from pdf: {e}")
+            full_text = None
+        return full_text
+
+def extract_text_from_tar(paper: ArxivResult) -> str | None:
+    with TemporaryDirectory() as temp_dir:
+        path = os.path.join(temp_dir, "paper.tar.gz")
+        source_url = paper.source_url()
+        if source_url is None:
+            logger.warning(f"No source URL available for {paper.title}")
+            return None
+        urlretrieve(source_url, path)
+        try:
+            file_contents = extract_tex_code_from_tar(path, paper.entry_id)
+            if "all" not in file_contents:
+                logger.warning(f"Failed to extract full text of {paper.title} from tar: Main tex file not found.")
+                return None
+            full_text = file_contents["all"]
+        except Exception as e:
+            logger.warning(f"Failed to extract full text of {paper.title} from tar: {e}")
+            full_text = None
+        return full_text

@@ -58,7 +58,7 @@ def extract_tex_code_from_tar(file_path:str, paper_id:str) -> dict[str,str]:
         content = re.sub(r'\\\\', '', content)
         #remove consecutive spaces
         content = re.sub(r'[ \t\r\f]{3,}', ' ', content)
-        if main_tex is None and re.search(r'\\begin\{document\}', content):
+        if main_tex is None and re.search(r'\\begin\{document\}', content) and not any(w in t for w in ['example', 'sample']):
             main_tex = t
             logger.debug(f"Choose {t} as main tex file of {paper_id}")
         file_contents[t] = content
