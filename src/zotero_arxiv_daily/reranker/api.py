@@ -19,5 +19,5 @@ class ApiReranker(BaseReranker):
         s2_embeddings = np.array(all_embeddings[len(s1):])           # [n_s2, d]
         s1_embeddings_normalized = s1_embeddings / np.linalg.norm(s1_embeddings, axis=1, keepdims=True)
         s2_embeddings_normalized = s2_embeddings / np.linalg.norm(s2_embeddings, axis=1, keepdims=True)
-        sim = np.dot(s1_embeddings_normalized, s2_embeddings_normalized.T)  # [n_s1, n_s2]
+        sim = np.dot(s1_embeddings_normalized, s2_embeddings_normalized.T) # [n_s1, n_s2]
         return sim
