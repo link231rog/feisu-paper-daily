@@ -95,11 +95,13 @@ llm:
 source:
   arxiv:
     category: ["cs.AI","cs.CV","cs.LG","cs.CL"]
+    include_cross_list: false # Set to true to include arXiv cross-list papers in these categories.
 
 executor:
   debug: ${oc.env:DEBUG,null}
   source: ['arxiv']
 ```
+Add `include_cross_list` under `source.arxiv` in `CUSTOM_CONFIG` if you want cross-listed papers to be included.
 >[!NOTE]
 > `${oc.env:XXX,yyy}` means the value of the environment variable `XXX`. If the variable is not set, the default value `yyy` will be used.
 
