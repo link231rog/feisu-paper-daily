@@ -101,7 +101,7 @@ executor:
   debug: ${oc.env:DEBUG,null}
   source: ['arxiv']
 ```
-Add `include_cross_list` under `source.arxiv` in `CUSTOM_CONFIG` if you want cross-listed papers to be included.
+Set `source.arxiv.include_cross_list: true` if you want cross-listed papers included.
 >[!NOTE]
 > `${oc.env:XXX,yyy}` means the value of the environment variable `XXX`. If the variable is not set, the default value `yyy` will be used.
 
