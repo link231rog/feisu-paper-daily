@@ -21,12 +21,18 @@ class ArxivRetriever(BaseRetriever):
     def _retrieve_raw_papers(self) -> list[ArxivResult]:
         client = arxiv.Client(num_retries=10,delay_seconds=10)
         query = '+'.join(self.config.source.arxiv.category)
+        include_cross_list = self.config.source.arxiv.get("include_cross_list", False)
         # Get the latest paper from arxiv rss feed
         feed = feedparser.parse(f"https://rss.arxiv.org/atom/{query}")
         if 'Feed error for query' in feed.feed.title:
             raise Exception(f"Invalid ARXIV_QUERY: {query}.")
         raw_papers = []
-        all_paper_ids = [i.id.removeprefix("oai:arXiv.org:") for i in feed.entries if i.get("arxiv_announce_type","new") == 'new']
+        allowed_announce_types = {"new", "cross"} if include_cross_list else {"new"}
+        all_paper_ids = [
+            i.id.removeprefix("oai:arXiv.org:")
+            for i in feed.entries
+            if i.get("arxiv_announce_type", "new") in allowed_announce_types
+        ]
         if self.config.executor.debug:
             all_paper_ids = all_paper_ids[:10]
 
