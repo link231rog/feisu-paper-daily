@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 from omegaconf import DictConfig
 from ..protocol import Paper, RawPaperItem
-from concurrent.futures import ProcessPoolExecutor, as_completed
 from tqdm import tqdm
 from typing import Type
 from loguru import logger
@@ -45,21 +44,13 @@ class BaseRetriever(ABC):
 
     def retrieve_papers(self) -> list[Paper]:
         raw_papers = self._retrieve_raw_papers()
-        papers = []
         logger.info("Processing papers...")
-        with ProcessPoolExecutor(max_workers=self.config.executor.max_workers) as exec_pool:
-            futures = {exec_pool.submit(_convert_to_paper_safe, self, rp): i for i, rp in enumerate(raw_papers)}
-            papers = [None] * len(raw_papers)
-            for future in tqdm(as_completed(futures), total=len(raw_papers), desc="Converting papers"):
-                try:
-                    papers[futures[future]] = future.result()
-                except Exception as exc:
-                    raw_paper = raw_papers[futures[future]]
-                    logger.warning(
-                        f"Skipping paper {_describe_raw_paper(raw_paper)} after worker failure: "
-                        f"{type(exc).__name__}: {exc}"
-                    )
-        return [p for p in papers if p is not None]
+        papers = []
+        for raw_paper in tqdm(raw_papers, total=len(raw_papers), desc="Converting papers"):
+            paper = _convert_to_paper_safe(self, raw_paper)
+            if paper is not None:
+                papers.append(paper)
+        return papers
 
 registered_retrievers = {}
 
