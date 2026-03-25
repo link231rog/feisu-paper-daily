@@ -53,24 +53,21 @@ def _run_with_hard_timeout(
     result_queue = context.Queue()
     process = context.Process(target=_run_in_subprocess, args=(result_queue, func, args))
     process.start()
-    process.join(timeout)
-
-    if process.is_alive():
-        process.kill()
-        process.join()
-        logger.warning(f"{operation} timed out for {paper_title} after {timeout} seconds")
-        result_queue.close()
-        result_queue.join_thread()
-        return None
 
     try:
-        status, payload = result_queue.get_nowait()
+        status, payload = result_queue.get(timeout=timeout)
     except Empty:
-        logger.warning(f"{operation} failed for {paper_title}: worker exited with code {process.exitcode}")
-        return None
-    finally:
+        if process.is_alive():
+            process.kill()
+        process.join(5)
         result_queue.close()
         result_queue.join_thread()
+        logger.warning(f"{operation} timed out for {paper_title} after {timeout} seconds")
+        return None
+
+    process.join(5)
+    result_queue.close()
+    result_queue.join_thread()
 
     if status == "ok":
         return payload
@@ -84,6 +81,18 @@ def _extract_text_from_pdf_worker(pdf_url: str) -> str:
         path = os.path.join(temp_dir, "paper.pdf")
         _download_file(pdf_url, path)
         return extract_markdown_from_pdf(path)
+
+
+def _extract_text_from_html_worker(html_url: str) -> str | None:
+    import trafilatura
+
+    downloaded = trafilatura.fetch_url(html_url)
+    if downloaded is None:
+        raise ValueError(f"Failed to download HTML from {html_url}")
+    text = trafilatura.extract(downloaded, include_comments=False, include_tables=False)
+    if not text:
+        raise ValueError(f"No text extracted from {html_url}")
+    return text
 
 
 def _extract_text_from_tar_worker(source_url: str, paper_id: str) -> str | None:
@@ -137,7 +146,9 @@ class ArxivRetriever(BaseRetriever):
         authors = [a.name for a in raw_paper.authors]
         abstract = raw_paper.summary
         pdf_url = raw_paper.pdf_url
-        full_text = extract_text_from_pdf(raw_paper)
+        full_text = extract_text_from_html(raw_paper)
+        if full_text is None:
+            full_text = extract_text_from_pdf(raw_paper)
         if full_text is None:
             full_text = extract_text_from_tar(raw_paper)
         return Paper(
@@ -149,6 +160,15 @@ class ArxivRetriever(BaseRetriever):
             pdf_url=pdf_url,
             full_text=full_text,
         )
+
+
+def extract_text_from_html(paper: ArxivResult) -> str | None:
+    html_url = paper.entry_id.replace("/abs/", "/html/")
+    try:
+        return _extract_text_from_html_worker(html_url)
+    except Exception as exc:
+        logger.warning(f"HTML extraction failed for {paper.title}: {exc}")
+        return None
 
 
 def extract_text_from_pdf(paper: ArxivResult) -> str | None:
