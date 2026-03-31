@@ -29,19 +29,11 @@ def normalize_path_patterns(patterns: list[str] | ListConfig | None, config_key:
     return list(patterns)
 
 
-def normalize_include_path_patterns(include_path: list[str] | ListConfig | None) -> list[str] | None:
-    return normalize_path_patterns(include_path, "include_path")
-
-
-def normalize_ignore_path_patterns(ignore_path: list[str] | ListConfig | None) -> list[str] | None:
-    return normalize_path_patterns(ignore_path, "ignore_path")
-
-
 class Executor:
     def __init__(self, config:DictConfig):
         self.config = config
-        self.include_path_patterns = normalize_include_path_patterns(config.zotero.include_path)
-        self.ignore_path_patterns = normalize_ignore_path_patterns(config.zotero.ignore_path)
+        self.include_path_patterns = normalize_path_patterns(config.zotero.include_path, "include_path")
+        self.ignore_path_patterns = normalize_path_patterns(config.zotero.ignore_path, "ignore_path")
         self.retrievers = {
             source: get_retriever_cls(source)(config) for source in config.executor.source
         }
