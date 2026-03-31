@@ -13,36 +13,28 @@ from openai import OpenAI
 from tqdm import tqdm
 
 
-def normalize_include_path_patterns(include_path: list[str] | ListConfig | None) -> list[str] | None:
-    if include_path is None:
+def normalize_path_patterns(patterns: list[str] | ListConfig | None, config_key: str) -> list[str] | None:
+    if patterns is None:
         return None
 
-    if not isinstance(include_path, (list, ListConfig)):
+    if not isinstance(patterns, (list, ListConfig)):
         raise TypeError(
-            "config.zotero.include_path must be a list of glob patterns or null, "
+            f"config.zotero.{config_key} must be a list of glob patterns or null, "
             'for example ["2026/survey/**"]. Single strings are not supported.'
         )
 
-    if any(not isinstance(pattern, str) for pattern in include_path):
-        raise TypeError("config.zotero.include_path must contain only glob pattern strings.")
+    if any(not isinstance(pattern, str) for pattern in patterns):
+        raise TypeError(f"config.zotero.{config_key} must contain only glob pattern strings.")
 
-    return list(include_path)
+    return list(patterns)
+
+
+def normalize_include_path_patterns(include_path: list[str] | ListConfig | None) -> list[str] | None:
+    return normalize_path_patterns(include_path, "include_path")
 
 
 def normalize_ignore_path_patterns(ignore_path: list[str] | ListConfig | None) -> list[str] | None:
-    if ignore_path is None:
-        return None
-
-    if not isinstance(ignore_path, (list, ListConfig)):
-        raise TypeError(
-            "config.zotero.ignore_path must be a list of glob patterns or null, "
-            'for example ["archive/**"]. Single strings are not supported.'
-        )
-
-    if any(not isinstance(pattern, str) for pattern in ignore_path):
-        raise TypeError("config.zotero.ignore_path must contain only glob pattern strings.")
-
-    return list(ignore_path)
+    return normalize_path_patterns(ignore_path, "ignore_path")
 
 
 class Executor:
