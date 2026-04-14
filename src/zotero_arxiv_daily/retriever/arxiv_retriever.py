@@ -146,11 +146,11 @@ class ArxivRetriever(BaseRetriever):
         authors = [a.name for a in raw_paper.authors]
         abstract = raw_paper.summary
         pdf_url = raw_paper.pdf_url
-        full_text = extract_text_from_html(raw_paper)
+        full_text = extract_text_from_tar(raw_paper)
+        if full_text is None:
+            full_text = extract_text_from_html(raw_paper)
         if full_text is None:
             full_text = extract_text_from_pdf(raw_paper)
-        if full_text is None:
-            full_text = extract_text_from_tar(raw_paper)
         return Paper(
             source=self.name,
             title=title,
