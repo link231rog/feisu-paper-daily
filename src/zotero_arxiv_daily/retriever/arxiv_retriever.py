@@ -95,11 +95,11 @@ def _extract_text_from_html_worker(html_url: str) -> str | None:
     return text
 
 
-def _extract_text_from_tar_worker(source_url: str, paper_id: str) -> str | None:
+def _extract_text_from_tar_worker(source_url: str, paper_id: str, paper_title: str | None = None) -> str | None:
     with TemporaryDirectory() as temp_dir:
         path = os.path.join(temp_dir, "paper.tar.gz")
         _download_file(source_url, path)
-        file_contents = extract_tex_code_from_tar(path, paper_id)
+        file_contents = extract_tex_code_from_tar(path, paper_id, paper_title=paper_title)
         if not file_contents or "all" not in file_contents:
             raise ValueError("Main tex file not found.")
         return file_contents["all"]
@@ -146,11 +146,11 @@ class ArxivRetriever(BaseRetriever):
         authors = [a.name for a in raw_paper.authors]
         abstract = raw_paper.summary
         pdf_url = raw_paper.pdf_url
-        full_text = extract_text_from_html(raw_paper)
+        full_text = extract_text_from_tar(raw_paper)
+        if full_text is None:
+            full_text = extract_text_from_html(raw_paper)
         if full_text is None:
             full_text = extract_text_from_pdf(raw_paper)
-        if full_text is None:
-            full_text = extract_text_from_tar(raw_paper)
         return Paper(
             source=self.name,
             title=title,
@@ -191,7 +191,7 @@ def extract_text_from_tar(paper: ArxivResult) -> str | None:
         return None
     return _run_with_hard_timeout(
         _extract_text_from_tar_worker,
-        (source_url, paper.entry_id),
+        (source_url, paper.entry_id, paper.title),
         timeout=TAR_EXTRACT_TIMEOUT,
         operation="Tar extraction",
         paper_title=paper.title,
