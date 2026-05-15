@@ -9,6 +9,7 @@ from tqdm import tqdm
 import multiprocessing
 import os
 from queue import Empty
+from time import sleep
 from typing import Any, Callable, TypeVar
 from loguru import logger
 import requests
@@ -132,11 +133,25 @@ class ArxivRetriever(BaseRetriever):
 
         # Get full information of each paper from arxiv api
         bar = tqdm(total=len(all_paper_ids))
+        max_batch_retries = 5
+        batch_retry_delay = 30
         for i in range(0, len(all_paper_ids), 20):
             search = arxiv.Search(id_list=all_paper_ids[i:i + 20])
-            batch = list(client.results(search))
-            bar.update(len(batch))
-            raw_papers.extend(batch)
+            for attempt in range(max_batch_retries):
+                try:
+                    batch = list(client.results(search))
+                    bar.update(len(batch))
+                    raw_papers.extend(batch)
+                    break
+                except arxiv.HTTPError as exc:
+                    if exc.status == 429 and attempt < max_batch_retries - 1:
+                        wait = batch_retry_delay * (attempt + 1)
+                        logger.warning(f"arXiv API 429 on batch {i // 20}, retry {attempt + 1}/{max_batch_retries} in {wait}s")
+                        sleep(wait)
+                    else:
+                        raise
+            if i + 20 < len(all_paper_ids):
+                sleep(3)
         bar.close()
 
         return raw_papers
