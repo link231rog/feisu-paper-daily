@@ -44,6 +44,7 @@
   - arxiv
   - biorxiv
   - medrxiv
+  - chemrxiv
 
 ## 📷 Screenshot
 ![screenshot](./assets/screenshot.png)
@@ -120,6 +121,8 @@ source:
     category: null # The categories of target biorxiv papers. Find categories from [here](https://www.biorxiv.org/). Example: ["biochemistry","animal behavior and cognition"]
   medrxiv:
     category: null # The categories of target medrxiv papers. Find categories from [here](https://www.medrxiv.org/) Example: ["psychiatry and clinical psychology", "neurology"]
+  chemrxiv:
+    category: null # The categories of target chemrxiv papers, or null for all categories. Find categories from [here](https://chemrxiv.org/engage/chemrxiv/public-dashboard). Example: ["Theoretical and Computational Chemistry", "Materials Science"]
 
 email:
   sender: ??? # The email account of the SMTP server that sends you email. Example: abc@qq.com
@@ -155,7 +158,7 @@ executor:
   debug: false # Whether to use debug mode. Example: true
   send_empty: false # Whether to send an empty email even if no new papers today. Example: true
   max_paper_num: 100 # The maximum number of the papers presented in the email. Example: 100
-  source: ??? # The sources of papers to retrieve. Example: ['arxiv','biorxiv','medrxiv']
+  source: ??? # The sources of papers to retrieve. Example: ['arxiv','biorxiv','medrxiv','chemrxiv']
   reranker: local # The reranker to use. Example: 'local' or 'api'
 ```
 
