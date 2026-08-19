@@ -1,3 +1,5 @@
+import html
+import re
 from datetime import datetime, timedelta, timezone
 from time import sleep
 from typing import Any
@@ -11,24 +13,32 @@ from ..protocol import Paper
 
 @register_retriever("chemrxiv")
 class ChemrxivRetriever(BaseRetriever):
-    """Retrieve recent preprints from chemRxiv via the Cambridge Open Engage public API.
+    """Retrieve recent chemRxiv preprints via the Crossref REST API.
 
-    chemRxiv publishes preprints continuously rather than in daily batches, so this
-    retriever collects every item published within the last ``lookback_hours`` hours
-    (24 by default) instead of keeping only the latest posting date as the bioRxiv
-    retriever does. Items are fetched newest-first and pagination stops as soon as
-    an item older than the cutoff is seen.
+    chemRxiv moved from Cambridge Open Engage to Wiley's Research Exchange platform
+    in January 2026; the old ``public-api`` is gone and the new site sits behind
+    Cloudflare bot protection. Every chemRxiv preprint is registered with Crossref
+    under the ACS prefix ``10.26434`` within minutes of posting, with title,
+    abstract, authors, affiliations and links, so Crossref is used as the source.
+
+    chemRxiv publishes continuously rather than in daily batches, so this retriever
+    keeps every record whose Crossref ``created`` timestamp (the deposit time, which
+    coincides with posting) falls within the last ``lookback_hours`` hours. Crossref
+    does not expose chemRxiv subject categories, so there is no category filter;
+    chemRxiv volume is small (a few dozen preprints per day) and the reranker does
+    the selection.
     """
 
-    api_url = "https://chemrxiv.org/engage/chemrxiv/public-api/v1/items"
-    article_url = "https://chemrxiv.org/engage/chemrxiv/article-details/{id}"
-    page_size = 50  # API maximum
-    max_pages = 20  # safety cap: 1000 items is far more than one day of chemRxiv output
+    api_url = "https://api.crossref.org/prefixes/10.26434/works"
+    page_size = 100
+    max_pages = 20
     lookback_hours = 24
     request_headers = {
         "User-Agent": "zotero-arxiv-daily (https://github.com/TideDra/zotero-arxiv-daily)",
         "Accept": "application/json",
     }
+    _version_suffix = re.compile(r"[/-]v(\d+)$", re.IGNORECASE)
+    _tag = re.compile(r"<[^>]+>")
 
     def _get_json(self, params: dict[str, Any]) -> dict[str, Any]:
         retry_num = 10
@@ -61,40 +71,41 @@ class ChemrxivRetriever(BaseRetriever):
             parsed = parsed.replace(tzinfo=timezone.utc)
         return parsed
 
+    def _is_new_version(self, doi: str) -> bool:
+        match = self._version_suffix.search(doi)
+        return match is not None and int(match.group(1)) > 1
+
     def _retrieve_raw_papers(self) -> list[dict[str, Any]]:
         cutoff = datetime.now(timezone.utc) - timedelta(hours=self.lookback_hours)
-        categories = self.retriever_config.category
-        if categories is not None:
-            categories = {c.lower() for c in categories}
+        include_new_versions = bool(getattr(self.retriever_config, "include_new_versions", False))
 
         collection = []
         for page in range(self.max_pages):
             result = self._get_json(
                 {
-                    "limit": self.page_size,
-                    "skip": page * self.page_size,
-                    "sort": "PUBLISHED_DATE_DESC",
+                    "filter": f"type:posted-content,from-created-date:{cutoff.date().isoformat()}",
+                    "sort": "created",
+                    "order": "desc",
+                    "rows": self.page_size,
+                    "offset": page * self.page_size,
                 }
             )
-            hits = result.get("itemHits", [])
-            if not hits:
+            items = result.get("message", {}).get("items", [])
+            if not items:
                 break
             reached_cutoff = False
-            for hit in hits:
-                item = hit.get("item", hit)
-                published = self._parse_date(item.get("publishedDate"))
-                if published is None:
-                    logger.warning(f"Skipping chemRxiv item without a valid publishedDate: {item.get('id')}")
+            for item in items:
+                created = self._parse_date(item.get("created", {}).get("date-time"))
+                if created is None:
+                    logger.warning(f"Skipping chemRxiv record without a valid created date: {item.get('DOI')}")
                     continue
-                if published < cutoff:
+                if created < cutoff:
                     reached_cutoff = True
                     break
-                if categories is not None:
-                    item_categories = {c.get("name", "").lower() for c in item.get("categories", [])}
-                    if not item_categories & categories:
-                        continue
+                if not include_new_versions and self._is_new_version(item.get("DOI", "")):
+                    continue
                 collection.append(item)
-            if reached_cutoff or len(hits) < self.page_size:
+            if reached_cutoff or len(items) < self.page_size:
                 break
 
         if len(collection) == 0:
@@ -103,17 +114,32 @@ class ChemrxivRetriever(BaseRetriever):
             collection = collection[:10]
         return collection
 
+    @classmethod
+    def _clean_text(cls, text: str | None) -> str:
+        if not text:
+            return ""
+        text = cls._tag.sub(" ", text)
+        text = html.unescape(text)
+        return re.sub(r"\s+", " ", text).strip()
+
+    @staticmethod
+    def _author_name(author: dict[str, Any]) -> str:
+        if author.get("name"):
+            return author["name"].strip()
+        return f"{author.get('given', '')} {author.get('family', '')}".strip()
+
     def convert_to_paper(self, raw_paper: dict[str, Any]) -> Paper | None:
-        title = raw_paper["title"]
-        authors = [
-            f"{a.get('firstName', '')} {a.get('lastName', '')}".strip()
-            for a in raw_paper.get("authors", [])
-        ]
+        doi = raw_paper["DOI"]
+        titles = raw_paper.get("title") or []
+        title = self._clean_text(titles[0] if titles else "")
+        if not title:
+            return None
+        authors = [self._author_name(a) for a in raw_paper.get("author", [])]
         authors = [a for a in authors if a]
-        abstract = raw_paper.get("abstract", "")
-        url = self.article_url.format(id=raw_paper["id"])
-        pdf_url = (raw_paper.get("asset") or {}).get("original", {}).get("url")
-        full_text = None  # chemRxiv sits behind Cloudflare; do not scrape the PDF
+        abstract = self._clean_text(raw_paper.get("abstract"))
+        url = (raw_paper.get("resource") or {}).get("primary", {}).get("URL") or f"https://doi.org/{doi}"
+        pdf_url = f"https://chemrxiv.org/doi/pdf/{doi}"
+        full_text = None  # chemrxiv.org sits behind Cloudflare; do not scrape the PDF
         return Paper(
             source=self.name,
             title=title,

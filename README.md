@@ -122,7 +122,7 @@ source:
   medrxiv:
     category: null # The categories of target medrxiv papers. Find categories from [here](https://www.medrxiv.org/) Example: ["psychiatry and clinical psychology", "neurology"]
   chemrxiv:
-    category: null # The categories of target chemrxiv papers, or null for all categories. Find categories from [here](https://chemrxiv.org/engage/chemrxiv/public-dashboard). Example: ["Theoretical and Computational Chemistry", "Materials Science"]
+    include_new_versions: false # Whether to include revised versions (v2, v3, ...) of previously posted chemrxiv preprints in addition to new first postings. chemrxiv has no category filter: all new preprints (a few dozen per day) are retrieved via Crossref and left to the reranker. Example: true
 
 email:
   sender: ??? # The email account of the SMTP server that sends you email. Example: abc@qq.com
