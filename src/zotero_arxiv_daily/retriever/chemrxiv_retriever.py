@@ -53,10 +53,10 @@ class ChemrxivRetriever(BaseRetriever):
                 )
                 response.raise_for_status()
                 return response.json()
-            except Exception as e:
+            except Exception as exc:
                 if i == retry_num - 1:
-                    raise e
-                logger.warning(f"Failed to retrieve papers: {str(e)}. Retry in {delay_time} seconds.")
+                    raise
+                logger.warning(f"Failed to retrieve papers: {exc}. Retry in {delay_time} seconds.")
                 sleep(delay_time)
 
     @staticmethod
