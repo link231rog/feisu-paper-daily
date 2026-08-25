@@ -21,11 +21,9 @@ def _request_llm(openai_client: OpenAI, llm_params: dict, messages: list[dict]) 
         return response.choices[0].message.content
 
     if api_mode == "response":
-        if "max_tokens" in generation_kwargs:
-            generation_kwargs.setdefault(
-                "max_output_tokens",
-                generation_kwargs.pop("max_tokens"),
-            )
+        max_tokens = generation_kwargs.pop("max_tokens", None)
+        if max_tokens is not None and "max_output_tokens" not in generation_kwargs:
+            generation_kwargs["max_output_tokens"] = max_tokens
         response = openai_client.responses.create(
             input=messages,
             **generation_kwargs,
