@@ -90,6 +90,7 @@ llm:
   api:
     key: ${oc.env:OPENAI_API_KEY}
     base_url: ${oc.env:OPENAI_API_BASE}
+  api_mode: chat_completion # Or response to use the Responses API.
   generation_kwargs:
     model: gpt-4o-mini
 
@@ -135,8 +136,9 @@ llm:
   api:
     key: ??? # API Key of your LLM API. Example: sk-xxx
     base_url: ??? # API URL of your LLM API. Example: https://api.openai.com/v1
+  api_mode: chat_completion # The LLM API to use. Options: chat_completion or response.
   generation_kwargs:
-  # Arguments for the LLM API. See [here](https://platform.openai.com/docs/api-reference/chat/create) for more details.
+  # Arguments for the selected LLM API.
     max_tokens: 16384
     model: ???
   language: English # Preferred language for the TL;DR. Example: English
