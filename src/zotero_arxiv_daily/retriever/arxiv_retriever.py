@@ -24,6 +24,11 @@ DOWNLOAD_TIMEOUT = (10, 60)
 PDF_EXTRACT_TIMEOUT = 180
 TAR_EXTRACT_TIMEOUT = 180
 
+HTML_TAG_PATTERN = re.compile(
+    r"</?(?:p|a|span|div|b|i|strong|em|br|hr|h[1-6]|ul|ol|li|sub|sup|table|tr|td|th)\b(?:\s+[^>]*)?/?>",
+    flags=re.IGNORECASE,
+)
+
 
 def _download_file(url: str, path: str) -> None:
     with requests.get(url, stream=True, timeout=DOWNLOAD_TIMEOUT) as response:
@@ -111,7 +116,7 @@ def _extract_text_from_tar_worker(source_url: str, paper_id: str, paper_title: s
 
 
 def _clean_abstract(summary_raw: str) -> str:
-    cleaned = re.sub(r"<[^>]+>", " ", summary_raw).strip()
+    cleaned = HTML_TAG_PATTERN.sub(" ", summary_raw).strip()
     cleaned = re.sub(
         r"^(?:arxiv:[^\n]+\n?)?(?:\s*announce type:[^\n]+\n?)?(?:\s*abstract:\s*)?",
         "",
@@ -162,7 +167,18 @@ def _entry_to_arxiv_result(entry: Any) -> ArxivResult:
         t.get("term") for t in tags
         if isinstance(t, dict) and t.get("term")
     ]
-    primary_category = categories[0] if categories else ""
+    # Prefer Atom's authoritative arxiv:primary_category field, with fallback to first category
+    primary_category = ""
+    arxiv_primary = getattr(entry, "arxiv_primary_category", None)
+    if isinstance(arxiv_primary, dict):
+        primary_category = arxiv_primary.get("term", "") or ""
+    elif hasattr(arxiv_primary, "term"):
+        primary_category = getattr(arxiv_primary, "term", "") or ""
+    elif isinstance(arxiv_primary, str):
+        primary_category = arxiv_primary
+
+    if not primary_category and categories:
+        primary_category = categories[0]
 
     published = _parse_entry_time(getattr(entry, "published_parsed", None))
     updated = _parse_entry_time(getattr(entry, "updated_parsed", None))
@@ -210,16 +226,36 @@ class ArxivRetriever(BaseRetriever):
         feed = None
         for attempt in range(retry_num):
             feed = feedparser.parse(rss_url)
-            if hasattr(feed, "feed") and hasattr(feed.feed, "title"):
-                if "Feed error for query" in feed.feed.title:
-                    raise Exception(f"Invalid ARXIV_QUERY: {query}.")
+            status = getattr(feed, "status", None)
+            bozo = getattr(feed, "bozo", False)
+            bozo_exc = getattr(feed, "bozo_exception", None)
+            feed_meta = getattr(feed, "feed", None)
+            title = getattr(feed_meta, "title", "") if feed_meta else ""
+
+            if title and "Feed error for query" in title:
+                raise Exception(f"Invalid ARXIV_QUERY: {query}.")
+
+            # Validate HTTP status and parser state before accepting the feed
+            is_http_error = status is not None and status >= 400
+            is_parser_error = bool(bozo and not getattr(feed, "entries", None))
+            has_valid_feed = bool(feed_meta and title and not is_http_error and not is_parser_error)
+
+            if has_valid_feed:
                 break
+
+            error_msg = f"status={status}" if status is not None else f"bozo_exception={bozo_exc}"
             if attempt < retry_num - 1:
-                logger.warning(f"Failed to fetch arxiv RSS feed, retrying in {delay_time}s...")
+                logger.warning(
+                    f"Failed to fetch valid arxiv RSS feed ({error_msg}), retrying in {delay_time}s..."
+                )
                 sleep(delay_time)
         else:
-            if feed is None or not getattr(feed, "entries", None):
-                raise RuntimeError(f"Failed to fetch arxiv RSS feed from {rss_url}")
+            status = getattr(feed, "status", None)
+            bozo_exc = getattr(feed, "bozo_exception", None)
+            raise RuntimeError(
+                f"Failed to fetch valid arxiv RSS feed from {rss_url} after {retry_num} attempts "
+                f"(status={status}, bozo_exception={bozo_exc})"
+            )
 
         allowed_announce_types = {"new", "cross"} if include_cross_list else {"new"}
         target_entries = [
