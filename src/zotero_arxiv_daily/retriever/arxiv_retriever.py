@@ -28,6 +28,10 @@ HTML_TAG_PATTERN = re.compile(
     r"</?(?:p|a|span|div|b|i|strong|em|br|hr|h[1-6]|ul|ol|li|sub|sup|table|tr|td|th)\b(?:\s+[^>]*)?/?>",
     flags=re.IGNORECASE,
 )
+ARXIV_HEADER_PATTERN = re.compile(
+    r"^(?:arxiv:\s*\S+(?:\s+\[[^\]]*\])?)?\s*(?:announce\s+type:\s*[\w-]+)?\s*(?:abstract:\s*)?",
+    flags=re.IGNORECASE,
+)
 
 
 def _download_file(url: str, path: str) -> None:
@@ -117,12 +121,7 @@ def _extract_text_from_tar_worker(source_url: str, paper_id: str, paper_title: s
 
 def _clean_abstract(summary_raw: str) -> str:
     cleaned = HTML_TAG_PATTERN.sub(" ", summary_raw).strip()
-    cleaned = re.sub(
-        r"^(?:arxiv:[^\n]+\n?)?(?:\s*announce type:[^\n]+\n?)?(?:\s*abstract:\s*)?",
-        "",
-        cleaned,
-        flags=re.IGNORECASE,
-    ).strip()
+    cleaned = ARXIV_HEADER_PATTERN.sub("", cleaned).strip()
     cleaned = re.sub(r"^abstract:\s*", "", cleaned, flags=re.IGNORECASE).strip()
     return " ".join(cleaned.split())
 
@@ -183,7 +182,7 @@ def _entry_to_arxiv_result(entry: Any) -> ArxivResult:
     published = _parse_entry_time(getattr(entry, "published_parsed", None))
     updated = _parse_entry_time(getattr(entry, "updated_parsed", None))
     comment = getattr(entry, "arxiv_comment", "") or ""
-    journal_ref = getattr(entry, "arxiv_journal_ref", "") or ""
+    journal_ref = getattr(entry, "arxiv_journal_reference", "") or getattr(entry, "arxiv_journal_ref", "") or ""
     doi = getattr(entry, "arxiv_doi", "") or ""
 
     links = [
