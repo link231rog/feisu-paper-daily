@@ -3,6 +3,7 @@ import arxiv
 from arxiv import Result as ArxivResult
 from ..protocol import Paper
 from ..utils import extract_markdown_from_pdf, extract_tex_code_from_tar
+import calendar
 from datetime import datetime, timezone
 import multiprocessing
 import os
@@ -110,14 +111,14 @@ def _extract_text_from_tar_worker(source_url: str, paper_id: str, paper_title: s
 
 
 def _clean_abstract(summary_raw: str) -> str:
+    cleaned = re.sub(r"<[^>]+>", " ", summary_raw).strip()
     cleaned = re.sub(
-        r"^arxiv:[^\n]+\n(?:announce type:[^\n]+\n)?abstract:\s*",
+        r"^(?:arxiv:[^\n]+\n?)?(?:\s*announce type:[^\n]+\n?)?(?:\s*abstract:\s*)?",
         "",
-        summary_raw.strip(),
+        cleaned,
         flags=re.IGNORECASE,
     ).strip()
-    if "Abstract:" in cleaned:
-        cleaned = cleaned.split("Abstract:", 1)[1].strip()
+    cleaned = re.sub(r"^abstract:\s*", "", cleaned, flags=re.IGNORECASE).strip()
     return " ".join(cleaned.split())
 
 
@@ -137,7 +138,7 @@ def _extract_authors(entry: Any) -> list[ArxivResult.Author]:
 def _parse_entry_time(struct_time: Any) -> datetime:
     if struct_time:
         try:
-            return datetime.fromtimestamp(time.mktime(struct_time), tz=timezone.utc)
+            return datetime.fromtimestamp(calendar.timegm(struct_time), tz=timezone.utc)
         except Exception:
             pass
     return datetime.min.replace(tzinfo=timezone.utc)
@@ -154,6 +155,7 @@ def _entry_to_arxiv_result(entry: Any) -> ArxivResult:
 
     link = getattr(entry, "link", "") or f"https://arxiv.org/abs/{paper_id}"
     pdf_url = f"https://arxiv.org/pdf/{paper_id}"
+    source_url = f"https://arxiv.org/src/{paper_id}"
 
     tags = getattr(entry, "tags", []) or []
     categories = [
@@ -168,7 +170,13 @@ def _entry_to_arxiv_result(entry: Any) -> ArxivResult:
     journal_ref = getattr(entry, "arxiv_journal_ref", "") or ""
     doi = getattr(entry, "arxiv_doi", "") or ""
 
-    result = ArxivResult(
+    links = [
+        ArxivResult.Link(href=link, rel="alternate"),
+        ArxivResult.Link(href=pdf_url, title="pdf", rel="related"),
+        ArxivResult.Link(href=source_url, title="source", rel="related"),
+    ]
+
+    return ArxivResult(
         entry_id=link,
         updated=updated,
         published=published,
@@ -180,10 +188,8 @@ def _entry_to_arxiv_result(entry: Any) -> ArxivResult:
         doi=doi,
         primary_category=primary_category,
         categories=categories,
-        links=[ArxivResult.Link(href=pdf_url, title="pdf")],
+        links=links,
     )
-    result.pdf_url = pdf_url
-    return result
 
 
 @register_retriever("arxiv")
