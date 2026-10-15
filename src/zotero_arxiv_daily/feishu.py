@@ -222,7 +222,7 @@ class FeishuClient:
                 }
             })
 
-            # Todo block: [ ] 确认精读入库
+            # Todo block 1: [ ] 确认精读入库
             children.append({
                 "block_type": 17,
                 "todo": {
@@ -231,6 +231,20 @@ class FeishuClient:
                         {
                             "text_run": {
                                 "content": "确认精读入库"
+                            }
+                        }
+                    ]
+                }
+            })
+            # Todo block 2: [ ] 移出待选 (不再推荐)
+            children.append({
+                "block_type": 17,
+                "todo": {
+                    "style": {"done": False},
+                    "elements": [
+                        {
+                            "text_run": {
+                                "content": "移出待选 (不再推荐)"
                             }
                         }
                     ]
@@ -296,6 +310,23 @@ class FeishuClient:
                         "elements": [
                             {"text_run": {"content": f"{idx}. {tags_str} {item.title}{stars_str}"}}
                         ]
+                    }
+                })
+
+                # Todo 1: Confirm ingest
+                children.append({
+                    "block_type": 17,
+                    "todo": {
+                        "style": {"done": False},
+                        "elements": [{"text_run": {"content": "确认入库 (沉淀使用说明)"}}]
+                    }
+                })
+                # Todo 2: Discard / do not recommend
+                children.append({
+                    "block_type": 17,
+                    "todo": {
+                        "style": {"done": False},
+                        "elements": [{"text_run": {"content": "移出待选 (不再推荐)"}}]
                     }
                 })
 
@@ -539,8 +570,67 @@ class FeishuClient:
             logger.warning(f"Failed to scan daily reports in Wiki: {exc}")
         return all_checked
 
+    def fetch_unreviewed_cards_from_wiki(self) -> list[dict[str, Any]]:
+        """Discovers unreviewed (pending) candidate cards across daily reports in the Wiki space."""
+        if not self.wiki_space_id or not self.daily_parent_node_token or self.dry_run:
+            return []
+
+        unreviewed_cards: list[dict[str, Any]] = []
+        try:
+            res = self._call_api(
+                "GET",
+                f"/wiki/v2/spaces/{self.wiki_space_id}/nodes",
+                params={"parent_node_token": str(self.daily_parent_node_token)}
+            )
+            reports = res.get("items", [])
+            for r in reports:
+                doc_id = r.get("obj_token")
+                if not doc_id:
+                    continue
+                blocks_res = self._call_api("GET", f"/docx/v1/documents/{doc_id}/blocks")
+                items = blocks_res.get("items", [])
+
+                current_card = None
+                for item in items:
+                    b_type = item.get("block_type")
+                    if b_type in (4, 5):
+                        h_key = "heading2" if b_type == 4 else "heading3"
+                        elements = item.get(h_key, {}).get("elements", [])
+                        raw_heading = "".join(el.get("text_run", {}).get("content", "") for el in elements).strip()
+                        if not re.match(r"^[一二三四五六七八九十]+、", raw_heading):
+                            if current_card and not current_card["has_done"]:
+                                unreviewed_cards.append(current_card)
+                            current_card = {
+                                "title": re.sub(r"^\d+\.\s*", "", raw_heading).strip(),
+                                "raw_heading": raw_heading,
+                                "document_id": doc_id,
+                                "url": "",
+                                "affiliations": [],
+                                "sources": [],
+                                "tldr": "",
+                                "has_done": False,
+                            }
+                    elif b_type == 17 and current_card:
+                        if item.get("todo", {}).get("style", {}).get("done", False):
+                            current_card["has_done"] = True
+                    elif b_type == 2 and current_card:
+                        full_text = "".join(el.get("text_run", {}).get("content", "") for el in item.get("text", {}).get("elements", []))
+                        if "原文链接:" in full_text or "原文/开源主页:" in full_text or "官方/开源主页:" in full_text:
+                            url_match = re.search(r"https?://\S+", full_text)
+                            if url_match:
+                                current_card["url"] = url_match.group(0).rstrip(" \n\r")
+                        if "TL;DR:" in full_text:
+                            current_card["tldr"] = full_text.replace("TL;DR:", "").strip()
+
+                if current_card and not current_card["has_done"]:
+                    unreviewed_cards.append(current_card)
+
+        except Exception as exc:
+            logger.warning(f"Failed to fetch unreviewed cards from Wiki: {exc}")
+        return unreviewed_cards
+
     def create_reading_note(self, paper: Paper, sections: Optional[dict[str, str]] = None) -> str:
-        """Creates a structured deep reading note under the Wiki notes parent node."""
+        """Creates a structured deep reading note or AI tool / skill note under the Wiki notes parent node."""
         if self.dry_run:
             return "https://feishu.cn/docx/dry_run_note"
 
@@ -588,72 +678,139 @@ class FeishuClient:
         date_str = paper.published_date.strftime("%Y-%m-%d") if paper.published_date else today
         venue_str = getattr(paper, "venue", None) or "Preprint"
 
-        core_summary = sections.get("core_summary") or paper.tldr_zh or paper.tldr or paper.abstract[:200]
-        motivation = sections.get("motivation") or (
-            "针对大模型智能体在复杂环境中推理与记忆管理效率低下的痛点，探索自适应机制。"
-        )
-        method = sections.get("method") or (
-            "提出强化学习驱动的动态策略，在极低监督样本下通过奖励机制探索最优状态转移与决策流转。"
-        )
-        experiments = sections.get("experiments") or (
-            "在标准基准评测上展现了显著优于静态基准的准确度与更优的推理资源利用率。"
-        )
-        takeaways = sections.get("takeaways") or (
-            "1. 适用于自主智能体工作流与长程记忆持久化。\n2. 机制具备跨领域泛化潜力。"
+        is_app_note = bool(
+            sections.get("scenarios_and_triggers")
+            or sections.get("quick_start")
+            or sections.get("usage_examples")
+            or ("github.com" in (paper.url or "").lower())
         )
 
-        blocks: list[dict[str, Any]] = [
-            {
-                "block_type": 2,
-                "text": {
-                    "elements": [
-                        {"text_run": {"content": f"来源: [{src_str}] | 日期: {date_str} | 录用会议/期刊: {venue_str}\n"}},
-                        {"text_run": {"content": f"发表单位/实验室: {affil_str}\n"}},
-                        {"text_run": {"content": f"原文直达: {paper.url or 'N/A'}\n"}},
-                    ]
-                }
-            },
-            {
-                "block_type": 4,
-                "heading2": {"elements": [{"text_run": {"content": "一、核心一句话总结"}}]}
-            },
-            {
-                "block_type": 2,
-                "text": {"elements": [{"text_run": {"content": f"{core_summary}\n"}}]}
-            },
-            {
-                "block_type": 4,
-                "heading2": {"elements": [{"text_run": {"content": "二、研究动机与问题背景"}}]}
-            },
-            {
-                "block_type": 2,
-                "text": {"elements": [{"text_run": {"content": f"{motivation}\n"}}]}
-            },
-            {
-                "block_type": 4,
-                "heading2": {"elements": [{"text_run": {"content": "三、核心架构与机制设计"}}]}
-            },
-            {
-                "block_type": 2,
-                "text": {"elements": [{"text_run": {"content": f"{method}\n"}}]}
-            },
-            {
-                "block_type": 4,
-                "heading2": {"elements": [{"text_run": {"content": "四、关键实验与结论"}}]}
-            },
-            {
-                "block_type": 2,
-                "text": {"elements": [{"text_run": {"content": f"{experiments}\n"}}]}
-            },
-            {
-                "block_type": 4,
-                "heading2": {"elements": [{"text_run": {"content": "五、落地启示与思考"}}]}
-            },
-            {
-                "block_type": 2,
-                "text": {"elements": [{"text_run": {"content": f"{takeaways}\n"}}]}
-            },
-        ]
+        if is_app_note:
+            overview = sections.get("overview") or sections.get("core_summary") or paper.tldr_zh or paper.tldr or paper.abstract[:200]
+            scenarios = sections.get("scenarios_and_triggers") or "适用于自主智能体工作流执行、工具调用与开发环境自动化。"
+            quick_start = sections.get("quick_start") or f"1. 获取项目: git clone {paper.url or 'N/A'}\n2. 配置前置依赖与必要环境变量。"
+            usage_examples = sections.get("usage_examples") or f"# 详细使用与调用示例请参阅仓库主页:\n# {paper.url or 'N/A'}"
+            tips = sections.get("key_features_and_tips") or "1. 遵循工具入参调用规范。\n2. 注意运行环境版本兼容性。"
+
+            blocks: list[dict[str, Any]] = [
+                {
+                    "block_type": 2,
+                    "text": {
+                        "elements": [
+                            {"text_run": {"content": f"项目类型: AI 应用 / 开源项目 / Agent Skill\n"}},
+                            {"text_run": {"content": f"来源: [{src_str}] | 项目主页: {paper.url or 'N/A'}\n"}},
+                            {"text_run": {"content": f"收录日期: {date_str}\n"}},
+                        ]
+                    }
+                },
+                {
+                    "block_type": 4,
+                    "heading2": {"elements": [{"text_run": {"content": "一、项目定位与核心功能"}}]}
+                },
+                {
+                    "block_type": 2,
+                    "text": {"elements": [{"text_run": {"content": f"{overview}\n"}}]}
+                },
+                {
+                    "block_type": 4,
+                    "heading2": {"elements": [{"text_run": {"content": "二、适用场景与触发时机 (When to Use / Triggers)"}}]}
+                },
+                {
+                    "block_type": 2,
+                    "text": {"elements": [{"text_run": {"content": f"{scenarios}\n"}}]}
+                },
+                {
+                    "block_type": 4,
+                    "heading2": {"elements": [{"text_run": {"content": "三、环境依赖与快速上手 (Installation & Setup)"}}]}
+                },
+                {
+                    "block_type": 2,
+                    "text": {"elements": [{"text_run": {"content": f"{quick_start}\n"}}]}
+                },
+                {
+                    "block_type": 4,
+                    "heading2": {"elements": [{"text_run": {"content": "四、具体使用方式与调用示例 (Usage & Examples)"}}]}
+                },
+                {
+                    "block_type": 2,
+                    "text": {"elements": [{"text_run": {"content": f"{usage_examples}\n"}}]}
+                },
+                {
+                    "block_type": 4,
+                    "heading2": {"elements": [{"text_run": {"content": "五、核心配置与注意事项 (Configuration & Tips)"}}]}
+                },
+                {
+                    "block_type": 2,
+                    "text": {"elements": [{"text_run": {"content": f"{tips}\n"}}]}
+                },
+            ]
+        else:
+            core_summary = sections.get("core_summary") or paper.tldr_zh or paper.tldr or paper.abstract[:200]
+            motivation = sections.get("motivation") or (
+                "针对大模型智能体在复杂环境中推理与记忆管理效率低下的痛点，探索自适应机制。"
+            )
+            method = sections.get("method") or (
+                "提出强化学习驱动的动态策略，在极低监督样本下通过奖励机制探索最优状态转移与决策流转。"
+            )
+            experiments = sections.get("experiments") or (
+                "在标准基准评测上展现了显著优于静态基准的准确度与更优的推理资源利用率。"
+            )
+            takeaways = sections.get("takeaways") or (
+                "1. 适用于自主智能体工作流与长程记忆持久化。\n2. 机制具备跨领域泛化潜力。"
+            )
+
+            blocks = [
+                {
+                    "block_type": 2,
+                    "text": {
+                        "elements": [
+                            {"text_run": {"content": f"来源: [{src_str}] | 日期: {date_str} | 录用会议/期刊: {venue_str}\n"}},
+                            {"text_run": {"content": f"发表单位/实验室: {affil_str}\n"}},
+                            {"text_run": {"content": f"原文直达: {paper.url or 'N/A'}\n"}},
+                        ]
+                    }
+                },
+                {
+                    "block_type": 4,
+                    "heading2": {"elements": [{"text_run": {"content": "一、核心一句话总结"}}]}
+                },
+                {
+                    "block_type": 2,
+                    "text": {"elements": [{"text_run": {"content": f"{core_summary}\n"}}]}
+                },
+                {
+                    "block_type": 4,
+                    "heading2": {"elements": [{"text_run": {"content": "二、研究动机与问题背景"}}]}
+                },
+                {
+                    "block_type": 2,
+                    "text": {"elements": [{"text_run": {"content": f"{motivation}\n"}}]}
+                },
+                {
+                    "block_type": 4,
+                    "heading2": {"elements": [{"text_run": {"content": "三、核心架构与机制设计"}}]}
+                },
+                {
+                    "block_type": 2,
+                    "text": {"elements": [{"text_run": {"content": f"{method}\n"}}]}
+                },
+                {
+                    "block_type": 4,
+                    "heading2": {"elements": [{"text_run": {"content": "四、关键实验与结论"}}]}
+                },
+                {
+                    "block_type": 2,
+                    "text": {"elements": [{"text_run": {"content": f"{experiments}\n"}}]}
+                },
+                {
+                    "block_type": 4,
+                    "heading2": {"elements": [{"text_run": {"content": "五、落地启示与思考"}}]}
+                },
+                {
+                    "block_type": 2,
+                    "text": {"elements": [{"text_run": {"content": f"{takeaways}\n"}}]}
+                },
+            ]
 
         self._call_api(
             "POST",

@@ -26,10 +26,12 @@ class PaperStore:
                     data["pushed"] = {}
                 if "ingested" not in data:
                     data["ingested"] = {}
+                if "discarded" not in data:
+                    data["discarded"] = {}
                 return data
             except (json.JSONDecodeError, OSError):
                 pass
-        return {"version": 1, "pushed": {}, "ingested": {}}
+        return {"version": 1, "pushed": {}, "ingested": {}, "discarded": {}}
 
     def save(self) -> None:
         if not self.store_path:
@@ -117,7 +119,14 @@ class PaperStore:
 
     def filter_already_pushed(self, items: list[Any]) -> list[Any]:
         pushed = self.data["pushed"]
-        return [p for p in items if p.dedup_key() not in pushed]
+        discarded = self.data.get("discarded", {})
+        ingested = self.data.get("ingested", {})
+        return [
+            p for p in items
+            if p.dedup_key() not in pushed
+            and p.dedup_key() not in discarded
+            and p.dedup_key() not in ingested
+        ]
 
     def mark_pushed(self, items: list[Any], pushed_at: Optional[datetime] = None) -> None:
         ts = (pushed_at or datetime.now()).isoformat()
@@ -142,6 +151,24 @@ class PaperStore:
     def filter_already_ingested(self, items: list[Any]) -> list[Any]:
         ingested = self.data.get("ingested", {})
         return [p for p in items if (p.dedup_key() if hasattr(p, "dedup_key") else str(p)) not in ingested]
+
+    def is_discarded(self, item_or_key: Any) -> bool:
+        key = item_or_key.dedup_key() if hasattr(item_or_key, "dedup_key") else str(item_or_key)
+        return key in self.data.get("discarded", {})
+
+    def mark_discarded(self, item_or_key: Any, metadata: Optional[dict[str, Any]] = None) -> None:
+        key = item_or_key.dedup_key() if hasattr(item_or_key, "dedup_key") else str(item_or_key)
+        if "discarded" not in self.data:
+            self.data["discarded"] = {}
+        entry: dict[str, Any] = {"discarded_at": datetime.now().isoformat()}
+        if metadata:
+            entry.update(metadata)
+        self.data["discarded"][key] = entry
+        self.save()
+
+    def filter_discarded(self, items: list[Any]) -> list[Any]:
+        discarded = self.data.get("discarded", {})
+        return [p for p in items if (p.dedup_key() if hasattr(p, "dedup_key") else str(p)) not in discarded]
 
 
 if __name__ == "__main__":
