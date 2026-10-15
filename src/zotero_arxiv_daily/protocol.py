@@ -283,3 +283,24 @@ class TrendingItem:
             return f"news:{clean_url}"
         clean_title = re.sub(r'[^a-z0-9]', '', self.title.lower())
         return f"news_title:{clean_title}"
+
+
+def map_to_core_pillars(tags: Optional[list[str]] = None, title: str = "", text: str = "") -> list[str]:
+    """Strictly maps arbitrary keywords/tags and context into the user's 4 core research pillars:
+    - Memory (Agent Memory)
+    - DecisionModel (Decision Model)
+    - MAS (Multi-Agent System)
+    - RL (Reinforcement Learning)
+    """
+    tags = tags or []
+    corpus = f"{' '.join(tags)} {title} {text}".lower()
+    matched = []
+    if any(k in corpus for k in ["memory", "episodic", "working memory", "memgpt", "long-context"]):
+        matched.append("Memory")
+    if any(k in corpus for k in ["decision", "decisionmodel", "autothink", "deliberat", "world model", "planning", "policy", "systemone"]):
+        matched.append("DecisionModel")
+    if any(k in corpus for k in ["multi-agent", "multiagent", "mas", "swarm", "collaboration", "adversarial", "agent"]):
+        matched.append("MAS")
+    if any(k in corpus for k in ["reinforcement learning", "reinforcementlearning", "rl", "ppo", "grpo", "reward", "policy gradient", "actor-critic"]):
+        matched.append("RL")
+    return matched or ["DecisionModel"]

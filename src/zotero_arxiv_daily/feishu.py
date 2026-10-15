@@ -8,7 +8,7 @@ import requests
 from loguru import logger
 from omegaconf import DictConfig
 
-from .protocol import Paper, CorpusPaper, TrendingItem
+from .protocol import Paper, CorpusPaper, TrendingItem, map_to_core_pillars
 
 FEISHU_BASE_URL = "https://open.feishu.cn/open-apis"
 
@@ -631,8 +631,8 @@ class FeishuClient:
         except Exception:
             next_idx = 1
 
-        tags = tags or ["Agent", "Research"]
-        tags_str = " ".join(f"[#{t}]" for t in tags)
+        core_pillars = map_to_core_pillars(tags, title=paper.title, text=paper.abstract or "")
+        tags_str = " ".join(f"[#{p}]" for p in core_pillars)
         affil_str = ", ".join(paper.affiliations) if paper.affiliations else "N/A"
         summary = core_summary or paper.tldr_zh or paper.tldr or (paper.abstract[:150] + "...")
 
@@ -698,18 +698,8 @@ class FeishuClient:
             return
 
         # 2. Determine matching pillars among the 4 core research directions
-        text_to_match = f"{paper.title} {paper.abstract} {' '.join(tags or [])}".lower()
-        matched_pillars = []
-        if any(k in text_to_match for k in ["memory", "episodic", "working memory", "memgpt"]):
-            matched_pillars.append("#Memory")
-        if any(k in text_to_match for k in ["decision", "autothink", "deliberat", "world model", "planning"]):
-            matched_pillars.append("#DecisionModel")
-        if any(k in text_to_match for k in ["multi-agent", "multiagent", "mas", "swarm", "collaboration", "adversarial"]):
-            matched_pillars.append("#MAS")
-        if any(k in text_to_match for k in ["reinforcement learning", "rl", "ppo", "grpo", "reward", "policy gradient"]):
-            matched_pillars.append("#RL")
-
-        tags_str = " ".join(matched_pillars) if matched_pillars else (" ".join(f"[#{t}]" for t in tags) if tags else "[#Paper]")
+        core_pillars = map_to_core_pillars(tags, title=paper.title, text=paper.abstract or "")
+        tags_str = " ".join(f"[#{p}]" for p in core_pillars)
         affil_str = ", ".join(paper.affiliations) if paper.affiliations else "N/A"
         summary = core_summary or paper.tldr_zh or paper.tldr or (paper.abstract[:150] + "...")
         full_title = paper.title_with_venue()
