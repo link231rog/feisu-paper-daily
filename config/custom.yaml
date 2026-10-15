@@ -1,13 +1,16 @@
 topics:
   - name: "Agent Memory"
-    keywords: ["agent memory", "memory-augmented agent", "memory management", "long-horizon memory", "episodic memory", "RL memory", "Memory-R1"]
+    keywords: ["agent memory", "memory-augmented agent", "memory management", "long-horizon memory", "episodic memory", "RL memory", "Memory-R1", "memgpt"]
     description: "Active memory management (ADD/UPDATE/DELETE), memory distillation, reinforcement learning for agent memory, and long-horizon dialog consistency."
   - name: "Decision Model"
     keywords: ["decision model", "deliberative reasoning", "autothink", "test-time compute", "world model decision", "agent planning", "policy optimization"]
     description: "Deliberative decision-making, test-time reasoning search, calibrated decision policies, and world model planning for autonomous agents."
-  - name: "Agent Alignment and Safety"
-    keywords: ["LLM safety", "agent alignment", "jailbreak defense", "adversarial attack", "agent safety"]
-    description: "Techniques for aligning autonomous LLM agents, detecting vulnerabilities, and securing multi-agent systems."
+  - name: "Multi-Agent System (MAS)"
+    keywords: ["multi-agent system", "multi-agent", "MAS", "agent collaboration", "adversarial agents", "agent communication", "cooperative AI"]
+    description: "Multi-agent cooperation, role specialization, communication protocols, adversarial co-evolution, and multi-agent coordination frameworks."
+  - name: "Reinforcement Learning (RL)"
+    keywords: ["reinforcement learning", "RL", "PPO", "GRPO", "outcome-driven reward", "policy gradient", "agent RL", "actor-critic"]
+    description: "Outcome-driven reward mechanisms, reinforcement learning from scratch or minimal seed data, test-time policy search, and agent self-alignment."
 
 zotero:
   user_id: ${oc.env:ZOTERO_ID,null}
@@ -36,7 +39,7 @@ source:
   huggingface:
     limit: 30
   semantic_scholar:
-    queries: ["agent memory", "decision model agent", "reinforcement learning agent memory"]
+    queries: ["agent memory", "decision model agent", "multi-agent system MAS", "reinforcement learning agent memory"]
     limit_per_query: 10
     api_key: ${oc.env:SEMANTIC_SCHOLAR_API_KEY,null}
 
@@ -67,7 +70,7 @@ news_and_trends:
   min_github_stars: 50
   github:
     enabled: true
-    topics: ["ai-agent", "agent-memory", "decision-model", "llm-reasoning"]
+    topics: ["ai-agent", "agent-memory", "decision-model", "multi-agent-systems", "reinforcement-learning"]
     days_back: 7
   news:
     enabled: true
@@ -77,8 +80,10 @@ news_and_trends:
       keywords: ["memory", "episodic memory", "working memory", "memgpt", "long-context", "memory management", "memory-r1"]
     - name: "DecisionModel"
       keywords: ["decision", "decision model", "planning", "autothink", "reasoning", "policy", "world model"]
-    - name: "Agent"
-      keywords: ["agent", "multi-agent", "workflow", "tool-use", "browser-agent", "autonomous"]
+    - name: "MAS"
+      keywords: ["multi-agent", "multiagent", "cooperative agent", "swarm", "agent communication", "adversarial agent", "mas"]
+    - name: "RL"
+      keywords: ["reinforcement learning", "ppo", "grpo", "reward", "policy gradient", "q-learning", "actor-critic"]
     - name: "OpenSource"
       keywords: ["open-weights", "weights", "llama", "deepseek", "vllm", "sglang", "ollama"]
     - name: "Breaking"

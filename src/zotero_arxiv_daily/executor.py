@@ -250,6 +250,12 @@ class Executor:
                     tags=tags,
                     core_summary=sections.get("core_summary", "")
                 )
+                client.append_to_tag_graph(
+                    paper,
+                    note_url=note_url,
+                    tags=tags,
+                    core_summary=sections.get("core_summary", "")
+                )
 
                 self.paper_store.mark_ingested(
                     paper,

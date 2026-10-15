@@ -256,3 +256,50 @@ def test_feishu_fetch_checked_paper_details(monkeypatch):
     assert details[0]["sources"] == ["arXiv"]
     assert "Reinforcement learning" in details[0]["tldr"]
 
+
+def test_feishu_append_to_tag_graph(monkeypatch):
+    cfg = OmegaConf.create({
+        "app_id": "test",
+        "app_secret": "test",
+        "tag_graph_node_token": "node_tag_graph",
+    })
+    client = FeishuClient(cfg)
+    client._tenant_token = "mock"
+
+    calls = []
+
+    def mock_request(method, url, *args, **kwargs):
+        calls.append((method, url, kwargs.get("json", {})))
+        resp = MagicMock()
+        resp.status_code = 200
+        if "get_node" in url:
+            resp.json.return_value = {"code": 0, "data": {"node": {"obj_token": "doc_tag_graph"}}}
+        else:
+            resp.json.return_value = {"code": 0, "data": {}}
+        resp.raise_for_status = MagicMock()
+        return resp
+
+    monkeypatch.setattr("requests.request", mock_request)
+
+    paper = Paper(
+        source="arxiv",
+        title="Memory-R1: RL for Agent Memory",
+        authors=["Alice"],
+        abstract="Reinforcement learning for multi-agent memory decision.",
+        url="https://arxiv.org/abs/2508.19828",
+        venue="ACL 2026",
+    )
+
+    client.append_to_tag_graph(paper, note_url="https://feishu.cn/wiki/test_note", tags=["Memory", "RL"])
+    assert len(calls) == 2
+    # Verify the posted blocks include the matched pillars
+    post_call = calls[1]
+    assert "POST" == post_call[0]
+    assert "doc_tag_graph" in post_call[1]
+    children = post_call[2]["children"]
+    heading = children[0]["heading3"]["elements"][0]["text_run"]["content"]
+    assert "#Memory" in heading
+    assert "#RL" in heading
+    assert "ACL 2026" in heading
+
+
