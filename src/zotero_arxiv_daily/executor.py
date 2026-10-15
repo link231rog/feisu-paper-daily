@@ -390,6 +390,8 @@ class Executor:
                         "tags": tags,
                     }
                 )
+                if doc_id and card_block_ids:
+                    client.delete_document_blocks(doc_id, card_block_ids)
                 ingested_urls.append(note_url)
                 logger.info(f"Successfully ingested '{title}' into Wiki Knowledge Base: {note_url}")
 
@@ -545,39 +547,8 @@ class Executor:
                 from .feishu import FeishuClient
                 client = FeishuClient(feishu_cfg)
 
-                # Roll-over: fetch unreviewed candidates from previous daily reports that were neither ingested nor discarded
-                try:
-                    unreviewed = client.fetch_unreviewed_cards_from_wiki()
-                    valid_unreviewed = [
-                        u for u in unreviewed
-                        if not self.paper_store.is_ingested(u["title"])
-                        and not self.paper_store.is_discarded(u["title"])
-                        and (not u.get("url") or (not self.paper_store.is_ingested(u["url"]) and not self.paper_store.is_discarded(u["url"])))
-                    ]
-                    if valid_unreviewed:
-                        logger.info(f"Rolling over {len(valid_unreviewed)} unreviewed candidate cards into today's digest.")
-                        existing_titles = {p.title.lower() for p in reranked_papers}
-                        for u in valid_unreviewed:
-                            if u["title"].lower() in existing_titles:
-                                continue
-                            rolled_paper = Paper(
-                                source=u.get("sources", ["carry-over"])[0] if u.get("sources") else "carry-over",
-                                title=u["title"],
-                                authors=[],
-                                abstract=u.get("tldr", ""),
-                                url=u.get("url", ""),
-                                affiliations=u.get("affiliations", []),
-                                sources=u.get("sources", ["待定滚存"]),
-                                tldr=u.get("tldr", ""),
-                                tldr_zh=u.get("tldr", ""),
-                            )
-                            reranked_papers.append(rolled_paper)
-                            existing_titles.add(u["title"].lower())
-                except Exception as roll_exc:
-                    logger.warning(f"Notice during unreviewed cards carry-over: {roll_exc}")
-
                 doc_url = client.create_or_update_daily_report(reranked_papers, trending_items=trending_items)
-                logger.info(f"Feishu daily report published successfully: {doc_url}")
+                logger.info(f"Feishu candidate document updated successfully: {doc_url}")
                 delivered = True
             except Exception as exc:
                 logger.error(f"Failed to publish Feishu daily report: {exc}")
