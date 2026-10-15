@@ -28,7 +28,11 @@ class FeishuClient:
         self.notes_parent_node_token = config.get("notes_parent_node_token")
         self.master_index_node_token = config.get("master_index_node_token")
         self.tag_graph_node_token = config.get("tag_graph_node_token")
-        self.dry_run = config.get("dry_run", False)
+        dry_run_val = config.get("dry_run", False)
+        if isinstance(dry_run_val, str):
+            self.dry_run = dry_run_val.strip().lower() in ("true", "1", "yes")
+        else:
+            self.dry_run = bool(dry_run_val)
         self._tenant_token: Optional[str] = None
         self._has_lark_cli = shutil.which("lark-cli") is not None
 
