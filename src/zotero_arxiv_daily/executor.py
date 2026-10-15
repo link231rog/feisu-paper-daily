@@ -536,7 +536,11 @@ class Executor:
 
         # 1. Feishu Delivery (if configured)
         feishu_cfg = self.config.get("feishu")
-        if feishu_cfg and feishu_cfg.get("app_id") and not feishu_cfg.get("dry_run", False):
+        is_feishu_dry_run = feishu_cfg.get("dry_run", False) if feishu_cfg else False
+        if isinstance(is_feishu_dry_run, str):
+            is_feishu_dry_run = is_feishu_dry_run.strip().lower() in ("true", "1", "yes")
+
+        if feishu_cfg and feishu_cfg.get("app_id") and not is_feishu_dry_run:
             try:
                 from .feishu import FeishuClient
                 client = FeishuClient(feishu_cfg)
@@ -595,7 +599,7 @@ class Executor:
             delivered = True
 
         # Mark as pushed once successfully delivered or in local dry-run
-        if delivered or self.config.get("feishu", {}).get("dry_run", False) or not email_cfg or email_cfg.get("sender") is None:
+        if delivered or is_feishu_dry_run or not email_cfg or email_cfg.get("sender") is None:
             if not self.config.get("executor", {}).get("debug", False):
                 if reranked_papers:
                     self.paper_store.mark_pushed(reranked_papers)

@@ -584,13 +584,16 @@ class FeishuClient:
                     }
                 })
 
-        # Append blocks to the document
-        logger.info(f"Writing {len(children)} blocks to document {doc_id}...")
-        self._call_api(
-            "POST",
-            f"/docx/v1/documents/{doc_id}/blocks/{doc_id}/children",
-            data={"children": children, "index": 0}
-        )
+        # Append blocks to the document in batches of 50 (Feishu API max batch limit is 50)
+        logger.info(f"Writing {len(children)} blocks to document {doc_id} in batches of 50...")
+        batch_size = 50
+        for i in range(0, len(children), batch_size):
+            chunk = children[i : i + batch_size]
+            self._call_api(
+                "POST",
+                f"/docx/v1/documents/{doc_id}/blocks/{doc_id}/children",
+                data={"children": chunk, "index": -1}
+            )
 
         doc_url = doc_url or f"https://feishu.cn/docx/{doc_id}"
         logger.info(f"Feishu daily report published successfully: {doc_url}")
@@ -1075,11 +1078,15 @@ class FeishuClient:
                 },
             ])
 
-        self._call_api(
-            "POST",
-            f"/docx/v1/documents/{doc_id}/blocks/{doc_id}/children",
-            data={"children": blocks, "index": 0}
-        )
+        # Append blocks in batches of 50 to respect Feishu Docx API limit
+        batch_size = 50
+        for i in range(0, len(blocks), batch_size):
+            chunk = blocks[i : i + batch_size]
+            self._call_api(
+                "POST",
+                f"/docx/v1/documents/{doc_id}/blocks/{doc_id}/children",
+                data={"children": chunk, "index": -1}
+            )
         logger.info(f"Published reading note successfully: {note_url}")
         return note_url
 

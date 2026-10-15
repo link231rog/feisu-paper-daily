@@ -69,7 +69,7 @@ feishu:
   notes_parent_node_token: ${oc.env:FEISHU_NOTES_PARENT_NODE_TOKEN,IwxFw1Ioui3TpBkrtsMcEbqanIb}
   master_index_node_token: ${oc.env:FEISHU_MASTER_INDEX_NODE_TOKEN,M7oBwK0LuioCR4kzSNVcj8ACneb}
   tag_graph_node_token: ${oc.env:FEISHU_TAG_GRAPH_NODE_TOKEN,TQHTwgsrhi1GmZkNX3McyBkGnse}
-  dry_run: ${oc.env:FEISHU_DRY_RUN,false}
+  dry_run: false
 
 paper_store:
   path: "data/paper_store.json"
