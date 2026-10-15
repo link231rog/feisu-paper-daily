@@ -13,6 +13,7 @@ from tempfile import TemporaryDirectory
 import time
 from time import sleep
 from typing import Any, Callable, TypeVar
+from html.parser import HTMLParser
 from loguru import logger
 import requests
 import feedparser
@@ -97,16 +98,61 @@ def _extract_text_from_pdf_worker(pdf_url: str) -> str:
         return extract_markdown_from_pdf(path)
 
 
-def _extract_text_from_html_worker(html_url: str) -> str | None:
+class ArxivAffiliationParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.in_target = False
+        self.target_depth = 0
+        self.current_text: list[str] = []
+        self.affiliations: list[str] = []
+
+    def handle_starttag(self, tag, attrs):
+        attr_dict = dict(attrs)
+        classes = attr_dict.get("class", "").split()
+        if "ltx_role_affiliation" in classes or "ltx_role_address" in classes:
+            self.in_target = True
+            self.target_depth = 1
+            self.current_text = []
+        elif self.in_target:
+            self.target_depth += 1
+
+    def handle_endtag(self, tag):
+        if self.in_target:
+            self.target_depth -= 1
+            if self.target_depth == 0:
+                self.in_target = False
+                text = " ".join("".join(self.current_text).split())
+                text = re.sub(r"^(?:Affiliation|Address):\s*", "", text, flags=re.IGNORECASE).strip()
+                if text and text not in self.affiliations:
+                    self.affiliations.append(text)
+
+    def handle_data(self, data):
+        if self.in_target:
+            self.current_text.append(data)
+
+
+def _extract_text_and_affiliations_from_html_worker(html_url: str) -> dict[str, Any]:
     import trafilatura
 
     downloaded = trafilatura.fetch_url(html_url)
     if downloaded is None:
         raise ValueError(f"Failed to download HTML from {html_url}")
+    
+    parser = ArxivAffiliationParser()
+    try:
+        parser.feed(downloaded)
+    except Exception:
+        pass
+
     text = trafilatura.extract(downloaded, include_comments=False, include_tables=False)
     if not text:
         raise ValueError(f"No text extracted from {html_url}")
-    return text
+    return {"text": text, "affiliations": parser.affiliations}
+
+
+def _extract_text_from_html_worker(html_url: str) -> str | None:
+    res = _extract_text_and_affiliations_from_html_worker(html_url)
+    return res.get("text")
 
 
 def _extract_text_from_tar_worker(source_url: str, paper_id: str, paper_title: str | None = None) -> str | None:
@@ -282,11 +328,12 @@ class ArxivRetriever(BaseRetriever):
         authors = [a.name for a in raw_paper.authors]
         abstract = raw_paper.summary
         pdf_url = raw_paper.pdf_url
-        full_text = extract_text_from_tar(raw_paper)
-        if full_text is None:
-            full_text = extract_text_from_html(raw_paper)
+        full_text, affiliations = extract_text_and_affiliations_from_html(raw_paper)
         if full_text is None:
             full_text = extract_text_from_pdf(raw_paper)
+        if full_text is None:
+            full_text = extract_text_from_tar(raw_paper)
+        arxiv_id = raw_paper.entry_id.split("/abs/")[-1].strip() if "/abs/" in raw_paper.entry_id else None
         return Paper(
             source=self.name,
             title=title,
@@ -295,16 +342,27 @@ class ArxivRetriever(BaseRetriever):
             url=raw_paper.entry_id,
             pdf_url=pdf_url,
             full_text=full_text,
+            affiliations=affiliations or None,
+            doi=raw_paper.doi,
+            arxiv_id=arxiv_id,
+            sources=[self.name],
+            published_date=raw_paper.published,
         )
 
 
-def extract_text_from_html(paper: ArxivResult) -> str | None:
+def extract_text_and_affiliations_from_html(paper: ArxivResult) -> tuple[str | None, list[str]]:
     html_url = paper.entry_id.replace("/abs/", "/html/")
     try:
-        return _extract_text_from_html_worker(html_url)
+        res = _extract_text_and_affiliations_from_html_worker(html_url)
+        return res.get("text"), res.get("affiliations", [])
     except Exception as exc:
         logger.warning(f"HTML extraction failed for {paper.title}: {exc}")
-        return None
+        return None, []
+
+
+def extract_text_from_html(paper: ArxivResult) -> str | None:
+    text, _ = extract_text_and_affiliations_from_html(paper)
+    return text
 
 
 def extract_text_from_pdf(paper: ArxivResult) -> str | None:

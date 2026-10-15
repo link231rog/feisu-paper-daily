@@ -1,54 +1,106 @@
+topics: null # List of research topics or directions. Example: [{"name": "LLM Agents", "keywords": ["agent", "reasoning"], "description": "LLM planning, tool-use, multi-agent"}]
+
 zotero:
-  user_id: ??? # User ID of your Zotero account.
-  api_key: ??? # An Zotero API key with read access.
+  user_id: null # User ID of your Zotero account (optional if topics configured).
+  api_key: null # A Zotero API key with read access.
   include_path: null # A list of glob patterns marking the Zotero collections that should be included. Example: ["2026/survey/**","2026/reading-group/**"]
   ignore_path: null # A list of glob patterns marking the Zotero collections that should be excluded. Example: ["2026/ignore/**","archive/**"]
 
 source:
   arxiv:
-    category: null # The categories of target arxiv papers. Find the abbr of your research area from [here](https://arxiv.org/category_taxonomy). Example: ["cs.AI","cs.CV","cs.LG","cs.CL"]
+    category: null # The categories of target arxiv papers. Example: ["cs.AI","cs.CV","cs.LG","cs.CL"]
     include_cross_list: false # Whether to include arXiv cross-list papers in subscribed categories. Example: true
   biorxiv:
-    category: null # The categories of target biorxiv papers. Find categories from [here](https://www.biorxiv.org/). Example: ["biochemistry","animal behavior and cognition"]
+    category: null # The categories of target biorxiv papers.
   medrxiv:
-    category: null # The categories of target medrxiv papers. Find categories from [here](https://www.medrxiv.org/) Example: ["psychiatry and clinical psychology", "neurology"]
+    category: null # The categories of target medrxiv papers.
   chemrxiv:
-    include_new_versions: false # Whether to include revised versions (v2, v3, ...) of previously posted chemrxiv preprints in addition to new first postings. chemrxiv has no category filter: all new preprints (a few dozen per day) are retrieved via Crossref and left to the reranker. Example: true
+    include_new_versions: false
+  huggingface:
+    date: null # Target date (YYYY-MM-DD), null for latest
+    limit: 50 # Maximum papers to fetch from Hugging Face
+  semantic_scholar:
+    queries: null # List of search queries. Example: ["large language models", "agent alignment"]
+    seed_papers: null # List of seed paper identifiers (DOI, ArXiv ID, or S2 paperId)
+    date_range: null # Publication year or range, e.g. "2026:" or "2026"
+    limit_per_query: 15
+    seed_limit: 10
+    api_key: null # Semantic Scholar API key (optional, avoids 429 rate limit)
 
 email:
-  sender: ??? # The email account of the SMTP server that sends you email. Example: abc@qq.com
-  receiver: ??? # The email account that receives the paper list. Example: abc@outlook.com
-  smtp_server: ??? # The SMTP server that sends the email. Ask your email provider (Gmail, QQ, Outlook, ...) for its SMTP server. Example: smtp.qq.com
-  smtp_port: ??? # The port of SMTP server. Example: 465
-  sender_password: ??? # The password of the sender account. Note that it's not necessarily the password for logging in the e-mail client, but the authentication code for SMTP service. Ask your email provider for this. Example: abcdefghijklmn
+  sender: null
+  receiver: null
+  smtp_server: null
+  smtp_port: 465
+  sender_password: null
 
 llm:
   api:
-    key: ??? # API Key of your LLM API. Example: sk-xxx
-    base_url: ??? # API URL of your LLM API. Example: https://api.openai.com/v1
+    key: null # API Key of your LLM API. Example: sk-xxx
+    base_url: null # API URL of your LLM API. Example: https://api.openai.com/v1
   api_mode: chat_completion # The LLM API to use. Options: chat_completion or response.
   generation_kwargs:
-  # Arguments for the selected LLM API.
     max_tokens: 16384
-    model: ???
-  language: English # Preferred language for the TL;DR. Example: English
+    model: gpt-4o-mini
+  language: Chinese # Preferred language for the TL;DR. Example: Chinese
 
 reranker:
   local:
-    model: jinaai/jina-embeddings-v5-text-nano-retrieval # The Hugging Face model name of the local embedding model. Example: jinaai/jina-embeddings-v5-text-nano
+    model: jinaai/jina-embeddings-v5-text-nano-retrieval
     encode_kwargs:
-    # The kwargs for the encode method of the local embedding model. Details see [here](https://www.sbert.net/docs/package_reference/SentenceTransformer.html#sentence_transformers.SentenceTransformer.encode)
       task: retrieval
       prompt_name: document
   api:
-    key: null # API Key of your embedding model API. Example: sk-xxx
-    base_url: null # API URL of your embedding model API. Example: https://api.openai.com/v1
-    model: null # The model name of the embedding model. Example: text-embedding-3-large
-    batch_size: null # The batch size for embedding API requests. Adjust to match your provider's limit. Example: 64
+    key: null
+    base_url: null
+    model: null
+    batch_size: null
+
+feishu:
+  app_id: null
+  app_secret: null
+  daily_folder_token: null
+  notes_folder_token: null
+  wiki_space_id: null
+  daily_parent_node_token: null
+  notes_parent_node_token: null
+  master_index_node_token: null
+  dry_run: false
+
+paper_store:
+  path: "data/paper_store.json"
 
 executor:
-  debug: false # Whether to use debug mode. Example: true
-  send_empty: false # Whether to send an empty email even if no new papers today. Example: true
-  max_paper_num: 100 # The maximum number of the papers presented in the email. Example: 100
-  source: ??? # The sources of papers to retrieve. Example: ['arxiv','biorxiv','medrxiv','chemrxiv']
-  reranker: local # The reranker to use. Example: 'local' or 'api'
+  debug: false
+  send_empty: false
+  max_paper_num: 20
+  source: ['arxiv', 'huggingface', 'semantic_scholar']
+  reranker: local
+
+news_and_trends:
+  enabled: false
+  max_items: 8
+  min_github_stars: 50
+  github:
+    enabled: true
+    topics: ["llm", "ai-agent", "diffusion"]
+    days_back: 7
+    limit_per_topic: 10
+  news:
+    enabled: true
+    min_hn_points: 60
+    feeds:
+      - name: "Hugging Face Blog"
+        url: "https://huggingface.co/blog/feed.xml"
+      - name: "Google DeepMind"
+        url: "https://deepmind.google/blog/rss.xml"
+  tags:
+    - name: "Agent"
+      keywords: ["agent", "multi-agent", "workflow", "tool-use", "browser-agent", "autonomous"]
+    - name: "OpenSource"
+      keywords: ["open-weights", "weights", "llama", "deepseek", "vllm", "sglang", "ollama"]
+    - name: "Diffusion"
+      keywords: ["diffusion", "video generation", "flux", "image generation", "lora"]
+    - name: "Breaking"
+      keywords: ["announces", "release", "launched", "benchmark", "breakthrough"]
+

@@ -44,6 +44,9 @@ def _base_config():
                 "executor.reranker=api",
                 "executor.debug=false",
                 "executor.send_empty=false",
+                "topics=null",
+                "paper_store.path=null",
+                "news_and_trends.enabled=false",
             ],
         )
     return cfg
