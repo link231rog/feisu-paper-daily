@@ -1,10 +1,13 @@
 topics:
+  - name: "Agent Memory"
+    keywords: ["agent memory", "memory-augmented agent", "memory management", "long-horizon memory", "episodic memory", "RL memory", "Memory-R1"]
+    description: "Active memory management (ADD/UPDATE/DELETE), memory distillation, reinforcement learning for agent memory, and long-horizon dialog consistency."
+  - name: "Decision Model"
+    keywords: ["decision model", "deliberative reasoning", "autothink", "test-time compute", "world model decision", "agent planning", "policy optimization"]
+    description: "Deliberative decision-making, test-time reasoning search, calibrated decision policies, and world model planning for autonomous agents."
   - name: "Agent Alignment and Safety"
-    keywords: ["LLM safety", "agent alignment", "jailbreak defense", "adversarial attack"]
+    keywords: ["LLM safety", "agent alignment", "jailbreak defense", "adversarial attack", "agent safety"]
     description: "Techniques for aligning autonomous LLM agents, detecting vulnerabilities, and securing multi-agent systems."
-  - name: "Diffusion and Generative Models"
-    keywords: ["diffusion transformer", "flow matching", "image generation"]
-    description: "Efficient diffusion architectures, flow matching models, and generative synthesis."
 
 zotero:
   user_id: ${oc.env:ZOTERO_ID,null}
@@ -33,7 +36,7 @@ source:
   huggingface:
     limit: 30
   semantic_scholar:
-    queries: ["large language model agent", "agent alignment"]
+    queries: ["agent memory", "decision model agent", "reinforcement learning agent memory"]
     limit_per_query: 10
     api_key: ${oc.env:SEMANTIC_SCHOLAR_API_KEY,null}
 
@@ -46,6 +49,7 @@ feishu:
   daily_parent_node_token: ${oc.env:FEISHU_DAILY_PARENT_NODE_TOKEN,Wxtews8vJiquKskaCYucAw7un8f}
   notes_parent_node_token: ${oc.env:FEISHU_NOTES_PARENT_NODE_TOKEN,IwxFw1Ioui3TpBkrtsMcEbqanIb}
   master_index_node_token: ${oc.env:FEISHU_MASTER_INDEX_NODE_TOKEN,M7oBwK0LuioCR4kzSNVcj8ACneb}
+  tag_graph_node_token: ${oc.env:FEISHU_TAG_GRAPH_NODE_TOKEN,TQHTwgsrhi1GmZkNX3McyBkGnse}
   dry_run: ${oc.env:FEISHU_DRY_RUN,false}
 
 paper_store:
@@ -63,18 +67,20 @@ news_and_trends:
   min_github_stars: 50
   github:
     enabled: true
-    topics: ["llm", "ai-agent", "diffusion"]
+    topics: ["ai-agent", "agent-memory", "decision-model", "llm-reasoning"]
     days_back: 7
   news:
     enabled: true
     min_hn_points: 60
   tags:
+    - name: "Memory"
+      keywords: ["memory", "episodic memory", "working memory", "memgpt", "long-context", "memory management", "memory-r1"]
+    - name: "DecisionModel"
+      keywords: ["decision", "decision model", "planning", "autothink", "reasoning", "policy", "world model"]
     - name: "Agent"
       keywords: ["agent", "multi-agent", "workflow", "tool-use", "browser-agent", "autonomous"]
     - name: "OpenSource"
       keywords: ["open-weights", "weights", "llama", "deepseek", "vllm", "sglang", "ollama"]
-    - name: "Diffusion"
-      keywords: ["diffusion", "video generation", "flux", "image generation", "lora"]
     - name: "Breaking"
       keywords: ["announces", "release", "launched", "benchmark", "breakthrough"]
 
