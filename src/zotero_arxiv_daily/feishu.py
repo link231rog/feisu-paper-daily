@@ -668,3 +668,78 @@ class FeishuClient:
             logger.info(f"Appended paper '{paper.title}' to Feishu Wiki master index document")
         except Exception as exc:
             logger.error(f"Failed to append to master index: {exc}")
+
+    def append_to_tag_graph(
+        self,
+        paper: Paper,
+        note_url: str,
+        tags: Optional[list[str]] = None,
+        core_summary: str = ""
+    ) -> None:
+        """Appends a new deep-read paper card entry to the Feishu Wiki Tag Knowledge Graph document."""
+        if not self.tag_graph_node_token or self.dry_run:
+            return
+
+        # 1. Resolve tag graph doc_id
+        tag_doc_id = None
+        try:
+            node_info = self._call_api("GET", f"/wiki/v2/spaces/get_node", params={"token": str(self.tag_graph_node_token)})
+            node = node_info.get("node", {})
+            tag_doc_id = node.get("obj_token")
+        except Exception:
+            tag_doc_id = str(self.tag_graph_node_token)
+
+        if not tag_doc_id:
+            logger.warning(f"Could not resolve document ID for tag graph node {self.tag_graph_node_token}")
+            return
+
+        # 2. Determine matching pillars among the 4 core research directions
+        text_to_match = f"{paper.title} {paper.abstract} {' '.join(tags or [])}".lower()
+        matched_pillars = []
+        if any(k in text_to_match for k in ["memory", "episodic", "working memory", "memgpt"]):
+            matched_pillars.append("#Memory")
+        if any(k in text_to_match for k in ["decision", "autothink", "deliberat", "world model", "planning"]):
+            matched_pillars.append("#DecisionModel")
+        if any(k in text_to_match for k in ["multi-agent", "multiagent", "mas", "swarm", "collaboration", "adversarial"]):
+            matched_pillars.append("#MAS")
+        if any(k in text_to_match for k in ["reinforcement learning", "rl", "ppo", "grpo", "reward", "policy gradient"]):
+            matched_pillars.append("#RL")
+
+        tags_str = " ".join(matched_pillars) if matched_pillars else (" ".join(f"[#{t}]" for t in tags) if tags else "[#Paper]")
+        affil_str = ", ".join(paper.affiliations) if paper.affiliations else "N/A"
+        summary = core_summary or paper.tldr_zh or paper.tldr or (paper.abstract[:150] + "...")
+        full_title = paper.title_with_venue()
+        venue_str = getattr(paper, "venue", None) or "Preprint"
+
+        blocks: list[dict[str, Any]] = [
+            {
+                "block_type": 5,
+                "heading3": {
+                    "elements": [
+                        {"text_run": {"content": f"• {tags_str} {full_title}"}}
+                    ]
+                }
+            },
+            {
+                "block_type": 2,
+                "text": {
+                    "elements": [
+                        {"text_run": {"content": f"  - 录用会议/期刊: {venue_str}\n"}},
+                        {"text_run": {"content": f"  - 发表单位: {affil_str}\n"}},
+                        {"text_run": {"content": f"  - 📘 精读笔记直达: {note_url}\n"}},
+                        {"text_run": {"content": f"  - 原文来源: {paper.url or 'N/A'}\n"}},
+                        {"text_run": {"content": f"  - 核心突破: {summary}\n"}},
+                    ]
+                }
+            }
+        ]
+
+        try:
+            self._call_api(
+                "POST",
+                f"/docx/v1/documents/{tag_doc_id}/blocks/{tag_doc_id}/children",
+                data={"children": blocks, "index": -1}
+            )
+            logger.info(f"Appended paper '{paper.title}' to Tag Knowledge Graph document")
+        except Exception as exc:
+            logger.error(f"Failed to append to tag graph document: {exc}")
