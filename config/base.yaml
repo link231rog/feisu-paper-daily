@@ -65,6 +65,7 @@ feishu:
   daily_parent_node_token: null
   notes_parent_node_token: null
   master_index_node_token: null
+  tag_graph_node_token: null
   dry_run: false
 
 paper_store:

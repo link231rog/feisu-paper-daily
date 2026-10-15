@@ -27,6 +27,7 @@ class FeishuClient:
         self.daily_parent_node_token = config.get("daily_parent_node_token")
         self.notes_parent_node_token = config.get("notes_parent_node_token")
         self.master_index_node_token = config.get("master_index_node_token")
+        self.tag_graph_node_token = config.get("tag_graph_node_token")
         self.dry_run = config.get("dry_run", False)
         self._tenant_token: Optional[str] = None
         self._has_lark_cli = shutil.which("lark-cli") is not None
