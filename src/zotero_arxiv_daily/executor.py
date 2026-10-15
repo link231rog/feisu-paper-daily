@@ -221,6 +221,16 @@ class Executor:
             for item in checked_items:
                 title = item.get("title", "")
                 url = item.get("url", "")
+                action = item.get("action", "ingest")
+                doc_id = item.get("document_id", "")
+                card_block_ids = item.get("card_block_ids", [])
+
+                if action == "delete":
+                    logger.info(f"User marked '{title}' for removal/deletion. Deleting card from document {doc_id}...")
+                    if doc_id and card_block_ids:
+                        client.delete_document_blocks(doc_id, card_block_ids)
+                    continue
+
                 if not title:
                     continue
 

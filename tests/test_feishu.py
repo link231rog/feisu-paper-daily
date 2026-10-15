@@ -255,6 +255,68 @@ def test_feishu_fetch_checked_paper_details(monkeypatch):
     assert details[0]["affiliations"] == ["LMU Munich", "Cambridge"]
     assert details[0]["sources"] == ["arXiv"]
     assert "Reinforcement learning" in details[0]["tldr"]
+    assert details[0]["action"] == "ingest"
+
+
+def test_feishu_fetch_checked_paper_details_delete_action(monkeypatch):
+    cfg = OmegaConf.create({"app_id": "test", "app_secret": "test"})
+    client = FeishuClient(cfg)
+    client._tenant_token = "mock"
+
+    blocks_response = {
+        "code": 0,
+        "data": {
+            "items": [
+                {
+                    "block_id": "b1",
+                    "block_type": 5,
+                    "heading3": {"elements": [{"text_run": {"content": "1. [#Benchmark] Obsolete Dataset"}}]},
+                },
+                {
+                    "block_id": "b2",
+                    "block_type": 17,
+                    "todo": {
+                        "style": {"done": True},
+                        "elements": [{"text_run": {"content": "移出待选 (标记删除)"}}],
+                    },
+                },
+            ]
+        }
+    }
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = blocks_response
+    mock_resp.raise_for_status = MagicMock()
+
+    monkeypatch.setattr("requests.request", lambda *a, **kw: mock_resp)
+
+    details = client.fetch_checked_paper_details("doc_daily")
+    assert len(details) == 1
+    assert details[0]["action"] == "delete"
+    assert "Obsolete Dataset" in details[0]["title"]
+
+
+def test_feishu_delete_document_blocks(monkeypatch):
+    cfg = OmegaConf.create({"app_id": "test", "app_secret": "test"})
+    client = FeishuClient(cfg)
+    client._tenant_token = "mock"
+
+    calls = []
+
+    def mock_call_api(method, path, params=None, data=None):
+        calls.append((method, path, data))
+        if method == "GET" and "blocks/doc_123" in path:
+            return {"block": {"children": ["b1", "b2", "b3", "b4", "b5"]}}
+        elif method == "DELETE":
+            return {"code": 0}
+        return {}
+
+    monkeypatch.setattr(client, "_call_api", mock_call_api)
+
+    success = client.delete_document_blocks("doc_123", ["b2", "b3"])
+    assert success is True
+    assert any(c[0] == "DELETE" and c[2] == {"start_index": 1, "end_index": 3} for c in calls)
 
 
 def test_feishu_append_to_tag_graph(monkeypatch):
