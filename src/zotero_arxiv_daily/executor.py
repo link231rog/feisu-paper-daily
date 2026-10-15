@@ -1,6 +1,8 @@
 from datetime import datetime
 import json
 import random
+import re
+import requests
 from loguru import logger
 from omegaconf import DictConfig, ListConfig
 from openai import OpenAI
@@ -202,6 +204,86 @@ class Executor:
             }
             return sections, ["Agent", "Research"]
 
+    def fetch_github_readme(self, url: str) -> str:
+        """Fetches the README markdown content from a GitHub repository."""
+        if not url or "github.com" not in url.lower():
+            return ""
+        match = re.search(r"github\.com/([^/]+)/([^/#?]+)", url)
+        if not match:
+            return ""
+        owner, repo = match.group(1), match.group(2).removesuffix(".git")
+        headers = {"User-Agent": "Mozilla/5.0"}
+        for branch in ["main", "master", "HEAD"]:
+            raw_url = f"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/README.md"
+            try:
+                resp = requests.get(raw_url, headers=headers, timeout=8)
+                if resp.status_code == 200 and len(resp.text) > 50:
+                    return resp.text
+            except Exception:
+                continue
+        return ""
+
+    def generate_app_note_sections(self, title: str, url: str, readme_text: str = "", tldr: str = "") -> tuple[dict[str, str], list[str]]:
+        """Uses LLM to analyze a GitHub project, AI application, or Agent Skill into an engineering-oriented note."""
+        if not self.openai_client:
+            sections = {
+                "overview": tldr or f"{title} 是一个实用的开源 AI 应用 / 工具项目。",
+                "scenarios_and_triggers": "适用于自主智能体工作流执行、工具调用与本地开发环境自动化。",
+                "quick_start": f"1. 克隆代码仓库: git clone {url}\n2. 安装相关依赖并配置环境变量。",
+                "usage_examples": f"# 运行核心脚本或 CLI 命令\n# 具体请参阅仓库主页: {url}",
+                "key_features_and_tips": "1. 规范入参与返回格式。\n2. 注意配置鉴权密钥与前置依赖版本。",
+            }
+            return sections, ["Tool", "Agent"]
+
+        prompt = (
+            f"请深度分析以下 GitHub 开源项目 / AI 应用 / Agent Skill，并生成一份面向实际工程落地的使用沉淀笔记：\n"
+            f"项目名称: {title}\n"
+            f"项目主页/URL: {url}\n"
+            f"简介/TL;DR: {tldr}\n"
+            f"README 内容摘要:\n{readme_text[:8000] if readme_text else '（暂未直接获取到完整 README，请结合项目名称与公开知识进行分析）'}\n\n"
+            "请以严格的 JSON 格式输出，包含以下键（必须使用中文清晰陈述）：\n"
+            "- overview: 1-2 句话精炼总结该项目的核心定位与解决的核心痛点。\n"
+            "- scenarios_and_triggers: 详细分析其适用场景。特别如果是 Agent Skill 或工具，请务必具体写明：\n"
+            "  1. 触发关键词与意图（Triggers: 用户说什么或什么场景下应该调用它）\n"
+            "  2. 适用 Agent 角色\n"
+            "  3. 典型使用时机\n"
+            "- quick_start: 环境依赖与快速上手。列出具体安装命令（如 pip/npm/brew/docker/git clone）、前置依赖环境与必要环境变量/配置准备。\n"
+            "- usage_examples: 具体使用方式与调用示例。给出具体的 CLI 命令行指令、代码调用片段（Python/TypeScript/Shell）、参数说明以及输入输出样例。\n"
+            "- key_features_and_tips: 核心功能特性与避坑指南。列出核心配置项、注意事项或已知限制。\n"
+            "- tags: 2-4个英文标签，如 [\"Agent\", \"Skill\", \"Memory\", \"Tool\", \"MAS\", \"DecisionModel\"]\n"
+        )
+        try:
+            resp = self.openai_client.chat.completions.create(
+                model=self.config.llm.generation_kwargs.model,
+                messages=[
+                    {"role": "system", "content": "你是一位资深的 AI Agent 架构师与系统工程师，擅长提炼 GitHub 开源项目与 Agent Skill 的核心用法与工程落地规范。"},
+                    {"role": "user", "content": prompt}
+                ],
+                response_format={"type": "json_object"},
+                max_tokens=1500,
+            )
+            content = resp.choices[0].message.content.strip()
+            data = json.loads(content)
+            sections = {
+                "overview": data.get("overview", tldr or title),
+                "scenarios_and_triggers": data.get("scenarios_and_triggers", ""),
+                "quick_start": data.get("quick_start", ""),
+                "usage_examples": data.get("usage_examples", ""),
+                "key_features_and_tips": data.get("key_features_and_tips", ""),
+            }
+            tags = data.get("tags") or ["Agent", "Tool"]
+            return sections, tags
+        except Exception as exc:
+            logger.warning(f"LLM app note generation fallback: {exc}")
+            sections = {
+                "overview": tldr or f"{title} 开源项目与工具方案。",
+                "scenarios_and_triggers": "适用于自动化智能体工作流执行与工具链集成。",
+                "quick_start": f"git clone {url}\ncd <repo> && pip install -r requirements.txt",
+                "usage_examples": f"# 运行命令行或 API 调用\n# 详情参见: {url}",
+                "key_features_and_tips": "确保环境依赖版本匹配与 API Key 正确配置。",
+            }
+            return sections, ["Agent", "Tool"]
+
     def ingest_checked_papers(self) -> list[str]:
         """Scans Feishu daily reports for user-checked papers and ingests them into the Wiki Knowledge Base."""
         feishu_cfg = self.config.get("feishu")
@@ -226,9 +308,12 @@ class Executor:
                 card_block_ids = item.get("card_block_ids", [])
 
                 if action == "delete":
-                    logger.info(f"User marked '{title}' for removal/deletion. Deleting card from document {doc_id}...")
+                    logger.info(f"User marked '{title}' for removal/deletion. Deleting card from document {doc_id} and permanently blacklisting...")
                     if doc_id and card_block_ids:
                         client.delete_document_blocks(doc_id, card_block_ids)
+                    self.paper_store.mark_discarded(title, metadata={"url": url})
+                    if url:
+                        self.paper_store.mark_discarded(url)
                     continue
 
                 if not title:
@@ -238,9 +323,16 @@ class Executor:
                     logger.debug(f"Paper '{title}' has already been ingested. Skipping.")
                     continue
 
-                logger.info(f"Ingesting user-confirmed paper: '{title}'...")
+                is_github_or_tool = (
+                    "github.com" in (url or "").lower()
+                    or item.get("category") == "github_repo"
+                    or any(s in (item.get("sources") or []) for s in ["github", "tool", "skill"])
+                    or "skill" in title.lower()
+                )
+
+                logger.info(f"Ingesting user-confirmed {'GitHub tool/skill' if is_github_or_tool else 'paper'}: '{title}'...")
                 paper = Paper(
-                    source=item.get("sources", ["arxiv"])[0] if item.get("sources") else "arxiv",
+                    source=item.get("sources", ["github" if is_github_or_tool else "arxiv"])[0] if item.get("sources") else ("github" if is_github_or_tool else "arxiv"),
                     title=title,
                     authors=[],
                     abstract=item.get("tldr", ""),
@@ -251,7 +343,17 @@ class Executor:
                     tldr_zh=item.get("tldr", ""),
                 )
 
-                sections, tags = self.generate_reading_note_sections(paper)
+                if is_github_or_tool:
+                    readme_text = self.fetch_github_readme(url)
+                    sections, tags = self.generate_app_note_sections(
+                        title=title,
+                        url=url,
+                        readme_text=readme_text,
+                        tldr=item.get("tldr", "")
+                    )
+                    paper.venue = "GitHub / Open Source Tool"
+                else:
+                    sections, tags = self.generate_reading_note_sections(paper)
 
                 note_url = client.create_reading_note(paper, sections=sections)
                 client.append_to_master_index(
@@ -412,6 +514,38 @@ class Executor:
             try:
                 from .feishu import FeishuClient
                 client = FeishuClient(feishu_cfg)
+
+                # Roll-over: fetch unreviewed candidates from previous daily reports that were neither ingested nor discarded
+                try:
+                    unreviewed = client.fetch_unreviewed_cards_from_wiki()
+                    valid_unreviewed = [
+                        u for u in unreviewed
+                        if not self.paper_store.is_ingested(u["title"])
+                        and not self.paper_store.is_discarded(u["title"])
+                        and (not u.get("url") or (not self.paper_store.is_ingested(u["url"]) and not self.paper_store.is_discarded(u["url"])))
+                    ]
+                    if valid_unreviewed:
+                        logger.info(f"Rolling over {len(valid_unreviewed)} unreviewed candidate cards into today's digest.")
+                        existing_titles = {p.title.lower() for p in reranked_papers}
+                        for u in valid_unreviewed:
+                            if u["title"].lower() in existing_titles:
+                                continue
+                            rolled_paper = Paper(
+                                source=u.get("sources", ["carry-over"])[0] if u.get("sources") else "carry-over",
+                                title=u["title"],
+                                authors=[],
+                                abstract=u.get("tldr", ""),
+                                url=u.get("url", ""),
+                                affiliations=u.get("affiliations", []),
+                                sources=u.get("sources", ["待定滚存"]),
+                                tldr=u.get("tldr", ""),
+                                tldr_zh=u.get("tldr", ""),
+                            )
+                            reranked_papers.append(rolled_paper)
+                            existing_titles.add(u["title"].lower())
+                except Exception as roll_exc:
+                    logger.warning(f"Notice during unreviewed cards carry-over: {roll_exc}")
+
                 doc_url = client.create_or_update_daily_report(reranked_papers, trending_items=trending_items)
                 logger.info(f"Feishu daily report published successfully: {doc_url}")
                 delivered = True

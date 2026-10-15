@@ -80,6 +80,24 @@ class TestFilterAndMark:
         assert store2.is_ingested(p)
         assert store2.data["ingested"]["10.1/ingest_test"]["wiki_url"] == "https://feishu.cn/wiki/test"
 
+    def test_discard_tracking_and_blocking(self, tmp_path):
+        store = PaperStore(str(tmp_path / "pushed.json"))
+        p1 = make_paper(doi="10.1/discard_me")
+        p2 = make_paper(doi="10.1/keep_me")
+
+        assert not store.is_discarded(p1)
+        store.mark_discarded(p1, {"title": p1.title})
+        assert store.is_discarded(p1)
+
+        # Discarded items must be filtered out from already pushed candidates
+        assert store.filter_already_pushed([p1, p2]) == [p2]
+        assert store.filter_discarded([p1, p2]) == [p2]
+
+        # Roundtrip reload
+        store2 = PaperStore(str(tmp_path / "pushed.json"))
+        assert store2.is_discarded(p1)
+        assert store2.filter_already_pushed([p1, p2]) == [p2]
+
 
 class TestCap:
     def test_caps_at_max_entries(self, tmp_path):

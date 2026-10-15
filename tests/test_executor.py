@@ -281,3 +281,33 @@ def test_run_no_papers_send_empty_true(config, monkeypatch):
     assert len(sent) == 1, "Email should be sent even with no papers when send_empty=true"
     _, _, body = sent[0]
     assert "text/html" in body
+
+
+def test_fetch_github_readme(config, monkeypatch):
+    executor = Executor(config)
+    
+    # Mock requests.get
+    class MockResp:
+        status_code = 200
+        text = "# Awesome Agent Skill\nThis skill enables agent tool execution."
+    
+    monkeypatch.setattr("requests.get", lambda *a, **kw: MockResp())
+    readme = executor.fetch_github_readme("https://github.com/agent/awesome-skill")
+    assert "Awesome Agent Skill" in readme
+
+
+def test_generate_app_note_sections_fallback(config):
+    executor = Executor(config)
+    executor.openai_client = None
+    sections, tags = executor.generate_app_note_sections(
+        title="awesome-agent-skill",
+        url="https://github.com/agent/awesome-skill",
+        readme_text="# Usage\nrun `skill execute`",
+        tldr="A great agent skill"
+    )
+    assert "overview" in sections
+    assert "scenarios_and_triggers" in sections
+    assert "quick_start" in sections
+    assert "usage_examples" in sections
+    assert "key_features_and_tips" in sections
+    assert "Tool" in tags
