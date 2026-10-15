@@ -295,12 +295,16 @@ def map_to_core_pillars(tags: Optional[list[str]] = None, title: str = "", text:
     tags = tags or []
     corpus = f"{' '.join(tags)} {title} {text}".lower()
     matched = []
-    if any(k in corpus for k in ["memory", "episodic", "working memory", "memgpt", "long-context"]):
+    # 1. Memory: specifically related to external/episodic/working memory
+    if any(k in corpus for k in ["memory", "episodic memory", "working memory", "memgpt", "long-context", "memory management", "memory-r1"]):
         matched.append("Memory")
-    if any(k in corpus for k in ["decision", "decisionmodel", "autothink", "deliberat", "world model", "planning", "policy", "systemone"]):
+    # 2. DecisionModel: dedicated decision endpoints, System-One, deliberative models
+    if any(k in corpus for k in ["decision", "decisionmodel", "decision model", "autothink", "deliberat", "world model", "system-one", "system 1", "systemone", "rubric", "choice"]):
         matched.append("DecisionModel")
-    if any(k in corpus for k in ["multi-agent", "multiagent", "mas", "swarm", "collaboration", "adversarial", "agent"]):
+    # 3. MAS: strictly Multi-Agent Systems, NOT general single-agent
+    if any(k in corpus for k in ["multi-agent", "multiagent", "multi agent", "mas", "swarm", "cooperative agent", "adversarial agent", "agent communication", "agent society"]):
         matched.append("MAS")
-    if any(k in corpus for k in ["reinforcement learning", "reinforcementlearning", "rl", "ppo", "grpo", "reward", "policy gradient", "actor-critic"]):
+    # 4. RL: reinforcement learning paradigms
+    if any(k in corpus for k in ["reinforcement learning", "reinforcementlearning", "ppo", "grpo", "reward", "policy gradient", "actor-critic", "q-learning", "reinforce"]) or re.search(r'\b(rl)\b', corpus):
         matched.append("RL")
-    return matched or ["DecisionModel"]
+    return matched or ["Research"]
