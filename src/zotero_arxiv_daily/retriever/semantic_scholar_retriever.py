@@ -6,7 +6,7 @@ from loguru import logger
 from omegaconf import DictConfig
 
 from .base import BaseRetriever, register_retriever
-from ..protocol import Paper
+from ..protocol import Paper, extract_venue_from_text
 
 SEARCH_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
 RECOMMEND_URL = "https://api.semanticscholar.org/recommendations/v1/papers/forpaper"
@@ -140,6 +140,12 @@ class SemanticScholarRetriever(BaseRetriever):
                     if isinstance(aff, str) and aff and aff not in affiliations:
                         affiliations.append(aff)
 
+        venue = (
+            raw_paper.get("venue")
+            or (raw_paper.get("publicationVenue") or {}).get("name")
+            or extract_venue_from_text(abstract)
+        )
+
         return Paper(
             source=self.name,
             title=title,
@@ -152,4 +158,5 @@ class SemanticScholarRetriever(BaseRetriever):
             arxiv_id=arxiv_id,
             sources=[self.name],
             published_date=published_date,
+            venue=venue,
         )

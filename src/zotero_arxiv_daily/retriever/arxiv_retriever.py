@@ -1,7 +1,7 @@
 from .base import BaseRetriever, register_retriever
 import arxiv
 from arxiv import Result as ArxivResult
-from ..protocol import Paper
+from ..protocol import Paper, extract_venue_from_text
 from ..utils import extract_markdown_from_pdf, extract_tex_code_from_tar
 import calendar
 from datetime import datetime, timezone
@@ -334,6 +334,11 @@ class ArxivRetriever(BaseRetriever):
         if full_text is None:
             full_text = extract_text_from_tar(raw_paper)
         arxiv_id = raw_paper.entry_id.split("/abs/")[-1].strip() if "/abs/" in raw_paper.entry_id else None
+        venue = (
+            extract_venue_from_text(getattr(raw_paper, "comment", None))
+            or extract_venue_from_text(getattr(raw_paper, "journal_ref", None))
+            or extract_venue_from_text(abstract)
+        )
         return Paper(
             source=self.name,
             title=title,
@@ -347,6 +352,7 @@ class ArxivRetriever(BaseRetriever):
             arxiv_id=arxiv_id,
             sources=[self.name],
             published_date=raw_paper.published,
+            venue=venue,
         )
 
 

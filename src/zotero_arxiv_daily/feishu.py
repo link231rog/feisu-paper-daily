@@ -202,14 +202,15 @@ class FeishuClient:
             })
 
         for idx, p in enumerate(papers, 1):
-            # Heading 2: 1. Paper Title
+            title_display = p.title_with_venue()
+            # Heading 2: 1. Paper Title (Conference)
             children.append({
                 "block_type": 4,
                 "heading2": {
                     "elements": [
                         {
                             "text_run": {
-                                "content": f"{idx}. {p.title}"
+                                "content": f"{idx}. {title_display}"
                             }
                         }
                     ]
@@ -231,12 +232,14 @@ class FeishuClient:
                 }
             })
 
-            # Meta text: 来源: [arXiv] | 日期: ... | 发表单位/实验室: ... | 原文链接: ...
+            # Meta text: 来源: [arXiv] | 日期: ... | 录用会议: ... | 发表单位/实验室: ... | 原文链接: ...
             src_str = ", ".join(p.sources or [p.source])
             date_str = p.published_date.strftime("%Y-%m-%d") if p.published_date else today
             affil_str = ", ".join(p.affiliations) if p.affiliations else "N/A"
+            venue_line = f"录用会议: {p.venue}\n" if getattr(p, "venue", None) else ""
             meta_prefix = (
                 f"来源: [{src_str}] | 日期: {date_str}\n"
+                f"{venue_line}"
                 f"发表单位/实验室: {affil_str}\n"
                 f"原文链接: "
             )
@@ -473,7 +476,7 @@ class FeishuClient:
 
         sections = sections or {}
         today = datetime.now().strftime("%Y-%m-%d")
-        title = f"📄 [精读] {paper.title}"
+        title = paper.title_with_venue()
 
         doc_id = None
         note_url = None
@@ -513,6 +516,7 @@ class FeishuClient:
         src_str = ", ".join(paper.sources or [paper.source])
         affil_str = ", ".join(paper.affiliations) if paper.affiliations else "N/A"
         date_str = paper.published_date.strftime("%Y-%m-%d") if paper.published_date else today
+        venue_str = getattr(paper, "venue", None) or "Preprint"
 
         core_summary = sections.get("core_summary") or paper.tldr_zh or paper.tldr or paper.abstract[:200]
         motivation = sections.get("motivation") or (
@@ -533,7 +537,8 @@ class FeishuClient:
                 "block_type": 2,
                 "text": {
                     "elements": [
-                        {"text_run": {"content": f"来源: [{src_str}] | 日期: {date_str} | 发表单位/实验室: {affil_str}\n"}},
+                        {"text_run": {"content": f"来源: [{src_str}] | 日期: {date_str} | 录用会议/期刊: {venue_str}\n"}},
+                        {"text_run": {"content": f"发表单位/实验室: {affil_str}\n"}},
                         {"text_run": {"content": f"原文直达: {paper.url or 'N/A'}\n"}},
                     ]
                 }
@@ -626,12 +631,15 @@ class FeishuClient:
         affil_str = ", ".join(paper.affiliations) if paper.affiliations else "N/A"
         summary = core_summary or paper.tldr_zh or paper.tldr or (paper.abstract[:150] + "...")
 
+        full_title = paper.title_with_venue()
+        venue_str = getattr(paper, "venue", None) or "Preprint"
+
         index_blocks: list[dict[str, Any]] = [
             {
                 "block_type": 5,
                 "heading3": {
                     "elements": [
-                        {"text_run": {"content": f"{next_idx}. {tags_str} {paper.title}"}}
+                        {"text_run": {"content": f"{next_idx}. {tags_str} {full_title}"}}
                     ]
                 }
             },
@@ -639,7 +647,8 @@ class FeishuClient:
                 "block_type": 2,
                 "text": {
                     "elements": [
-                        {"text_run": {"content": f"• 全称: {paper.title}\n"}},
+                        {"text_run": {"content": f"• 全称: {full_title}\n"}},
+                        {"text_run": {"content": f"• 录用会议/期刊: {venue_str}\n"}},
                         {"text_run": {"content": f"• 发表单位: {affil_str}\n"}},
                         {"text_run": {"content": f"• 📘 精读笔记直达: {note_url}\n"}},
                         {"text_run": {"content": f"• 原文: {paper.url or 'N/A'}\n"}},

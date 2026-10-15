@@ -162,6 +162,7 @@ class Executor:
             "- method: 2-3 sentences on core architecture / mechanism design (in Chinese)\n"
             "- experiments: 1-2 sentences on key experimental findings (in Chinese)\n"
             "- takeaways: 2 bullet points on takeaways / engineering insights (in Chinese)\n"
+            "- venue: accepted conference or journal name and year (e.g. 'ACL 2026', 'NeurIPS 2024', 'ICLR 2025'), or null if preprint / not specified\n"
             "- tags: array of 2-4 English keyword tags without hash symbol (e.g. [\"Agent\", \"Memory\", \"RL\"])\n"
         )
         try:
@@ -183,6 +184,10 @@ class Executor:
                 "experiments": data.get("experiments", ""),
                 "takeaways": data.get("takeaways", ""),
             }
+            if not paper.venue and data.get("venue"):
+                v_str = str(data["venue"]).strip()
+                if v_str.lower() != "null" and v_str.lower() != "none":
+                    paper.venue = v_str
             tags = data.get("tags") or ["Agent", "Research"]
             return sections, tags
         except Exception as exc:
@@ -306,12 +311,14 @@ class Executor:
             reranked_papers = reranked_papers[:self.config.executor.max_paper_num]
 
             if self.openai_client is not None:
-                logger.info("Generating TLDR and affiliations via LLM...")
+                logger.info("Generating TLDR, affiliations, and conference venue via LLM...")
                 for p in tqdm(reranked_papers, desc="Summarizing papers"):
                     p.generate_tldr(self.openai_client, self.config.llm)
                     p.generate_affiliations(self.openai_client, self.config.llm)
+                    p.generate_venue(self.openai_client, self.config.llm)
             else:
                 for p in reranked_papers:
+                    p.generate_venue()
                     p.tldr = p.abstract[:300] + "..." if len(p.abstract) > 300 else p.abstract
 
             # Log formatted summary to console
@@ -319,7 +326,7 @@ class Executor:
             for idx, p in enumerate(reranked_papers, 1):
                 src_tag = f"[{', '.join(p.sources or [p.source])}]"
                 score_str = f"(Score: {p.score:.2f})" if p.score is not None else ""
-                logger.info(f"{idx}. {src_tag} {score_str} {p.title}")
+                logger.info(f"{idx}. {src_tag} {score_str} {p.title_with_venue()}")
                 logger.info(f"   URL: {p.url}")
                 logger.info(f"   TL;DR: {p.tldr}\n")
 
