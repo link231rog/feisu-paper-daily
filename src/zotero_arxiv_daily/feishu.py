@@ -2,8 +2,8 @@ import json
 import re
 import shutil
 import subprocess
-from datetime import datetime
-from typing import Any, Optional
+from datetime import datetime, timedelta
+from typing import Any, Optional, Union
 import requests
 from loguru import logger
 from omegaconf import DictConfig
@@ -11,6 +11,161 @@ from omegaconf import DictConfig
 from .protocol import Paper, CorpusPaper, TrendingItem, map_to_core_pillars
 
 FEISHU_BASE_URL = "https://open.feishu.cn/open-apis"
+
+READING_STATUS_TODO = "⏳ 待精读"
+READING_STATUS_READING = "📖 精读中"
+READING_STATUS_DONE = "✅ 已精读"
+READING_STATUS_TRANSFORMED = "💡 已转化"
+
+READING_STATUSES = [
+    READING_STATUS_TODO,
+    READING_STATUS_READING,
+    READING_STATUS_DONE,
+    READING_STATUS_TRANSFORMED,
+]
+
+READING_STATUS_BAR = "[ ⏳ 待精读 | 📖 精读中 | ✅ 已精读 | 💡 已转化 ]"
+
+
+def normalize_reading_status(status_str: Optional[str]) -> str:
+    """Normalizes various status aliases to the standard 4 reading lifecycle states."""
+    if not status_str:
+        return READING_STATUS_TODO
+    s = str(status_str).strip()
+    if s in READING_STATUSES:
+        return s
+    s_lower = s.lower()
+    if any(k in s_lower for k in ["待", "todo", "wait", "pending"]):
+        return READING_STATUS_TODO
+    if any(k in s_lower for k in ["中", "reading", "in_progress", "doing"]):
+        return READING_STATUS_READING
+    if any(k in s_lower for k in ["已精读", "done", "finished", "completed", "read"]):
+        return READING_STATUS_DONE
+    if any(k in s_lower for k in ["转化", "transformed", "actioned", "applied"]):
+        return READING_STATUS_TRANSFORMED
+    return s
+
+
+def _build_annotation_workspace_blocks(
+    sections: dict[str, Any],
+    is_app_note: bool = False
+) -> list[dict[str, Any]]:
+    """Builds top-level blocks for the Personal Reading Annotation & Reflection Workspace.
+
+    Includes:
+    - 💡 核心亮点与认知刷新 (Key Insights & Surprises)
+    - ❓ 批判性质疑与硬伤 (Critique, Method Flaws, Limitations)
+    - 🎯 与我当前研究的结合点 (Relevance to my Research / Idea / Baseline adoption)
+    - 📌 衍生待办 Action Items (Todo checkboxes for experiments, paper tracking, code reproduction)
+    """
+    insights_content = (
+        sections.get("personal_insights")
+        or sections.get("insights")
+        or "• [请在此记录触动最大的一两个核心机制、新范式或反直觉结论...]\n"
+    )
+    critique_content = (
+        sections.get("personal_critique")
+        or sections.get("critique")
+        or "• [请在此记录假设是否过强、基线是否不公平、评测泄漏或算力开销过大等局限...]\n"
+    )
+    relevance_content = (
+        sections.get("personal_relevance")
+        or sections.get("relevance")
+        or "• [请在此记录与当前选题的契合度，可否作为Baseline、借鉴其架构/Prompt或消融方案...]\n"
+    )
+
+    action_items = sections.get("action_items")
+    if not action_items:
+        if is_app_note:
+            action_items = [
+                "克隆代码仓库并在本地环境完成依赖配置与试运行",
+                "编写/适配当前智能体工作流的 Tool Wrapper 或 Prompt 模板",
+                "实测边界情况与错误恢复机制，沉淀最佳实践",
+            ]
+        else:
+            action_items = [
+                "复现论文核心算法 / 部署运行 Demo",
+                "引入当前对比实验作为 Baseline 评测",
+                "追踪跟踪作者后续工作、引用开源进展与评测更新",
+            ]
+
+    blocks: list[dict[str, Any]] = [
+        {
+            "block_type": 4,
+            "heading2": {
+                "elements": [
+                    {"text_run": {"content": "✍️ 个人研读批注与思考区 (My Reading Notes & Reflections)"}}
+                ]
+            }
+        },
+        {
+            "block_type": 5,
+            "heading3": {
+                "elements": [
+                    {"text_run": {"content": "💡 核心亮点与认知刷新 (Key Insights & Surprises)"}}
+                ]
+            }
+        },
+        {
+            "block_type": 2,
+            "text": {
+                "elements": [
+                    {"text_run": {"content": insights_content}}
+                ]
+            }
+        },
+        {
+            "block_type": 5,
+            "heading3": {
+                "elements": [
+                    {"text_run": {"content": "❓ 批判性质疑与硬伤 (Critique, Method Flaws, Limitations)"}}
+                ]
+            }
+        },
+        {
+            "block_type": 2,
+            "text": {
+                "elements": [
+                    {"text_run": {"content": critique_content}}
+                ]
+            }
+        },
+        {
+            "block_type": 5,
+            "heading3": {
+                "elements": [
+                    {"text_run": {"content": "🎯 与我当前研究的结合点 (Relevance to my Research / Idea / Baseline adoption)"}}
+                ]
+            }
+        },
+        {
+            "block_type": 2,
+            "text": {
+                "elements": [
+                    {"text_run": {"content": relevance_content}}
+                ]
+            }
+        },
+        {
+            "block_type": 5,
+            "heading3": {
+                "elements": [
+                    {"text_run": {"content": "📌 衍生待办 Action Items"}}
+                ]
+            }
+        },
+    ]
+
+    for item in action_items:
+        blocks.append({
+            "block_type": 17,
+            "todo": {
+                "style": {"done": False},
+                "elements": [{"text_run": {"content": str(item)}}]
+            }
+        })
+
+    return blocks
 
 
 class FeishuClient:
@@ -131,7 +286,8 @@ class FeishuClient:
         self,
         papers: list[Paper],
         trending_items: Optional[list[TrendingItem]] = None,
-        folder_token: Optional[str] = None
+        folder_token: Optional[str] = None,
+        reading_plan: Optional[list[Any]] = None,
     ) -> str:
         """Creates or updates a daily paper digest in Feishu Docx."""
         if self.dry_run:
@@ -179,7 +335,7 @@ class FeishuClient:
         # Ensure document edit permissions so checkboxes are clickable
         self._ensure_doc_permissions(doc_id)
 
-        # Build clean blocks (no emoji, no match score, bilingual TL;DR, clean todo checkbox)
+        # Build clean blocks
         children: list[dict[str, Any]] = [
             {
                 "block_type": 2,
@@ -187,13 +343,84 @@ class FeishuClient:
                     "elements": [
                         {
                             "text_run": {
-                                "content": "说明：若需深入精读某篇论文，请勾选对应卡片下方的待办框。下次云端执行时将自动拉取结构化正文沉淀至个人文献库。\n"
+                                "content": "说明：若需深入精读某篇论文，请勾选对应卡片下方的待办框。下次云端执行时将自动拉取结构化正文沉淀至个人文献库并同步创建飞书多端待办。\n"
                             }
                         }
                     ]
                 }
-            }
+            },
+            # Section: Today's Reading Plan
+            {
+                "block_type": 4,
+                "heading2": {
+                    "elements": [
+                        {"text_run": {"content": "🎯 今日精读任务规划 (Today's Reading Plan)"}}
+                    ]
+                }
+            },
+            {
+                "block_type": 2,
+                "text": {
+                    "elements": [
+                        {
+                            "text_run": {
+                                "content": (
+                                    f"📅 规划日期: {today} | 建议精读节奏: 1~2篇核心前沿 / 1个工程实践工具\n"
+                                    "💡 规划说明: 勾选下方目标制定今日精读安排；勾选论文卡片下方的【确认精读入库】将同步创建深度研读工作区与飞书多端待办。\n"
+                                )
+                            }
+                        }
+                    ]
+                }
+            },
+            {
+                "block_type": 17,
+                "todo": {
+                    "style": {"done": False},
+                    "elements": [{"text_run": {"content": "⚡ 今日通读: 快速扫读今日所有论文 TL;DR 与热点趋势，筛选重点候选"}}]
+                }
+            },
+            {
+                "block_type": 17,
+                "todo": {
+                    "style": {"done": False},
+                    "elements": [{"text_run": {"content": "📖 核心精读: 锁定 1-2 篇高匹配度论文，完成【个人研读批注与思考区】填写"}}]
+                }
+            },
+            {
+                "block_type": 17,
+                "todo": {
+                    "style": {"done": False},
+                    "elements": [{"text_run": {"content": "🎯 落地转化: 提炼可复用的实验 Baseline、算法机制或工程 Action Item"}}]
+                }
+            },
         ]
+
+        # Add specific reading plan items or prioritize top papers
+        if reading_plan:
+            for p_item in reading_plan:
+                p_text = p_item if isinstance(p_item, str) else p_item.get("text", "")
+                p_done = False if isinstance(p_item, str) else p_item.get("done", False)
+                if p_text:
+                    children.append({
+                        "block_type": 17,
+                        "todo": {
+                            "style": {"done": p_done},
+                            "elements": [{"text_run": {"content": f"📌 精读目标: {p_text}"}}]
+                        }
+                    })
+        elif papers:
+            top_count = min(2, len(papers))
+            for p_idx in range(top_count):
+                p = papers[p_idx]
+                label = "🔥 优先精读" if p_idx == 0 else "🔥 进阶研读"
+                children.append({
+                    "block_type": 17,
+                    "todo": {
+                        "style": {"done": False},
+                        "elements": [{"text_run": {"content": f"{label}: {p.title_with_venue()} (~30min 研读批注)"}}]
+                    }
+                })
 
         # Section 1: Academic Papers
         if papers:
@@ -469,7 +696,14 @@ class FeishuClient:
                 h_key = "heading2" if b_type == 4 else "heading3"
                 elements = item.get(h_key, {}).get("elements", [])
                 raw_heading = "".join(el.get("text_run", {}).get("content", "") for el in elements).strip()
-                if not re.match(r"^[一二三四五六七八九十]+、", raw_heading):
+                is_system_header = bool(
+                    re.match(r"^[一二三四五六七八九十]+、", raw_heading)
+                    or "今日精读任务规划" in raw_heading
+                    or "Reading Plan" in raw_heading
+                    or "任务规划" in raw_heading
+                    or "个人研读批注" in raw_heading
+                )
+                if not is_system_header:
                     last_heading = raw_heading
                     last_heading_id = b_id
             elif b_type == 17 and last_heading:  # todo
@@ -597,7 +831,14 @@ class FeishuClient:
                         h_key = "heading2" if b_type == 4 else "heading3"
                         elements = item.get(h_key, {}).get("elements", [])
                         raw_heading = "".join(el.get("text_run", {}).get("content", "") for el in elements).strip()
-                        if not re.match(r"^[一二三四五六七八九十]+、", raw_heading):
+                        is_system_header = bool(
+                            re.match(r"^[一二三四五六七八九十]+、", raw_heading)
+                            or "今日精读任务规划" in raw_heading
+                            or "Reading Plan" in raw_heading
+                            or "任务规划" in raw_heading
+                            or "个人研读批注" in raw_heading
+                        )
+                        if not is_system_header:
                             if current_card and not current_card["has_done"]:
                                 unreviewed_cards.append(current_card)
                             current_card = {
@@ -629,7 +870,12 @@ class FeishuClient:
             logger.warning(f"Failed to fetch unreviewed cards from Wiki: {exc}")
         return unreviewed_cards
 
-    def create_reading_note(self, paper: Paper, sections: Optional[dict[str, str]] = None) -> str:
+    def create_reading_note(
+        self,
+        paper: Paper,
+        sections: Optional[dict[str, Any]] = None,
+        status: str = READING_STATUS_TODO,
+    ) -> str:
         """Creates a structured deep reading note or AI tool / skill note under the Wiki notes parent node."""
         if self.dry_run:
             return "https://feishu.cn/docx/dry_run_note"
@@ -637,6 +883,7 @@ class FeishuClient:
         sections = sections or {}
         today = datetime.now().strftime("%Y-%m-%d")
         title = paper.title_with_venue()
+        current_status = normalize_reading_status(status)
 
         doc_id = None
         note_url = None
@@ -685,6 +932,8 @@ class FeishuClient:
             or ("github.com" in (paper.url or "").lower())
         )
 
+        blocks: list[dict[str, Any]] = []
+
         if is_app_note:
             overview = sections.get("overview") or sections.get("core_summary") or paper.tldr_zh or paper.tldr or paper.abstract[:200]
             scenarios = sections.get("scenarios_and_triggers") or "适用于自主智能体工作流执行、工具调用与开发环境自动化。"
@@ -692,17 +941,24 @@ class FeishuClient:
             usage_examples = sections.get("usage_examples") or f"# 详细使用与调用示例请参阅仓库主页:\n# {paper.url or 'N/A'}"
             tips = sections.get("key_features_and_tips") or "1. 遵循工具入参调用规范。\n2. 注意运行环境版本兼容性。"
 
-            blocks: list[dict[str, Any]] = [
-                {
-                    "block_type": 2,
-                    "text": {
-                        "elements": [
-                            {"text_run": {"content": f"项目类型: AI 应用 / 开源项目 / Agent Skill\n"}},
-                            {"text_run": {"content": f"来源: [{src_str}] | 项目主页: {paper.url or 'N/A'}\n"}},
-                            {"text_run": {"content": f"收录日期: {date_str}\n"}},
-                        ]
-                    }
-                },
+            # Top Metadata & Status Block
+            blocks.append({
+                "block_type": 2,
+                "text": {
+                    "elements": [
+                        {"text_run": {"content": f"🏷️ 阅读状态: {current_status}  {READING_STATUS_BAR}\n"}},
+                        {"text_run": {"content": f"项目类型: AI 应用 / 开源项目 / Agent Skill\n"}},
+                        {"text_run": {"content": f"来源: [{src_str}] | 项目主页: {paper.url or 'N/A'}\n"}},
+                        {"text_run": {"content": f"收录日期: {date_str}\n"}},
+                    ]
+                }
+            })
+
+            # Top: Personal Annotation and Reflection Workspace
+            blocks.extend(_build_annotation_workspace_blocks(sections, is_app_note=True))
+
+            # Structured Sections
+            blocks.extend([
                 {
                     "block_type": 4,
                     "heading2": {"elements": [{"text_run": {"content": "一、项目定位与核心功能"}}]}
@@ -743,7 +999,7 @@ class FeishuClient:
                     "block_type": 2,
                     "text": {"elements": [{"text_run": {"content": f"{tips}\n"}}]}
                 },
-            ]
+            ])
         else:
             core_summary = sections.get("core_summary") or paper.tldr_zh or paper.tldr or paper.abstract[:200]
             motivation = sections.get("motivation") or (
@@ -759,17 +1015,24 @@ class FeishuClient:
                 "1. 适用于自主智能体工作流与长程记忆持久化。\n2. 机制具备跨领域泛化潜力。"
             )
 
-            blocks = [
-                {
-                    "block_type": 2,
-                    "text": {
-                        "elements": [
-                            {"text_run": {"content": f"来源: [{src_str}] | 日期: {date_str} | 录用会议/期刊: {venue_str}\n"}},
-                            {"text_run": {"content": f"发表单位/实验室: {affil_str}\n"}},
-                            {"text_run": {"content": f"原文直达: {paper.url or 'N/A'}\n"}},
-                        ]
-                    }
-                },
+            # Top Metadata & Status Block
+            blocks.append({
+                "block_type": 2,
+                "text": {
+                    "elements": [
+                        {"text_run": {"content": f"🏷️ 阅读状态: {current_status}  {READING_STATUS_BAR}\n"}},
+                        {"text_run": {"content": f"来源: [{src_str}] | 日期: {date_str} | 录用会议/期刊: {venue_str}\n"}},
+                        {"text_run": {"content": f"发表单位/实验室: {affil_str}\n"}},
+                        {"text_run": {"content": f"原文直达: {paper.url or 'N/A'}\n"}},
+                    ]
+                }
+            })
+
+            # Top: Personal Annotation and Reflection Workspace
+            blocks.extend(_build_annotation_workspace_blocks(sections, is_app_note=False))
+
+            # Structured Sections
+            blocks.extend([
                 {
                     "block_type": 4,
                     "heading2": {"elements": [{"text_run": {"content": "一、核心一句话总结"}}]}
@@ -810,7 +1073,7 @@ class FeishuClient:
                     "block_type": 2,
                     "text": {"elements": [{"text_run": {"content": f"{takeaways}\n"}}]}
                 },
-            ]
+            ])
 
         self._call_api(
             "POST",
@@ -825,7 +1088,8 @@ class FeishuClient:
         paper: Paper,
         note_url: str,
         tags: Optional[list[str]] = None,
-        core_summary: str = ""
+        core_summary: str = "",
+        status: str = READING_STATUS_TODO,
     ) -> None:
         """Appends a new paper card entry to the Feishu Wiki master index document."""
         if not self.master_index_node_token or self.dry_run:
@@ -860,6 +1124,7 @@ class FeishuClient:
 
         full_title = paper.title_with_venue()
         venue_str = getattr(paper, "venue", None) or "Preprint"
+        current_status = normalize_reading_status(status)
 
         index_blocks: list[dict[str, Any]] = [
             {
@@ -874,6 +1139,7 @@ class FeishuClient:
                 "block_type": 2,
                 "text": {
                     "elements": [
+                        {"text_run": {"content": f"• 🏷️ 阅读状态: {current_status}  {READING_STATUS_BAR}\n"}},
                         {"text_run": {"content": f"• 全称: {full_title}\n"}},
                         {"text_run": {"content": f"• 录用会议/期刊: {venue_str}\n"}},
                         {"text_run": {"content": f"• 发表单位: {affil_str}\n"}},
@@ -959,3 +1225,191 @@ class FeishuClient:
             logger.info(f"Appended paper '{paper.title}' to Tag Knowledge Graph document")
         except Exception as exc:
             logger.error(f"Failed to append to tag graph document: {exc}")
+
+    def get_reading_status(self, document_id: str) -> Optional[str]:
+        """Inspects the reading lifecycle status of a document."""
+        if self.dry_run:
+            return READING_STATUS_TODO
+        try:
+            res = self._call_api("GET", f"/docx/v1/documents/{document_id}/blocks")
+            items = res.get("items", [])
+            for item in items:
+                if item.get("block_type") == 2:  # text
+                    full_text = "".join(
+                        el.get("text_run", {}).get("content", "")
+                        for el in item.get("text", {}).get("elements", [])
+                    )
+                    if "阅读状态:" in full_text:
+                        after_status = full_text.split("阅读状态:", 1)[1]
+                        status_part = after_status.split("[")[0].strip()
+                        for st in READING_STATUSES:
+                            if st in status_part:
+                                return st
+                        match = re.search(r"^([^\n\[\]|]+)", status_part)
+                        if match:
+                            return normalize_reading_status(match.group(1).strip())
+            return None
+        except Exception as exc:
+            logger.warning(f"Failed to get reading status from document {document_id}: {exc}")
+            return None
+
+    def update_reading_status(self, document_id: str, new_status: str) -> bool:
+        """Updates the reading lifecycle status in a Feishu document."""
+        target_status = normalize_reading_status(new_status)
+        if self.dry_run:
+            logger.info(f"[Dry-run] Updated document {document_id} reading status to: {target_status}")
+            return True
+
+        try:
+            res = self._call_api("GET", f"/docx/v1/documents/{document_id}/blocks")
+            items = res.get("items", [])
+            for item in items:
+                if item.get("block_type") == 2:
+                    elements = item.get("text", {}).get("elements", [])
+                    full_text = "".join(el.get("text_run", {}).get("content", "") for el in elements)
+                    if "阅读状态:" in full_text:
+                        block_id = item.get("block_id")
+                        new_line = f"🏷️ 阅读状态: {target_status}  {READING_STATUS_BAR}"
+                        updated_text = re.sub(
+                            r"🏷️?\s*阅读状态:[^\n]*",
+                            new_line,
+                            full_text
+                        )
+                        self._call_api(
+                            "PATCH",
+                            f"/docx/v1/documents/{document_id}/blocks/{block_id}",
+                            data={
+                                "update_text_elements": {
+                                    "elements": [{"text_run": {"content": updated_text}}]
+                                }
+                            }
+                        )
+                        logger.info(f"Updated document {document_id} reading status to '{target_status}'")
+                        return True
+            logger.warning(f"Could not find reading status block in document {document_id}")
+            return False
+        except Exception as exc:
+            logger.error(f"Failed to update reading status in document {document_id}: {exc}")
+            return False
+
+    def create_reading_task(
+        self,
+        paper: Optional[Paper] = None,
+        title: Optional[str] = None,
+        note_url: Optional[str] = None,
+        due_time: Optional[Union[datetime, str, int, float]] = None,
+        assignee_id: Optional[str] = None,
+        description: Optional[str] = None,
+        tags: Optional[list[str]] = None,
+    ) -> dict[str, Any]:
+        """Creates a Lark Task (v2) for reading planning with due date and note link.
+
+        API: POST /task/v2/tasks
+        """
+        task_title = title or (f"📖 精读: {paper.title_with_venue()}" if paper else "📖 论文精读任务")
+
+        # Construct task description
+        if description:
+            desc_str = description
+        else:
+            desc_lines = []
+            if note_url:
+                desc_lines.append(f"📘 精读笔记直达: {note_url}")
+            if paper and paper.url:
+                desc_lines.append(f"🔗 原文直达: {paper.url}")
+            if paper and (paper.tldr_zh or paper.tldr):
+                desc_lines.append(f"💡 核心摘要: {paper.tldr_zh or paper.tldr}")
+            if tags:
+                desc_lines.append(f"🏷️ 方向标签: {' '.join(f'[#{t}]' for t in tags)}")
+            desc_lines.append("\n【研读待办建议】:")
+            desc_lines.append("1. 研读核心架构与方法创新点")
+            desc_lines.append("2. 在笔记中记录批判性质疑与结合点")
+            desc_lines.append("3. 评估 Baseline 接入与实验复现价值")
+            desc_str = "\n".join(desc_lines)
+
+        # Parse due date
+        is_all_day = False
+        if due_time is None:
+            now = datetime.now()
+            due_dt = datetime(now.year, now.month, now.day, 23, 59, 59) + timedelta(days=1)
+            ts_ms = str(int(due_dt.timestamp() * 1000))
+        elif isinstance(due_time, datetime):
+            ts_ms = str(int(due_time.timestamp() * 1000))
+        elif isinstance(due_time, (int, float)):
+            val = int(due_time)
+            if val < 10000000000:  # in seconds
+                val *= 1000
+            ts_ms = str(val)
+        elif isinstance(due_time, str):
+            due_str = due_time.strip()
+            if due_str.isdigit():
+                val = int(due_str)
+                if val < 10000000000:
+                    val *= 1000
+                ts_ms = str(val)
+            else:
+                try:
+                    dt = datetime.strptime(due_str, "%Y-%m-%d")
+                    ts_ms = str(int(dt.timestamp() * 1000))
+                    is_all_day = True
+                except ValueError:
+                    try:
+                        dt = datetime.fromisoformat(due_str)
+                        ts_ms = str(int(dt.timestamp() * 1000))
+                    except ValueError:
+                        now = datetime.now()
+                        due_dt = datetime(now.year, now.month, now.day, 23, 59, 59) + timedelta(days=1)
+                        ts_ms = str(int(due_dt.timestamp() * 1000))
+        else:
+            now = datetime.now()
+            due_dt = datetime(now.year, now.month, now.day, 23, 59, 59) + timedelta(days=1)
+            ts_ms = str(int(due_dt.timestamp() * 1000))
+
+        due_obj = {
+            "timestamp": ts_ms,
+            "is_all_day": is_all_day,
+        }
+
+        origin_obj = {
+            "platform_i18n_name": {
+                "zh_cn": "飞书论文速递",
+                "en_us": "Feishu Paper Daily",
+            },
+            "href": {
+                "url": note_url or (paper.url if paper else "https://open.feishu.cn"),
+                "title": "打开精读笔记" if note_url else "打开原文",
+            }
+        }
+
+        target_assignee = assignee_id or self.config.get("user_id") or self.config.get("user_openid")
+        members = []
+        if target_assignee:
+            members.append({
+                "id": str(target_assignee),
+                "type": "user",
+                "role": "assignee",
+            })
+
+        payload: dict[str, Any] = {
+            "summary": task_title,
+            "description": desc_str,
+            "due": due_obj,
+            "origin": origin_obj,
+        }
+        if members:
+            payload["members"] = members
+
+        if self.dry_run:
+            logger.info(f"[Dry-run] Lark Task created: '{task_title}' (due: {ts_ms})")
+            return {
+                "guid": "dry_run_task_guid",
+                "summary": task_title,
+                "url": "https://feishu.cn/task/dry_run",
+                "due": due_obj,
+            }
+
+        logger.info(f"Creating Lark Task: '{task_title}' via /task/v2/tasks...")
+        res = self._call_api("POST", "/task/v2/tasks", data=payload)
+        task_data = res.get("task", res.get("data", res))
+        logger.info(f"Lark Task created successfully: guid={task_data.get('guid')}")
+        return task_data

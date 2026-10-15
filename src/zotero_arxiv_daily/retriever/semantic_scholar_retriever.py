@@ -10,7 +10,7 @@ from ..protocol import Paper, extract_venue_from_text
 
 SEARCH_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
 RECOMMEND_URL = "https://api.semanticscholar.org/recommendations/v1/papers/forpaper"
-FIELDS = "paperId,title,authors,abstract,url,venue,publicationDate,externalIds"
+FIELDS = "paperId,title,authors,abstract,url,venue,publicationDate,externalIds,citationCount,influentialCitationCount"
 TIMEOUT = (10, 30)
 
 
@@ -146,6 +146,8 @@ class SemanticScholarRetriever(BaseRetriever):
             or extract_venue_from_text(abstract)
         )
 
+        citation_count = raw_paper.get("citationCount")
+
         return Paper(
             source=self.name,
             title=title,
@@ -159,4 +161,5 @@ class SemanticScholarRetriever(BaseRetriever):
             sources=[self.name],
             published_date=published_date,
             venue=venue,
+            citation_count=citation_count,
         )
