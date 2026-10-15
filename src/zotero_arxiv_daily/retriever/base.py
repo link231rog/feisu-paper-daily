@@ -25,6 +25,7 @@ class BaseRetriever(ABC):
         raw_papers = self._retrieve_raw_papers()
         logger.info("Processing papers...")
         papers = []
+        delay = float(self.retriever_config.get("conversion_delay", 0.0)) if hasattr(self, "retriever_config") and hasattr(self.retriever_config, "get") and self.retriever_config else 0.0
         for raw_paper in tqdm(raw_papers, total=len(raw_papers), desc="Converting papers"):
             try:
                 paper = self.convert_to_paper(raw_paper)
@@ -33,7 +34,7 @@ class BaseRetriever(ABC):
                 continue
             if paper is not None:
                 papers.append(paper)
-            sleep(1)
+            sleep(delay)
         return papers
 
 registered_retrievers = {}

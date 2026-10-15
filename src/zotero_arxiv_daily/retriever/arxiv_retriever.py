@@ -328,11 +328,16 @@ class ArxivRetriever(BaseRetriever):
         authors = [a.name for a in raw_paper.authors]
         abstract = raw_paper.summary
         pdf_url = raw_paper.pdf_url
-        full_text, affiliations = extract_text_and_affiliations_from_html(raw_paper)
-        if full_text is None:
-            full_text = extract_text_from_pdf(raw_paper)
-        if full_text is None:
-            full_text = extract_text_from_tar(raw_paper)
+        full_text = None
+        affiliations = None
+        if self.config.source.arxiv.get("extract_full_text", False):
+            full_text, parsed_affils = extract_text_and_affiliations_from_html(raw_paper)
+            if full_text is None:
+                full_text = extract_text_from_pdf(raw_paper)
+            if full_text is None:
+                full_text = extract_text_from_tar(raw_paper)
+            if parsed_affils:
+                affiliations = parsed_affils
         arxiv_id = raw_paper.entry_id.split("/abs/")[-1].strip() if "/abs/" in raw_paper.entry_id else None
         venue = (
             extract_venue_from_text(getattr(raw_paper, "comment", None))
