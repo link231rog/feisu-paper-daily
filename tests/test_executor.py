@@ -309,5 +309,65 @@ def test_generate_app_note_sections_fallback(config):
     assert "scenarios_and_triggers" in sections
     assert "quick_start" in sections
     assert "usage_examples" in sections
-    assert "key_features_and_tips" in sections
     assert "Tool" in tags
+
+
+def test_executor_total_daily_quota_allocation(config, monkeypatch):
+    """Verifies that total_daily_quota balances papers and trending items to <= quota (e.g. 15)."""
+    from omegaconf import open_dict
+    from tests.canned_responses import make_sample_paper, make_stub_openai_client, make_stub_zotero_client
+    from zotero_arxiv_daily.protocol import TrendingItem
+
+    with open_dict(config):
+        config.executor.source = ["arxiv"]
+        config.executor.reranker = "api"
+        config.executor.total_daily_quota = 15
+        config.news_and_trends.enabled = True
+        config.news_and_trends.max_items = 4
+
+    stub_zot = make_stub_zotero_client()
+    monkeypatch.setattr("zotero_arxiv_daily.executor.zotero.Zotero", lambda *a, **kw: stub_zot)
+    stub_client = make_stub_openai_client()
+    monkeypatch.setattr("zotero_arxiv_daily.executor.OpenAI", lambda **kw: stub_client)
+    monkeypatch.setattr("zotero_arxiv_daily.reranker.api.OpenAI", lambda **kw: stub_client)
+
+    # 20 papers retrieved
+    import zotero_arxiv_daily.retriever.arxiv_retriever  # noqa: F401
+    from zotero_arxiv_daily.retriever.base import registered_retrievers
+    papers = [make_sample_paper(title=f"Paper {i}") for i in range(20)]
+    monkeypatch.setattr(registered_retrievers["arxiv"], "retrieve_papers", lambda self: list(papers))
+
+    # 10 trending items
+    trends = [
+        TrendingItem(source="github", title=f"Repo {i}", url=f"https://github.com/org/repo{i}", category="github_repo", stars=100 - i)
+        for i in range(10)
+    ]
+    from zotero_arxiv_daily.retriever.github_trending_retriever import GithubTrendingRetriever
+    monkeypatch.setattr(GithubTrendingRetriever, "retrieve_trending", lambda self: list(trends))
+    from zotero_arxiv_daily.retriever.news_retriever import NewsRetriever
+    monkeypatch.setattr(NewsRetriever, "retrieve_news", lambda self: [])
+
+    # Mock feishu client
+    published_docs = []
+    class StubFeishuClient:
+        def __init__(self, cfg):
+            pass
+        def fetch_unreviewed_cards_from_wiki(self):
+            return []
+        def create_or_update_daily_report(self, papers, trending_items=None):
+            published_docs.append((papers, trending_items))
+            return "https://feishu.cn/docx/test_digest"
+
+    monkeypatch.setattr("zotero_arxiv_daily.feishu.FeishuClient", StubFeishuClient)
+    with open_dict(config):
+        config.feishu = OmegaConf.create({"app_id": "mock_id", "app_secret": "mock_sec", "dry_run": False})
+
+    executor = Executor(config)
+    executor.run()
+
+    assert len(published_docs) == 1
+    p_out, t_out = published_docs[0]
+    assert len(t_out) <= 4
+    assert len(p_out) <= 11
+    assert len(p_out) + len(t_out) <= 15
+

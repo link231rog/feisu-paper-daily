@@ -68,3 +68,45 @@ def test_rerank_single_candidate_single_corpus():
 def test_get_reranker_cls_unknown():
     with pytest.raises(ValueError, match="not found"):
         get_reranker_cls("nonexistent_reranker_xyz")
+
+
+def test_rerank_recency_and_venue_boost():
+    from datetime import datetime
+    corpus = make_sample_corpus(1)
+    # Both have identical similarity
+    paper_recent_venue = make_sample_paper(
+        title="EMNLP 2026 Paper",
+        published_date=datetime(2026, 8, 1),
+        venue="EMNLP 2026",
+    )
+    paper_old = make_sample_paper(
+        title="Old Preprint",
+        published_date=datetime(2021, 1, 1),
+    )
+    sim = np.array([[0.5], [0.5]])
+    reranker = StubReranker(sim)
+    ranked = reranker.rerank([paper_old, paper_recent_venue], corpus)
+    assert ranked[0].title == "EMNLP 2026 Paper"
+    assert ranked[0].score > ranked[1].score + 2.0  # +1.5 recency + 1.5 venue
+
+
+def test_rerank_citation_baseline_boost():
+    from datetime import datetime
+    corpus = make_sample_corpus(1)
+    # High-citation classic baseline paper vs paper with 0 citations
+    paper_classic_baseline = make_sample_paper(
+        title="Classic Baseline (e.g. MemGPT)",
+        published_date=datetime(2023, 10, 1),
+        citation_count=500,
+    )
+    paper_zero_cite = make_sample_paper(
+        title="Unknown Paper",
+        published_date=datetime(2023, 10, 1),
+        citation_count=0,
+    )
+    sim = np.array([[0.5], [0.5]])
+    reranker = StubReranker(sim)
+    ranked = reranker.rerank([paper_zero_cite, paper_classic_baseline], corpus)
+    assert ranked[0].title == "Classic Baseline (e.g. MemGPT)"
+    assert ranked[0].score > ranked[1].score
+

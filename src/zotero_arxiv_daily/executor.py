@@ -369,6 +369,18 @@ class Executor:
                     core_summary=sections.get("core_summary", "")
                 )
 
+                if feishu_cfg.get("create_tasks", True):
+                    try:
+                        task_res = client.create_reading_task(
+                            paper=paper,
+                            note_url=note_url,
+                            tags=tags,
+                        )
+                        task_guid = task_res.get("guid") or task_res.get("task", {}).get("guid")
+                        logger.info(f"Created Lark Task for '{title}': guid={task_guid}")
+                    except Exception as t_exc:
+                        logger.warning(f"Notice: creating Lark task for '{title}': {t_exc}")
+
                 self.paper_store.mark_ingested(
                     paper,
                     {
@@ -422,11 +434,22 @@ class Executor:
         new_papers = self.paper_store.filter_already_pushed(deduped_papers)
         logger.info(f"{len(new_papers)} new unpushed papers ready for reranking")
 
+        # Quota allocation: balance papers and trending items to adhere to total_daily_quota (default 15)
+        trends_cfg = self.config.get("news_and_trends") or {}
+        total_daily_quota = self.config.executor.get("total_daily_quota")
+        if total_daily_quota is not None:
+            total_quota = int(total_daily_quota)
+            max_trends = min(int(trends_cfg.get("max_items", 4)), max(1, total_quota // 3))
+            paper_quota = max(1, total_quota - max_trends)
+        else:
+            paper_quota = int(self.config.executor.get("max_paper_num", 15))
+            max_trends = int(trends_cfg.get("max_items", 4))
+
         reranked_papers: list[Paper] = []
         if len(new_papers) > 0:
             logger.info("Reranking papers against interest corpus...")
             reranked_papers = self.reranker.rerank(new_papers, corpus)
-            reranked_papers = reranked_papers[:self.config.executor.max_paper_num]
+            reranked_papers = reranked_papers[:paper_quota]
 
             if self.openai_client is not None:
                 logger.info("Generating TLDR, affiliations, and conference venue via LLM...")
@@ -474,7 +497,10 @@ class Executor:
 
                 # Prioritize: sort by stars desc
                 unpushed_trending.sort(key=lambda x: (x.stars or 0), reverse=True)
-                max_trends = int(trends_cfg.get("max_items", 8))
+                if self.config.executor.get("total_daily_quota"):
+                    max_trends = min(int(trends_cfg.get("max_items", 4)), max(1, int(self.config.executor.total_daily_quota) // 3))
+                else:
+                    max_trends = int(trends_cfg.get("max_items", 4))
                 trending_items = unpushed_trending[:max_trends]
 
                 # Generate concise Chinese summary with LLM if available

@@ -79,6 +79,7 @@ def test_semantic_scholar_convert_to_paper(s2_config):
         "authors": [{"name": "Jane Doe"}],
         "externalIds": {"ArXiv": "2401.99999", "DOI": "10.1145/12345"},
         "publicationDate": "2026-05-20",
+        "citationCount": 42,
     }
 
     paper = retriever.convert_to_paper(raw)
@@ -90,6 +91,9 @@ def test_semantic_scholar_convert_to_paper(s2_config):
     assert paper.url == "https://arxiv.org/abs/2401.99999"
     assert paper.pdf_url == "https://arxiv.org/pdf/2401.99999.pdf"
     assert paper.published_date == datetime(2026, 5, 20)
+    assert paper.citation_count == 42
+    assert paper.published_year == 2026
+    assert paper.is_recent(2025) is True
 
 
 def test_semantic_scholar_retry_on_429(s2_config, monkeypatch):

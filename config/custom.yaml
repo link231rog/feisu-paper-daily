@@ -11,6 +11,9 @@ topics:
   - name: "Reinforcement Learning (RL)"
     keywords: ["reinforcement learning", "RL", "PPO", "GRPO", "outcome-driven reward", "policy gradient", "agent RL", "actor-critic"]
     description: "Outcome-driven reward mechanisms, reinforcement learning from scratch or minimal seed data, test-time policy search, and agent self-alignment."
+  - name: "Knowledge Graph & Baseline"
+    keywords: ["knowledge graph", "knowledge graph construction", "agent benchmark", "memory benchmark", "KG agent", "HotpotQA"]
+    description: "Foundational and classical knowledge graph construction, structured reasoning, and multi-agent memory benchmarks."
 
 zotero:
   user_id: ${oc.env:ZOTERO_ID,null}
@@ -39,8 +42,21 @@ source:
   huggingface:
     limit: 30
   semantic_scholar:
-    queries: ["agent memory", "decision model agent", "multi-agent system MAS", "reinforcement learning agent memory"]
+    queries:
+      - "agent memory"
+      - "decision model agent"
+      - "multi-agent system MAS"
+      - "reinforcement learning agent memory"
+      - "knowledge graph construction agent"
+      - "agent benchmark evaluation"
+    date_range: "2025:2026"
+    seed_papers:
+      - "ARXIV:2310.08560"
+      - "ARXIV:2304.03442"
+      - "ARXIV:2303.11366"
+      - "ARXIV:2002.00388"
     limit_per_query: 10
+    seed_limit: 8
     api_key: ${oc.env:SEMANTIC_SCHOLAR_API_KEY,null}
 
 feishu:
@@ -61,16 +77,17 @@ paper_store:
 executor:
   debug: ${oc.env:DEBUG,false}
   max_paper_num: 15
+  total_daily_quota: 15
   source: ['arxiv', 'huggingface', 'semantic_scholar']
   reranker: local
 
 news_and_trends:
   enabled: ${oc.env:TRENDS_ENABLED,true}
-  max_items: 8
+  max_items: 4
   min_github_stars: 50
   github:
     enabled: true
-    topics: ["ai-agent", "agent-memory", "decision-model", "multi-agent-systems", "reinforcement-learning"]
+    topics: ["ai-agent", "agent-memory", "decision-model", "multi-agent-systems", "reinforcement-learning", "knowledge-graph"]
     days_back: 7
   news:
     enabled: true
@@ -84,8 +101,12 @@ news_and_trends:
       keywords: ["multi-agent", "multiagent", "cooperative agent", "swarm", "agent communication", "adversarial agent", "mas"]
     - name: "RL"
       keywords: ["reinforcement learning", "ppo", "grpo", "reward", "policy gradient", "q-learning", "actor-critic"]
+    - name: "Benchmark"
+      keywords: ["benchmark", "dataset", "eval-suite", "hotpotqa", "longevalmem", "evaluation"]
+    - name: "KnowledgeGraph"
+      keywords: ["knowledge graph", "kg", "entity linking", "relation extraction", "transe"]
     - name: "OpenSource"
       keywords: ["open-weights", "weights", "llama", "deepseek", "vllm", "sglang", "ollama"]
     - name: "Breaking"
-      keywords: ["announces", "release", "launched", "benchmark", "breakthrough"]
+      keywords: ["announces", "release", "launched", "breakthrough"]
 

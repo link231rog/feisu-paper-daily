@@ -22,7 +22,7 @@ source:
   semantic_scholar:
     queries: null # List of search queries. Example: ["large language models", "agent alignment"]
     seed_papers: null # List of seed paper identifiers (DOI, ArXiv ID, or S2 paperId)
-    date_range: null # Publication year or range, e.g. "2026:" or "2026"
+    date_range: "2025:2026" # Publication year or range, e.g. "2025:2026" or "2026"
     limit_per_query: 15
     seed_limit: 10
     api_key: null # Semantic Scholar API key (optional, avoids 429 rate limit)
@@ -67,6 +67,7 @@ feishu:
   master_index_node_token: null
   tag_graph_node_token: null
   dry_run: false
+  create_tasks: true
 
 paper_store:
   path: "data/paper_store.json"
@@ -74,13 +75,14 @@ paper_store:
 executor:
   debug: false
   send_empty: false
-  max_paper_num: 20
+  max_paper_num: 15
+  total_daily_quota: 15
   source: ['arxiv', 'huggingface', 'semantic_scholar']
   reranker: local
 
 news_and_trends:
   enabled: false
-  max_items: 8
+  max_items: 4
   min_github_stars: 50
   github:
     enabled: true

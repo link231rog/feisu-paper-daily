@@ -55,6 +55,27 @@ class Paper:
     sources: Optional[list[str]] = None  # merged from multiple retrievers, e.g. ["arxiv", "huggingface"]
     published_date: Optional[datetime] = None
     venue: Optional[str] = None
+    citation_count: Optional[int] = None
+
+    @property
+    def published_year(self) -> Optional[int]:
+        """Extracts publication or preprint submission year."""
+        if self.published_date:
+            return self.published_date.year
+        if self.venue:
+            m = re.search(r'\b(20\d{2})\b', self.venue)
+            if m:
+                return int(m.group(1))
+        if self.arxiv_id:
+            m = re.match(r'^(\d{2})\d{2}\.', self.arxiv_id)
+            if m:
+                return 2000 + int(m.group(1))
+        return None
+
+    def is_recent(self, min_year: int = 2025) -> bool:
+        """Checks if paper is from recent years (default 2025-2026)."""
+        y = self.published_year
+        return y is not None and y >= min_year
 
     def title_with_venue(self) -> str:
         """Returns the paper's English title with accepted conference/journal suffix if known."""
