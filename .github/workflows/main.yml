@@ -1,34 +1,47 @@
-name: Send emails daily
+name: Feishu Paper Daily
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 22 * * *'
+    - cron: '0 0 * * *' # Every day at 00:00 UTC (08:00 AM Beijing Time)
+
+permissions:
+  contents: write
 
 jobs:
-  calculate-and-send:
+  paper-daily:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          repository: ${{ vars.REPOSITORY }}
-          ref: ${{ vars.REF }}
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@v5
 
-      - name: Run script
+      - name: Run Paper Daily pipeline
         env:
-          ZOTERO_ID: ${{ secrets.ZOTERO_ID }}
-          ZOTERO_KEY: ${{ secrets.ZOTERO_KEY }}
-          SENDER: ${{ secrets.SENDER }}
-          RECEIVER: ${{ secrets.RECEIVER }}
-          SENDER_PASSWORD: ${{ secrets.SENDER_PASSWORD }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
+          FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
+          FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
+          FEISHU_DAILY_FOLDER_TOKEN: ${{ vars.FEISHU_DAILY_FOLDER_TOKEN }}
+          FEISHU_WIKI_SPACE_ID: ${{ vars.FEISHU_WIKI_SPACE_ID }}
+          FEISHU_DAILY_PARENT_NODE_TOKEN: ${{ vars.FEISHU_DAILY_PARENT_NODE_TOKEN }}
+          FEISHU_NOTES_PARENT_NODE_TOKEN: ${{ vars.FEISHU_NOTES_PARENT_NODE_TOKEN }}
+          FEISHU_MASTER_INDEX_NODE_TOKEN: ${{ vars.FEISHU_MASTER_INDEX_NODE_TOKEN }}
+          FEISHU_DRY_RUN: "false"
+          SEMANTIC_SCHOLAR_API_KEY: ${{ secrets.SEMANTIC_SCHOLAR_API_KEY }}
           CUSTOM_CONFIG: ${{ vars.CUSTOM_CONFIG }}
+          HF_ENDPOINT: "https://hf-mirror.com"
         run: |
-          printf "%b\n" "$CUSTOM_CONFIG" > config/custom.yaml
-          echo "Use custom config: "
-          cat config/custom.yaml
+          if [ -n "$CUSTOM_CONFIG" ]; then
+            printf "%b\n" "$CUSTOM_CONFIG" > config/custom.yaml
+            echo "Using custom config from repository variable:"
+            cat config/custom.yaml
+          fi
           uv run src/zotero_arxiv_daily/main.py
+
+      - name: Commit pushed history
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: update pushed papers history [skip ci]"
+          file_pattern: "data/paper_store.json"

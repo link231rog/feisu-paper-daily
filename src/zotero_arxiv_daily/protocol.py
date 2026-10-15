@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, TypeVar
 from datetime import datetime
 import re
@@ -46,12 +46,36 @@ class Paper:
     pdf_url: Optional[str] = None
     full_text: Optional[str] = None
     tldr: Optional[str] = None
+    tldr_en: Optional[str] = None
+    tldr_zh: Optional[str] = None
     affiliations: Optional[list[str]] = None
     score: Optional[float] = None
+    doi: Optional[str] = None
+    arxiv_id: Optional[str] = None
+    sources: Optional[list[str]] = None  # merged from multiple retrievers, e.g. ["arxiv", "huggingface"]
+    published_date: Optional[datetime] = None
+
+    def dedup_key(self) -> str:
+        if self.doi:
+            d = self.doi.lower().strip()
+            for prefix in ("https://doi.org/", "http://doi.org/", "doi.org/", "doi:"):
+                if d.startswith(prefix):
+                    d = d[len(prefix):]
+                    break
+            return d.strip()
+        if self.arxiv_id:
+            return self.arxiv_id.strip()
+        return re.sub(r'[^a-z0-9]', '', self.title.lower())
 
     def _generate_tldr_with_llm(self, openai_client:OpenAI,llm_params:dict) -> str:
-        lang = llm_params.get('language', 'English')
-        prompt = f"Given the following information of a paper, generate a one-sentence TLDR summary in {lang}:\n\n"
+        prompt = (
+            "Given the following information of a paper, generate two one-sentence TLDR summaries:\n"
+            "1. One sentence in English.\n"
+            "2. One sentence in Chinese.\n\n"
+            "Format your output strictly as:\n"
+            "EN: <One sentence English TLDR>\n"
+            "ZH: <One sentence Chinese TLDR>\n\n"
+        )
         if self.title:
             prompt += f"Title:\n {self.title}\n\n"
 
@@ -77,7 +101,7 @@ class Paper:
             [
                 {
                     "role": "system",
-                    "content": f"You are an assistant who perfectly summarizes scientific paper, and gives the core idea of the paper to the user. Your answer should be in {lang}.",
+                    "content": "You are an assistant who perfectly summarizes scientific papers. Provide a concise, clear one-sentence TLDR in English and one in Chinese.",
                 },
                 {"role": "user", "content": prompt},
             ],
@@ -86,13 +110,24 @@ class Paper:
     
     def generate_tldr(self, openai_client:OpenAI,llm_params:dict) -> str:
         try:
-            tldr = self._generate_tldr_with_llm(openai_client,llm_params)
-            self.tldr = tldr
-            return tldr
+            tldr_raw = self._generate_tldr_with_llm(openai_client,llm_params)
+            en_match = re.search(r'EN:\s*(.+?)(?=\nZH:|$)', tldr_raw, flags=re.DOTALL)
+            zh_match = re.search(r'ZH:\s*(.+)', tldr_raw, flags=re.DOTALL)
+            if en_match and zh_match:
+                self.tldr_en = en_match.group(1).strip()
+                self.tldr_zh = zh_match.group(1).strip()
+                self.tldr = self.tldr_zh
+            else:
+                self.tldr = tldr_raw.strip()
+                self.tldr_zh = self.tldr
+                self.tldr_en = self.abstract[:200] + "..." if self.abstract else self.tldr
+            return self.tldr
         except Exception as e:
             logger.warning(f"Failed to generate tldr of {self.url}: {e}")
             tldr = self.abstract
             self.tldr = tldr
+            self.tldr_zh = tldr
+            self.tldr_en = tldr
             return tldr
 
     def _generate_affiliations_with_llm(self, openai_client:OpenAI,llm_params:dict) -> Optional[list[str]]:
@@ -137,3 +172,31 @@ class CorpusPaper:
     abstract: str
     added_date: datetime
     paths: list[str]
+
+
+@dataclass
+class TrendingItem:
+    source: str  # "github", "hacker_news", "openai_blog", "deepmind_blog", "huggingface_blog"
+    title: str
+    url: str
+    category: str  # "github_repo" or "breaking_news"
+    tags: list[str] = field(default_factory=list)
+    stars: Optional[int] = None
+    description: Optional[str] = None
+    summary_en: Optional[str] = None
+    summary_zh: Optional[str] = None
+    published_date: Optional[datetime] = None
+
+    def dedup_key(self) -> str:
+        # Canonical GitHub repo deduplication key: github:owner/repo
+        if "github.com/" in self.url.lower():
+            match = re.search(r'github\.com/([^/]+/[^/#?]+)', self.url.lower())
+            if match:
+                repo_id = match.group(1).removesuffix(".git").strip()
+                return f"github:{repo_id}"
+        # For news: clean URL (strip query params, trailing slashes)
+        clean_url = re.sub(r'[?#].*$', '', self.url.lower()).rstrip('/')
+        if clean_url:
+            return f"news:{clean_url}"
+        clean_title = re.sub(r'[^a-z0-9]', '', self.title.lower())
+        return f"news_title:{clean_title}"
