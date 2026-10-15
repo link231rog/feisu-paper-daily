@@ -66,6 +66,7 @@ feishu:
   notes_folder_token: ${oc.env:FEISHU_NOTES_FOLDER_TOKEN,null}
   wiki_space_id: ${oc.env:FEISHU_WIKI_SPACE_ID,7696863309156387850}
   daily_parent_node_token: ${oc.env:FEISHU_DAILY_PARENT_NODE_TOKEN,Wxtews8vJiquKskaCYucAw7un8f}
+  candidate_node_token: ${oc.env:FEISHU_CANDIDATE_NODE_TOKEN,UAXiwe81cit6ENkrmQocZMhknzc}
   notes_parent_node_token: ${oc.env:FEISHU_NOTES_PARENT_NODE_TOKEN,IwxFw1Ioui3TpBkrtsMcEbqanIb}
   master_index_node_token: ${oc.env:FEISHU_MASTER_INDEX_NODE_TOKEN,M7oBwK0LuioCR4kzSNVcj8ACneb}
   tag_graph_node_token: ${oc.env:FEISHU_TAG_GRAPH_NODE_TOKEN,TQHTwgsrhi1GmZkNX3McyBkGnse}

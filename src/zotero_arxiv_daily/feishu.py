@@ -180,6 +180,7 @@ class FeishuClient:
         self.notes_folder_token = config.get("notes_folder_token")
         self.wiki_space_id = config.get("wiki_space_id")
         self.daily_parent_node_token = config.get("daily_parent_node_token")
+        self.candidate_node_token = config.get("candidate_node_token")
         self.notes_parent_node_token = config.get("notes_parent_node_token")
         self.master_index_node_token = config.get("master_index_node_token")
         self.tag_graph_node_token = config.get("tag_graph_node_token")
@@ -282,30 +283,61 @@ class FeishuClient:
             except Exception as exc:
                 logger.debug(f"Notice adding member {uid} to {doc_id}: {exc}")
 
-    def create_or_update_daily_report(
-        self,
-        papers: list[Paper],
-        trending_items: Optional[list[TrendingItem]] = None,
-        folder_token: Optional[str] = None,
-        reading_plan: Optional[list[Any]] = None,
-    ) -> str:
-        """Creates or updates a daily paper digest in Feishu Docx."""
-        if self.dry_run:
-            logger.info("Feishu dry-run enabled. Skipping document creation.")
-            return "https://feishu.cn/docx/dry_run"
+    def get_document_blocks(self, document_id: str) -> list[dict[str, Any]]:
+        """Fetches all blocks for a given document."""
+        try:
+            res = self._call_api("GET", f"/docx/v1/documents/{document_id}/blocks", params={"page_size": 500})
+            return res.get("items", [])
+        except Exception as exc:
+            logger.warning(f"Failed to fetch blocks for document {document_id}: {exc}")
+            return []
 
-        today = datetime.now().strftime("%Y-%m-%d")
-        title = f"每日论文速递 ({today})"
+    def get_obj_token_from_node_token(self, node_token: str) -> tuple[Optional[str], Optional[str]]:
+        """Gets (obj_token, url) for a given Wiki node token."""
+        try:
+            res = self._call_api("GET", "/wiki/v2/spaces/get_node", params={"token": node_token})
+            node = res.get("node", {})
+            obj_token = node.get("obj_token")
+            url = node.get("url") or f"https://feishu.cn/wiki/{node_token}"
+            return obj_token, url
+        except Exception as exc:
+            logger.warning(f"Failed to get node for token {node_token}: {exc}")
+            return None, None
 
-        doc_id = None
-        doc_url = None
+    def get_or_create_candidate_document(self, folder_token: Optional[str] = None) -> tuple[str, str]:
+        """Gets or creates the persistent candidate document ('候选文档')."""
+        title = "候选文档"
 
-        if self.wiki_space_id:
-            logger.info(f"Creating Feishu Docx inside Wiki space '{self.wiki_space_id}' under parent '{self.daily_parent_node_token}'...")
+        # 1. If explicit candidate_node_token is configured
+        if self.candidate_node_token:
+            obj_token, url = self.get_obj_token_from_node_token(str(self.candidate_node_token))
+            if obj_token:
+                return obj_token, url
+
+        # 2. If inside Wiki space, check if '候选文档' already exists under daily_parent_node_token
+        if self.wiki_space_id and self.daily_parent_node_token:
+            try:
+                res = self._call_api(
+                    "GET",
+                    f"/wiki/v2/spaces/{self.wiki_space_id}/nodes",
+                    params={"parent_node_token": str(self.daily_parent_node_token), "page_size": 50}
+                )
+                items = res.get("items", [])
+                for item in items:
+                    if item.get("title") == title:
+                        node_token = item.get("node_token")
+                        obj_token = item.get("obj_token")
+                        url = item.get("url") or f"https://feishu.cn/wiki/{node_token}"
+                        return obj_token, url
+            except Exception as exc:
+                logger.warning(f"Error checking candidate document in Wiki: {exc}")
+
+            # Not found -> create persistent origin node
+            logger.info(f"Creating persistent candidate document '{title}' in Wiki space '{self.wiki_space_id}' under parent '{self.daily_parent_node_token}'...")
             node_payload: dict[str, Any] = {
                 "obj_type": "docx",
                 "node_type": "origin",
-                "parent_node_token": str(self.daily_parent_node_token or ""),
+                "parent_node_token": str(self.daily_parent_node_token),
                 "title": title,
             }
             node_res = self._call_api(
@@ -315,126 +347,173 @@ class FeishuClient:
                 data=node_payload,
             )
             node = node_res.get("node", {})
-            doc_id = node.get("obj_token")
-            doc_url = node.get("url") or f"https://feishu.cn/wiki/{node.get('node_token')}"
-        else:
-            target_folder = folder_token or self.daily_folder_token or ""
-            create_payload: dict[str, Any] = {"title": title}
-            if target_folder:
-                create_payload["folder_token"] = target_folder
+            obj_token = node.get("obj_token")
+            url = node.get("url") or f"https://feishu.cn/wiki/{node.get('node_token')}"
+            return obj_token, url
 
-            logger.info(f"Creating Feishu Docx document: '{title}' in folder '{target_folder}'...")
-            doc_res = self._call_api("POST", "/docx/v1/documents", data=create_payload)
-            doc = doc_res.get("document", {})
-            doc_id = doc.get("document_id")
-            doc_url = f"https://feishu.cn/docx/{doc_id}"
+        # 3. Fallback to Drive folder
+        target_folder = folder_token or self.daily_folder_token or ""
+        create_payload: dict[str, Any] = {"title": title}
+        if target_folder:
+            create_payload["folder_token"] = target_folder
+        doc_res = self._call_api("POST", "/docx/v1/documents", data=create_payload)
+        doc = doc_res.get("document", {})
+        doc_id = doc.get("document_id")
+        doc_url = f"https://feishu.cn/docx/{doc_id}"
+        return doc_id, doc_url
 
+    def create_or_update_daily_report(
+        self,
+        papers: list[Paper],
+        trending_items: Optional[list[TrendingItem]] = None,
+        folder_token: Optional[str] = None,
+        reading_plan: Optional[list[Any]] = None,
+    ) -> str:
+        """Publishes candidate papers and trending items into the persistent '候选文档' in Feishu Docx."""
+        if self.dry_run:
+            logger.info("Feishu dry-run enabled. Skipping document creation.")
+            return "https://feishu.cn/docx/dry_run"
+
+        # 1. Target persistent candidate document
+        doc_id, doc_url = self.get_or_create_candidate_document(folder_token)
         if not doc_id:
-            raise RuntimeError(f"Failed to get document_id from Feishu response")
+            raise RuntimeError("Failed to resolve candidate document_id in Feishu")
 
         # Ensure document edit permissions so checkboxes are clickable
         self._ensure_doc_permissions(doc_id)
 
-        # Build clean blocks
-        children: list[dict[str, Any]] = [
-            {
-                "block_type": 2,
-                "text": {
-                    "elements": [
-                        {
-                            "text_run": {
-                                "content": "说明：若需深入精读某篇论文，请勾选对应卡片下方的待办框。下次云端执行时将自动拉取结构化正文沉淀至个人文献库并同步创建飞书多端待办。\n"
-                            }
-                        }
-                    ]
-                }
-            },
-            # Section: Today's Reading Plan
-            {
-                "block_type": 4,
-                "heading2": {
-                    "elements": [
-                        {"text_run": {"content": "🎯 今日精读任务规划 (Today's Reading Plan)"}}
-                    ]
-                }
-            },
-            {
-                "block_type": 2,
-                "text": {
-                    "elements": [
-                        {
-                            "text_run": {
-                                "content": (
-                                    f"📅 规划日期: {today} | 建议精读节奏: 1~2篇核心前沿 / 1个工程实践工具\n"
-                                    "💡 规划说明: 勾选下方目标制定今日精读安排；勾选论文卡片下方的【确认精读入库】将同步创建深度研读工作区与飞书多端待办。\n"
-                                )
-                            }
-                        }
-                    ]
-                }
-            },
-            {
-                "block_type": 17,
-                "todo": {
-                    "style": {"done": False},
-                    "elements": [{"text_run": {"content": "⚡ 今日通读: 快速扫读今日所有论文 TL;DR 与热点趋势，筛选重点候选"}}]
-                }
-            },
-            {
-                "block_type": 17,
-                "todo": {
-                    "style": {"done": False},
-                    "elements": [{"text_run": {"content": "📖 核心精读: 锁定 1-2 篇高匹配度论文，完成【个人研读批注与思考区】填写"}}]
-                }
-            },
-            {
-                "block_type": 17,
-                "todo": {
-                    "style": {"done": False},
-                    "elements": [{"text_run": {"content": "🎯 落地转化: 提炼可复用的实验 Baseline、算法机制或工程 Action Item"}}]
-                }
-            },
-        ]
+        # 2. Inspect existing blocks in the document to prevent duplicates and determine next sequential index
+        existing_blocks = self.get_document_blocks(doc_id)
+        existing_urls: set[str] = set()
+        existing_titles: set[str] = set()
+        existing_card_count = 0
 
-        # Add specific reading plan items or prioritize top papers
-        if reading_plan:
-            for p_item in reading_plan:
-                p_text = p_item if isinstance(p_item, str) else p_item.get("text", "")
-                p_done = False if isinstance(p_item, str) else p_item.get("done", False)
-                if p_text:
-                    children.append({
-                        "block_type": 17,
-                        "todo": {
-                            "style": {"done": p_done},
-                            "elements": [{"text_run": {"content": f"📌 精读目标: {p_text}"}}]
-                        }
-                    })
-        elif papers:
-            top_count = min(2, len(papers))
-            for p_idx in range(top_count):
-                p = papers[p_idx]
-                label = "🔥 优先精读" if p_idx == 0 else "🔥 进阶研读"
-                children.append({
+        for b in existing_blocks:
+            b_type = b.get("block_type")
+            if b_type in (4, 5):  # heading2 or heading3
+                h_key = "heading2" if b_type == 4 else "heading3"
+                txt = "".join(el.get("text_run", {}).get("content", "") for el in b.get(h_key, {}).get("elements", [])).strip()
+                if re.match(r"^\d+\.", txt):
+                    existing_card_count += 1
+                    clean = re.sub(r"^\d+\.\s*", "", txt).strip().lower()
+                    existing_titles.add(clean)
+            elif b_type == 2:  # text
+                txt = "".join(el.get("text_run", {}).get("content", "") for el in b.get("text", {}).get("elements", []))
+                for u in re.findall(r"https?://\S+", txt):
+                    existing_urls.add(u.rstrip(" \n\r"))
+
+        children: list[dict[str, Any]] = []
+
+        # 3. If document is fresh (only page root block), initialize header and reading plan (no timestamps)
+        if len(existing_blocks) <= 1:
+            children.extend([
+                {
+                    "block_type": 2,
+                    "text": {
+                        "elements": [
+                            {
+                                "text_run": {
+                                    "content": "说明：若需深入精读某篇论文或收录项目，请勾选对应卡片下方的待办框。下次云端执行时将自动拉取结构化正文沉淀至个人文献库并同步创建飞书多端待办。\n"
+                                }
+                            }
+                        ]
+                    }
+                },
+                {
+                    "block_type": 4,
+                    "heading2": {
+                        "elements": [
+                            {"text_run": {"content": "🎯 精读任务规划 (Reading Plan)"}}
+                        ]
+                    }
+                },
+                {
+                    "block_type": 2,
+                    "text": {
+                        "elements": [
+                            {
+                                "text_run": {
+                                    "content": (
+                                        "建议精读节奏: 1~2篇核心前沿 / 1个工程实践工具\n"
+                                        "💡 规划说明: 勾选下方目标制定精读安排；勾选卡片下方的【确认精读入库】将同步创建深度研读工作区与飞书多端待办。\n"
+                                    )
+                                }
+                            }
+                        ]
+                    }
+                },
+                {
                     "block_type": 17,
                     "todo": {
                         "style": {"done": False},
-                        "elements": [{"text_run": {"content": f"{label}: {p.title_with_venue()} (~30min 研读批注)"}}]
+                        "elements": [{"text_run": {"content": "⚡ 通读浏览: 快速扫读候选列表所有 TL;DR 与热点趋势，筛选重点候选"}}]
                     }
-                })
+                },
+                {
+                    "block_type": 17,
+                    "todo": {
+                        "style": {"done": False},
+                        "elements": [{"text_run": {"content": "📖 核心精读: 锁定 1-2 篇高匹配度论文，完成【个人研读批注与思考区】填写"}}]
+                    }
+                },
+                {
+                    "block_type": 17,
+                    "todo": {
+                        "style": {"done": False},
+                        "elements": [{"text_run": {"content": "🎯 落地转化: 提炼可复用的实验 Baseline、算法机制或工程 Action Item"}}]
+                    }
+                },
+            ])
 
-        # Section 1: Academic Papers
-        if papers:
+            if reading_plan:
+                for p_item in reading_plan:
+                    p_text = p_item if isinstance(p_item, str) else p_item.get("text", "")
+                    p_done = False if isinstance(p_item, str) else p_item.get("done", False)
+                    if p_text:
+                        children.append({
+                            "block_type": 17,
+                            "todo": {
+                                "style": {"done": p_done},
+                                "elements": [{"text_run": {"content": f"📌 精读目标: {p_text}"}}]
+                            }
+                        })
+            elif papers:
+                top_count = min(2, len(papers))
+                for p_idx in range(top_count):
+                    p = papers[p_idx]
+                    label = "🔥 优先精读" if p_idx == 0 else "🔥 进阶研读"
+                    children.append({
+                        "block_type": 17,
+                        "todo": {
+                            "style": {"done": False},
+                            "elements": [{"text_run": {"content": f"{label}: {p.title_with_venue()} (~30min 研读批注)"}}]
+                        }
+                    })
+
             children.append({
                 "block_type": 4,
                 "heading2": {
                     "elements": [
-                        {"text_run": {"content": "一、每日精选学术论文"}}
+                        {"text_run": {"content": "一、候选学术论文与研究工作"}}
                     ]
                 }
             })
 
-        for idx, p in enumerate(papers, 1):
+        # 4. Filter and sequentially append academic papers
+        papers_to_add: list[Paper] = []
+        for p in papers:
+            p_clean = p.clean_title.lower() if hasattr(p, "clean_title") else p.title.strip().lower()
+            if p.url and p.url in existing_urls:
+                continue
+            if p_clean in existing_titles or p.title.strip().lower() in existing_titles:
+                continue
+            papers_to_add.append(p)
+
+        for p in papers_to_add:
+            existing_card_count += 1
+            idx = existing_card_count
             title_display = p.title_with_venue()
+
             # Heading 2: 1. Paper Title (Conference)
             children.append({
                 "block_type": 4,
@@ -454,13 +533,7 @@ class FeishuClient:
                 "block_type": 17,
                 "todo": {
                     "style": {"done": False},
-                    "elements": [
-                        {
-                            "text_run": {
-                                "content": "确认精读入库"
-                            }
-                        }
-                    ]
+                    "elements": [{"text_run": {"content": "确认精读入库"}}]
                 }
             })
             # Todo block 2: [ ] 移出待选
@@ -468,23 +541,18 @@ class FeishuClient:
                 "block_type": 17,
                 "todo": {
                     "style": {"done": False},
-                    "elements": [
-                        {
-                            "text_run": {
-                                "content": "移出待选"
-                            }
-                        }
-                    ]
+                    "elements": [{"text_run": {"content": "移出待选"}}]
                 }
             })
 
-            # Meta text: 来源: [arXiv] | 日期: ... | 录用会议: ... | 发表单位/实验室: ... | 原文链接: ...
+            # Meta text: 来源: [arXiv] | 发表年份/日期: ... | 录用会议: ... | 发表单位/实验室: ... | 原文链接: ...
             src_str = ", ".join(p.sources or [p.source])
-            date_str = p.published_date.strftime("%Y-%m-%d") if p.published_date else today
+            date_str = p.published_date.strftime("%Y-%m-%d") if p.published_date else ""
+            date_part = f" | 日期: {date_str}" if date_str else ""
             affil_str = ", ".join(p.affiliations) if p.affiliations else "N/A"
             venue_line = f"录用会议: {p.venue}\n" if getattr(p, "venue", None) else ""
             meta_prefix = (
-                f"来源: [{src_str}] | 日期: {date_str}\n"
+                f"来源: [{src_str}]{date_part}\n"
                 f"{venue_line}"
                 f"发表单位/实验室: {affil_str}\n"
                 f"原文链接: "
@@ -499,7 +567,7 @@ class FeishuClient:
                 }
             })
 
-            # TL;DR (English as primary, Chinese directly below)
+            # TL;DR
             en_summary = p.tldr_en or (p.abstract[:200] + "..." if p.abstract else "N/A")
             zh_summary = p.tldr_zh or p.tldr or ""
             tldr_text = f"TL;DR: {en_summary}"
@@ -515,88 +583,110 @@ class FeishuClient:
                 }
             })
 
-        # Section 2: AI Dynamics & GitHub Trending
+        # 5. Filter and sequentially append AI Dynamics & GitHub Trending items
         if trending_items:
-            children.append({
-                "block_type": 4,
-                "heading2": {
-                    "elements": [
-                        {"text_run": {"content": "二、AI 动态与 GitHub 热点"}}
-                    ]
-                }
-            })
+            trends_to_add: list[TrendingItem] = []
+            for item in trending_items:
+                i_clean = item.title.strip().lower()
+                if item.url and item.url in existing_urls:
+                    continue
+                if i_clean in existing_titles:
+                    continue
+                trends_to_add.append(item)
 
-            for idx, item in enumerate(trending_items, 1):
-                tags_str = " ".join(f"[#{t}]" for t in (item.tags or ["Hot"]))
-                stars_str = f" (⭐ {item.stars:,})" if item.stars else ""
+            if trends_to_add:
+                # Add section heading if this is the first batch or fresh document
+                has_trending_header = any(
+                    "AI 动态与 GitHub 热点" in "".join(
+                        el.get("text_run", {}).get("content", "")
+                        for el in b.get("heading2", {}).get("elements", [])
+                    )
+                    for b in existing_blocks if b.get("block_type") == 4
+                )
+                if not has_trending_header:
+                    children.append({
+                        "block_type": 4,
+                        "heading2": {
+                            "elements": [
+                                {"text_run": {"content": "二、AI 动态与 GitHub 热点"}}
+                            ]
+                        }
+                    })
 
-                # Heading 3: 1. [#Agent] vllm-project/vllm (⭐ 28,400)
-                children.append({
-                    "block_type": 5,
-                    "heading3": {
-                        "elements": [
-                            {"text_run": {"content": f"{idx}. {tags_str} {item.title}{stars_str}"}}
-                        ]
-                    }
-                })
+                for item in trends_to_add:
+                    existing_card_count += 1
+                    idx = existing_card_count
+                    tags_str = " ".join(f"[#{t}]" for t in (item.tags or ["Hot"]))
+                    stars_str = f" (⭐ {item.stars:,})" if item.stars else ""
 
-                # Todo 1: Confirm ingest
-                children.append({
-                    "block_type": 17,
-                    "todo": {
-                        "style": {"done": False},
-                        "elements": [{"text_run": {"content": "确认入库"}}]
-                    }
-                })
-                # Todo 2: Discard
-                children.append({
-                    "block_type": 17,
-                    "todo": {
-                        "style": {"done": False},
-                        "elements": [{"text_run": {"content": "移出待选"}}]
-                    }
-                })
+                    # Heading 3: 21. [#Agent] vllm-project/vllm (⭐ 28,400)
+                    children.append({
+                        "block_type": 5,
+                        "heading3": {
+                            "elements": [
+                                {"text_run": {"content": f"{idx}. {tags_str} {item.title}{stars_str}"}}
+                            ]
+                        }
+                    })
 
-                # Meta: 来源: ... | 原文链接: ...
-                children.append({
-                    "block_type": 2,
-                    "text": {
-                        "elements": [
-                            {"text_run": {"content": f"来源: {item.source} | 原文链接: "}},
-                            {"text_run": {"content": item.url}},
-                        ]
-                    }
-                })
+                    # Todo 1: Confirm ingest
+                    children.append({
+                        "block_type": 17,
+                        "todo": {
+                            "style": {"done": False},
+                            "elements": [{"text_run": {"content": "确认入库"}}]
+                        }
+                    })
+                    # Todo 2: Discard
+                    children.append({
+                        "block_type": 17,
+                        "todo": {
+                            "style": {"done": False},
+                            "elements": [{"text_run": {"content": "移出待选"}}]
+                        }
+                    })
 
-                # TL;DR (EN + ZH)
-                summary_en = item.summary_en or item.description or item.title
-                summary_zh = item.summary_zh or ""
-                tldr_text = f"TL;DR: {summary_en}"
-                if summary_zh and summary_zh != summary_en:
-                    tldr_text += f"\n{summary_zh}"
+                    # Meta: 来源: ... | 原文链接: ...
+                    children.append({
+                        "block_type": 2,
+                        "text": {
+                            "elements": [
+                                {"text_run": {"content": f"来源: {item.source} | 原文链接: "}},
+                                {"text_run": {"content": item.url}},
+                            ]
+                        }
+                    })
 
-                children.append({
-                    "block_type": 2,
-                    "text": {
-                        "elements": [
-                            {"text_run": {"content": f"{tldr_text}\n"}}
-                        ]
-                    }
-                })
+                    # TL;DR (EN + ZH)
+                    summary_en = item.summary_en or item.description or item.title
+                    summary_zh = item.summary_zh or ""
+                    tldr_text = f"TL;DR: {summary_en}"
+                    if summary_zh and summary_zh != summary_en:
+                        tldr_text += f"\n{summary_zh}"
 
-        # Append blocks to the document in batches of 50 (Feishu API max batch limit is 50)
-        logger.info(f"Writing {len(children)} blocks to document {doc_id} in batches of 50...")
-        batch_size = 50
-        for i in range(0, len(children), batch_size):
-            chunk = children[i : i + batch_size]
-            self._call_api(
-                "POST",
-                f"/docx/v1/documents/{doc_id}/blocks/{doc_id}/children",
-                data={"children": chunk, "index": -1}
-            )
+                    children.append({
+                        "block_type": 2,
+                        "text": {
+                            "elements": [
+                                {"text_run": {"content": f"{tldr_text}\n"}}
+                            ]
+                        }
+                    })
+
+        # 6. Append blocks in batches of 50 if there are new blocks
+        if children:
+            logger.info(f"Writing {len(children)} candidate blocks to document {doc_id} in batches of 50...")
+            batch_size = 50
+            for i in range(0, len(children), batch_size):
+                chunk = children[i : i + batch_size]
+                self._call_api(
+                    "POST",
+                    f"/docx/v1/documents/{doc_id}/blocks/{doc_id}/children",
+                    data={"children": chunk, "index": -1}
+                )
 
         doc_url = doc_url or f"https://feishu.cn/docx/{doc_id}"
-        logger.info(f"Feishu daily report published successfully: {doc_url}")
+        logger.info(f"Feishu candidate document updated successfully: {doc_url}")
         return doc_url
 
     def fetch_reading_notes(self) -> list[CorpusPaper]:
@@ -786,7 +876,7 @@ class FeishuClient:
         return [d["raw_heading"] for d in details]
 
     def fetch_checked_papers_from_wiki(self) -> list[dict[str, Any]]:
-        """Discovers checked papers across all daily reports in the Wiki space."""
+        """Discovers checked papers across candidate document and daily reports in the Wiki space."""
         if not self.wiki_space_id or not self.daily_parent_node_token or self.dry_run:
             return []
 
@@ -798,11 +888,14 @@ class FeishuClient:
                 params={"parent_node_token": str(self.daily_parent_node_token)}
             )
             reports = res.get("items", [])
-            for r in reports:
-                doc_id = r.get("obj_token")
-                if doc_id:
-                    checked = self.fetch_checked_paper_details(doc_id)
-                    all_checked.extend(checked)
+            doc_ids = [r.get("obj_token") for r in reports if r.get("obj_token")]
+            if self.candidate_node_token:
+                cand_obj, _ = self.get_obj_token_from_node_token(str(self.candidate_node_token))
+                if cand_obj and cand_obj not in doc_ids:
+                    doc_ids.append(cand_obj)
+            for doc_id in doc_ids:
+                checked = self.fetch_checked_paper_details(doc_id)
+                all_checked.extend(checked)
         except Exception as exc:
             logger.warning(f"Failed to scan daily reports in Wiki: {exc}")
         return all_checked

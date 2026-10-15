@@ -631,14 +631,14 @@ def test_feishu_daily_report_reading_plan(monkeypatch):
         b.get("heading2", {}).get("elements", [{}])[0].get("text_run", {}).get("content", "")
         for b in posted_blocks if b.get("block_type") == 4
     ]
-    assert "🎯 今日精读任务规划 (Today's Reading Plan)" in heading2_texts
+    assert any("精读任务规划" in h for h in heading2_texts)
 
     # Verify Todos in Reading Plan
     todos = [
         "".join(el.get("text_run", {}).get("content", "") for el in b.get("todo", {}).get("elements", []))
         for b in posted_blocks if b.get("block_type") == 17
     ]
-    assert any("⚡ 今日通读" in t for t in todos)
+    assert any("通读" in t for t in todos)
     assert any("📖 核心精读" in t for t in todos)
     assert any("🎯 落地转化" in t for t in todos)
     assert any("🔥 优先精读: Top Paper Alpha (NeurIPS 2026)" in t for t in todos)
