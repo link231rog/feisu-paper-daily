@@ -236,7 +236,7 @@ class FeishuClient:
                     ]
                 }
             })
-            # Todo block 2: [ ] 移出待选 (不再推荐)
+            # Todo block 2: [ ] 移出待选
             children.append({
                 "block_type": 17,
                 "todo": {
@@ -244,7 +244,7 @@ class FeishuClient:
                     "elements": [
                         {
                             "text_run": {
-                                "content": "移出待选 (不再推荐)"
+                                "content": "移出待选"
                             }
                         }
                     ]
@@ -318,15 +318,15 @@ class FeishuClient:
                     "block_type": 17,
                     "todo": {
                         "style": {"done": False},
-                        "elements": [{"text_run": {"content": "确认入库 (沉淀使用说明)"}}]
+                        "elements": [{"text_run": {"content": "确认入库"}}]
                     }
                 })
-                # Todo 2: Discard / do not recommend
+                # Todo 2: Discard
                 children.append({
                     "block_type": 17,
                     "todo": {
                         "style": {"done": False},
-                        "elements": [{"text_run": {"content": "移出待选 (不再推荐)"}}]
+                        "elements": [{"text_run": {"content": "移出待选"}}]
                     }
                 })
 
