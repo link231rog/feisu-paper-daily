@@ -388,6 +388,40 @@ class FeishuClient:
 
         return corpus
 
+    def delete_document_blocks(self, document_id: str, block_ids: list[str]) -> bool:
+        """Deletes specified top-level block IDs from a Feishu document."""
+        if not block_ids or self.dry_run:
+            return True
+        try:
+            root_res = self._call_api("GET", f"/docx/v1/documents/{document_id}/blocks/{document_id}")
+            root_children = root_res.get("block", {}).get("children", [])
+
+            target_set = set(block_ids)
+            indices = [idx for idx, cid in enumerate(root_children) if cid in target_set]
+            if not indices:
+                return False
+
+            # Group contiguous indices
+            chunks = []
+            for idx in sorted(indices):
+                if chunks and idx == chunks[-1][-1] + 1:
+                    chunks[-1].append(idx)
+                else:
+                    chunks.append([idx])
+
+            for chunk in reversed(chunks):
+                start_idx = chunk[0]
+                end_idx = chunk[-1] + 1
+                self._call_api(
+                    "DELETE",
+                    f"/docx/v1/documents/{document_id}/blocks/{document_id}/children/batch_delete",
+                    data={"start_index": start_idx, "end_index": end_idx}
+                )
+            return True
+        except Exception as exc:
+            logger.error(f"Failed to delete blocks from document {document_id}: {exc}")
+            return False
+
     def fetch_checked_paper_details(self, document_id: str) -> list[dict[str, Any]]:
         """Scans document blocks for todo items marked as done and extracts rich paper metadata."""
         res = self._call_api("GET", f"/docx/v1/documents/{document_id}/blocks")
@@ -395,14 +429,22 @@ class FeishuClient:
         checked_papers: list[dict[str, Any]] = []
 
         last_heading = ""
+        last_heading_id = ""
+
         for i, item in enumerate(items):
             b_type = item.get("block_type")
-            if b_type == 4:  # heading2
-                elements = item.get("heading2", {}).get("elements", [])
+            b_id = item.get("block_id", "")
+            if b_type in (4, 5):  # heading2 or heading3
+                h_key = "heading2" if b_type == 4 else "heading3"
+                elements = item.get(h_key, {}).get("elements", [])
                 raw_heading = "".join(el.get("text_run", {}).get("content", "") for el in elements).strip()
-                last_heading = raw_heading
-            elif b_type == 17:  # todo
+                if not re.match(r"^[一二三四五六七八九十]+、", raw_heading):
+                    last_heading = raw_heading
+                    last_heading_id = b_id
+            elif b_type == 17 and last_heading:  # todo
                 todo = item.get("todo", {})
+                elements = todo.get("elements", [])
+                todo_text = "".join(el.get("text_run", {}).get("content", "") for el in elements).strip()
                 if todo.get("style", {}).get("done", False):
                     cleaned_title = re.sub(r"^\d+\.\s*", "", last_heading).strip()
                     url = ""
@@ -410,29 +452,49 @@ class FeishuClient:
                     sources = []
                     tldr_text = ""
 
+                    is_delete = any(k in todo_text.lower() for k in ["删除", "移出", "淘汰", "discard", "delete"])
+                    action = "delete" if is_delete else "ingest"
+
+                    # Collect card block IDs from last_heading_id up to next heading
+                    card_block_ids = [last_heading_id] if last_heading_id else []
+                    for j in range(items.index(item) - 1, -1, -1):
+                        prev = items[j]
+                        if prev.get("block_id") == last_heading_id:
+                            break
+                        if prev.get("block_id") not in card_block_ids:
+                            card_block_ids.insert(1, prev.get("block_id"))
+                    for j in range(i, len(items)):
+                        curr = items[j]
+                        if curr.get("block_type") in (4, 5) and curr.get("block_id") != last_heading_id:
+                            break
+                        if curr.get("block_id") not in card_block_ids:
+                            card_block_ids.append(curr.get("block_id"))
+
                     # Inspect succeeding blocks for metadata and TL;DR
-                    for j in range(i + 1, min(i + 4, len(items))):
+                    for j in range(i + 1, min(i + 5, len(items))):
                         next_item = items[j]
-                        if next_item.get("block_type") in (4, 17):
+                        if next_item.get("block_type") in (4, 5):
                             break
                         if next_item.get("block_type") == 2:  # text block
                             full_block_text = "".join(
                                 el.get("text_run", {}).get("content", "")
                                 for el in next_item.get("text", {}).get("elements", [])
                             )
-                            if "原文链接:" in full_block_text:
+                            if "原文链接:" in full_block_text or "原文/开源主页:" in full_block_text or "官方/开源主页:" in full_block_text:
                                 url_match = re.search(r"https?://\S+", full_block_text)
                                 if url_match:
                                     url = url_match.group(0).rstrip(" \n\r")
-                                affil_match = re.search(r"发表单位/实验室:\s*([^\n]+)", full_block_text)
+                            if "发表单位/实验室:" in full_block_text or "研发团队:" in full_block_text:
+                                affil_match = re.search(r"(?:发表单位/实验室|研发团队):\s*([^\n]+)", full_block_text)
                                 if affil_match:
                                     raw_affil = affil_match.group(1).strip()
                                     if raw_affil != "N/A":
                                         affiliations = [a.strip() for a in raw_affil.split(",") if a.strip()]
+                            if "来源:" in full_block_text:
                                 src_match = re.search(r"来源:\s*\[([^\]]+)\]", full_block_text)
                                 if src_match:
                                     sources = [s.strip() for s in src_match.group(1).split(",") if s.strip()]
-                            elif "TL;DR:" in full_block_text:
+                            if "TL;DR:" in full_block_text:
                                 tldr_text = full_block_text.replace("TL;DR:", "").strip()
 
                     checked_papers.append({
@@ -444,6 +506,9 @@ class FeishuClient:
                         "tldr": tldr_text,
                         "document_id": document_id,
                         "todo_block_id": item.get("block_id", ""),
+                        "action": action,
+                        "todo_text": todo_text,
+                        "card_block_ids": card_block_ids,
                     })
         return checked_papers
 

@@ -307,4 +307,7 @@ def map_to_core_pillars(tags: Optional[list[str]] = None, title: str = "", text:
     # 4. RL: reinforcement learning paradigms
     if any(k in corpus for k in ["reinforcement learning", "reinforcementlearning", "ppo", "grpo", "reward", "policy gradient", "actor-critic", "q-learning", "reinforce"]) or re.search(r'\b(rl)\b', corpus):
         matched.append("RL")
+    # 5. Benchmark: evaluation benchmarks and datasets
+    if any(k in corpus for k in ["benchmark", "benchmarks", "dataset", "datasets", "eval-suite"]):
+        matched.append("Benchmark")
     return matched or ["Research"]
