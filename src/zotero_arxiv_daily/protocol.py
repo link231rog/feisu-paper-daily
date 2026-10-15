@@ -54,6 +54,17 @@ class Paper:
     arxiv_id: Optional[str] = None
     sources: Optional[list[str]] = None  # merged from multiple retrievers, e.g. ["arxiv", "huggingface"]
     published_date: Optional[datetime] = None
+    venue: Optional[str] = None
+
+    def title_with_venue(self) -> str:
+        """Returns the paper's English title with accepted conference/journal suffix if known."""
+        clean_title = self.title.strip()
+        if not self.venue:
+            return clean_title
+        v = self.venue.strip()
+        if v.lower() in clean_title.lower():
+            return clean_title
+        return f"{clean_title} ({v})"
 
     def dedup_key(self) -> str:
         if self.doi:
@@ -166,6 +177,78 @@ class Paper:
             logger.warning(f"Failed to generate affiliations of {self.url}: {e}")
             self.affiliations = None
             return None
+
+    def generate_venue(self, openai_client: Optional[OpenAI] = None, llm_params: Optional[dict] = None) -> Optional[str]:
+        """Extracts or generates accepted conference/journal venue."""
+        if self.venue:
+            return self.venue
+
+        # 1. Try regex extraction on full text or abstract
+        if v := extract_venue_from_text(self.abstract):
+            self.venue = v
+            return v
+        if self.full_text and (v := extract_venue_from_text(self.full_text[:3000])):
+            self.venue = v
+            return v
+
+        # 2. Try LLM extraction if available
+        if openai_client and llm_params:
+            try:
+                sample_text = (self.full_text[:2000] if self.full_text else self.abstract[:1000]) or ""
+                prompt = (
+                    "Given the paper title and preview below, identify whether this paper mentions being accepted to "
+                    "or published in an academic conference or journal (e.g., 'ACL 2026', 'NeurIPS 2024', 'ICLR 2025', 'CVPR 2025').\n"
+                    f"Title: {self.title}\n"
+                    f"Text: {sample_text}\n\n"
+                    "If accepted or published, return ONLY the conference or journal name and year (e.g. 'ACL 2026'). "
+                    "If not specified or preprint, return 'None'."
+                )
+                resp = _request_llm(
+                    openai_client,
+                    llm_params,
+                    [
+                        {"role": "system", "content": "You are a concise academic conference identifier."},
+                        {"role": "user", "content": prompt}
+                    ]
+                )
+                res_str = resp.strip().strip("'\"`.")
+                if res_str and res_str.lower() != "none" and len(res_str) <= 30:
+                    self.venue = res_str
+                    return res_str
+            except Exception as e:
+                logger.debug(f"Notice generating venue for {self.title}: {e}")
+
+        return None
+
+
+def extract_venue_from_text(text: Optional[str]) -> Optional[str]:
+    """Extracts accepted conference or journal name from text, comments, or journal references."""
+    if not text:
+        return None
+
+    # Common major conference acronyms + year, e.g. "ACL 2026", "NeurIPS 2024", "ICLR 2025"
+    conf_pattern = re.compile(
+        r"\b(ACL|EMNLP|NAACL|EACL|AACL|COLING|NeurIPS|ICLR|ICML|CVPR|ICCV|ECCV|AAAI|IJCAI|KDD|SIGIR|WWW|WSDM|RecSys|TACL|TMLR|JMLR)\s*(?:20\d{2}|['’]\d{2})\b",
+        re.IGNORECASE,
+    )
+    if m := conf_pattern.search(text):
+        return m.group(0).upper().replace("’", "'")
+
+    # Patterns like: "Accepted to ACL 2026", "Accepted at ICLR", "To appear in CVPR 2025"
+    m2 = re.search(
+        r"(?:accepted\s+(?:to|at|by|for)|to\s+appear\s+in|published\s+(?:in|at))\s+([A-Za-z0-9\s\-\.\'\"]+(?:20\d\d)?)",
+        text,
+        re.IGNORECASE,
+    )
+    if m2:
+        candidate = m2.group(1).strip().strip(".,;:()")
+        candidate = re.split(r",|\.|\band\b|;", candidate)[0].strip()
+        if len(candidate) <= 30 and any(c.isupper() for c in candidate):
+            return candidate
+
+    return None
+
+
 @dataclass
 class CorpusPaper:
     title: str

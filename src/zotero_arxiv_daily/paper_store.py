@@ -87,6 +87,8 @@ class PaperStore:
                 keep.tldr_zh = drop.tldr_zh
             if not keep.tldr and drop.tldr:
                 keep.tldr = drop.tldr
+            if not getattr(keep, "venue", None) and getattr(drop, "venue", None):
+                keep.venue = drop.venue
             # prefer earliest published_date
             dates = [d for d in (keep.published_date, drop.published_date) if d is not None]
             keep.published_date = min(dates) if dates else None

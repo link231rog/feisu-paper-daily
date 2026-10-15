@@ -154,3 +154,40 @@ def test_affiliations_error_returns_none(llm_params):
     result = paper.generate_affiliations(broken_client, llm_params)
     assert result is None
     assert paper.affiliations is None
+
+
+# ---------------------------------------------------------------------------
+# venue and title_with_venue
+# ---------------------------------------------------------------------------
+
+
+def test_title_with_venue_without_venue():
+    paper = make_sample_paper(title="Autonomous Multi-Agent Systems")
+    assert paper.title_with_venue() == "Autonomous Multi-Agent Systems"
+
+
+def test_title_with_venue_with_venue():
+    paper = make_sample_paper(
+        title="Memory-R1: Enhancing Large Language Model Agents to Manage Memories via Reinforcement Learning",
+        venue="ACL 2026",
+    )
+    assert paper.title_with_venue() == (
+        "Memory-R1: Enhancing Large Language Model Agents to Manage Memories via Reinforcement Learning (ACL 2026)"
+    )
+
+
+def test_title_with_venue_avoids_duplicate():
+    paper = make_sample_paper(
+        title="Memory-R1 (ACL 2026)",
+        venue="ACL 2026",
+    )
+    assert paper.title_with_venue() == "Memory-R1 (ACL 2026)"
+
+
+def test_extract_venue_from_text():
+    from zotero_arxiv_daily.protocol import extract_venue_from_text
+
+    assert extract_venue_from_text("Accepted to ACL 2026") == "ACL 2026"
+    assert extract_venue_from_text("Accepted at NeurIPS 2024 (Poster)") == "NEURIPS 2024"
+    assert extract_venue_from_text("To appear in CVPR 2025") == "CVPR 2025"
+    assert extract_venue_from_text("Random preprint with no conference") is None
