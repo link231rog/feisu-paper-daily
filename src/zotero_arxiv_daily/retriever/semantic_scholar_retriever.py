@@ -75,6 +75,7 @@ class SemanticScholarRetriever(BaseRetriever):
                     if pid and pid not in seen_ids:
                         seen_ids.add(pid)
                         raw_papers.append(p)
+            time.sleep(1.0)
 
         # Retrieve recommendations for seed papers
         seed_papers = self.retriever_config.get("seed_papers") or []
@@ -94,6 +95,7 @@ class SemanticScholarRetriever(BaseRetriever):
                     if pid and pid not in seen_ids:
                         seen_ids.add(pid)
                         raw_papers.append(p)
+            time.sleep(1.0)
 
         logger.info(f"Retrieved {len(raw_papers)} raw papers from Semantic Scholar")
         return raw_papers
