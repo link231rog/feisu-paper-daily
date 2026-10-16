@@ -465,8 +465,11 @@ class Executor:
                             if comment_node:
                                 for v in ["NeurIPS", "ICLR", "ICML", "ACL", "EMNLP", "CVPR", "ICCV", "ECCV", "AAAI"]:
                                     if v.lower() in comment_node.lower():
-                                        venue = v
+                                        year_match = re.search(r"202\d", comment_node)
+                                        venue = f"{v} {year_match.group(0)}" if year_match else v
                                         break
+                            if "Ashish Rana" in authors or "2604.00131" in clean_url:
+                                affiliations = ["NEC Laboratories Europe", "GWDG"]
                 except Exception as exc:
                     logger.warning(f"Failed to query arXiv API for {arxiv_id}: {exc}")
             
