@@ -305,8 +305,8 @@ class FeishuClient:
             return None, None
 
     def get_or_create_candidate_document(self, folder_token: Optional[str] = None) -> tuple[str, str]:
-        """Gets or creates the persistent candidate document ('候选文档')."""
-        title = "候选文档"
+        """Gets or creates the persistent candidate document ('文献候选库')."""
+        title = "文献候选库"
 
         # 1. If explicit candidate_node_token is configured
         if self.candidate_node_token:
@@ -314,7 +314,7 @@ class FeishuClient:
             if obj_token:
                 return obj_token, url
 
-        # 2. If inside Wiki space, check if '候选文档' already exists under daily_parent_node_token
+        # 2. If inside Wiki space, check if '文献候选库' or '候选文档' already exists under daily_parent_node_token
         if self.wiki_space_id and self.daily_parent_node_token:
             try:
                 res = self._call_api(
@@ -324,7 +324,7 @@ class FeishuClient:
                 )
                 items = res.get("items", [])
                 for item in items:
-                    if item.get("title") == title:
+                    if item.get("title") in (title, "候选文档"):
                         node_token = item.get("node_token")
                         obj_token = item.get("obj_token")
                         url = item.get("url") or f"https://feishu.cn/wiki/{node_token}"
