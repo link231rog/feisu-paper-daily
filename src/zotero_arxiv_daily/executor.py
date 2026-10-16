@@ -225,50 +225,99 @@ class Executor:
                 continue
         return ""
 
-    def fetch_paper_full_text(self, url: str) -> Optional[str]:
-        """Fetches the full text of an academic paper via arXiv HTML (trafilatura) or PDF (pymupdf4llm)."""
-        if not url:
-            return None
-        clean_url = url.strip()
-        arxiv_match = re.search(r"(\d{4}\.\d{4,5})", clean_url)
-        if not arxiv_match:
-            return None
-
-        arxiv_id = arxiv_match.group(1)
-
-        # 1. Try arXiv HTML with trafilatura
-        try:
-            import trafilatura
-            html_url = f"https://arxiv.org/html/{arxiv_id}"
-            downloaded = trafilatura.fetch_url(html_url)
-            if downloaded:
-                text = trafilatura.extract(downloaded, output_format="markdown", include_formatting=True, include_links=True)
-                if text and len(text) > 1000:
-                    logger.info(f"Successfully fetched full text HTML for {arxiv_id} ({len(text)} chars)")
-                    return text
-        except Exception as exc:
-            logger.debug(f"Failed to fetch arXiv HTML for {arxiv_id}: {exc}")
-
-        # 2. Fallback to arXiv PDF with pymupdf4llm
+    def convert_pdf_to_markdown(self, pdf_url: str, timeout: int = 30) -> Optional[str]:
+        """Downloads a PDF from a URL and converts it to markdown via pymupdf4llm."""
         try:
             import pymupdf4llm
             import tempfile
-            pdf_url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
-            resp = requests.get(pdf_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=25)
-            if resp.status_code == 200:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+            resp = requests.get(pdf_url, headers=headers, timeout=timeout)
+            if resp.status_code == 200 and len(resp.content) > 1000:
                 with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tf:
                     tf.write(resp.content)
                     tf_path = tf.name
                 try:
                     md_text = pymupdf4llm.to_markdown(tf_path)
-                    if md_text and len(md_text) > 1000:
-                        logger.info(f"Successfully converted PDF to markdown for {arxiv_id} ({len(md_text)} chars)")
+                    if md_text and len(md_text) > 500:
+                        logger.info(f"Successfully converted PDF to markdown from {pdf_url} ({len(md_text)} chars)")
                         return md_text
                 finally:
                     if os.path.exists(tf_path):
                         os.remove(tf_path)
         except Exception as exc:
-            logger.debug(f"Failed to fetch arXiv PDF for {arxiv_id}: {exc}")
+            logger.debug(f"Failed to convert PDF from {pdf_url}: {exc}")
+        return None
+
+    def fetch_paper_full_text(self, url: str) -> Optional[str]:
+        """Fetches the full text of an academic paper via arXiv HTML (trafilatura), PDF (pymupdf4llm), or web fallback."""
+        if not url:
+            return None
+        clean_url = url.strip()
+
+        # 1. Check for arXiv ID
+        arxiv_match = re.search(r"(\d{4}\.\d{4,5})", clean_url)
+        if arxiv_match:
+            arxiv_id = arxiv_match.group(1)
+            # 1a. Try arXiv HTML with trafilatura
+            try:
+                import trafilatura
+                html_url = f"https://arxiv.org/html/{arxiv_id}"
+                downloaded = trafilatura.fetch_url(html_url)
+                if downloaded:
+                    text = trafilatura.extract(downloaded, output_format="markdown", include_formatting=True, include_links=True)
+                    if text and len(text) > 1000:
+                        logger.info(f"Successfully fetched full text HTML for {arxiv_id} ({len(text)} chars)")
+                        return text
+            except Exception as exc:
+                logger.debug(f"Failed to fetch arXiv HTML for {arxiv_id}: {exc}")
+
+            # 1b. Fallback to arXiv PDF with pymupdf4llm
+            pdf_url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
+            md = self.convert_pdf_to_markdown(pdf_url)
+            if md:
+                return md
+
+        # 2. OpenReview
+        if "openreview.net" in clean_url.lower():
+            or_match = re.search(r"id=([a-zA-Z0-9_\-]+)", clean_url)
+            if or_match:
+                or_id = or_match.group(1)
+                pdf_url = f"https://openreview.net/pdf?id={or_id}"
+                md = self.convert_pdf_to_markdown(pdf_url)
+                if md:
+                    return md
+
+        # 3. Direct PDF Link
+        if clean_url.lower().endswith(".pdf") or ".pdf?" in clean_url.lower():
+            md = self.convert_pdf_to_markdown(clean_url)
+            if md:
+                return md
+
+        # 4. General academic webpage / publisher portal
+        try:
+            import urllib.parse
+            import trafilatura
+            downloaded = trafilatura.fetch_url(clean_url)
+            if downloaded:
+                # Look for citation_pdf_url meta tag
+                pdf_match = re.search(r'<meta\s+[^>]*name=["\'](?:citation_pdf_url|biorxiv_journal_pdf_url|eprints\.document_url)["\']\s+content=["\']([^"\']+)["\']', downloaded, re.IGNORECASE)
+                if not pdf_match:
+                    pdf_match = re.search(r'<meta\s+content=["\']([^"\']+\.pdf)["\']\s+name=["\'](?:citation_pdf_url|biorxiv_journal_pdf_url)["\']', downloaded, re.IGNORECASE)
+                if pdf_match:
+                    pdf_link = urllib.parse.urljoin(clean_url, pdf_match.group(1))
+                    md = self.convert_pdf_to_markdown(pdf_link)
+                    if md:
+                        return md
+
+                # Direct HTML to Markdown fallback
+                text = trafilatura.extract(downloaded, output_format="markdown", include_formatting=True, include_links=True)
+                if text and len(text) > 800:
+                    logger.info(f"Successfully extracted webpage markdown from {clean_url} ({len(text)} chars)")
+                    return text
+        except Exception as exc:
+            logger.debug(f"Failed to fetch webpage/PDF for {clean_url}: {exc}")
 
         return None
 

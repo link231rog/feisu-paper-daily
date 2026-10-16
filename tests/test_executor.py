@@ -466,5 +466,92 @@ def test_executor_filter_quality_papers(config):
     assert paper_obscure not in filtered
 
 
+def test_convert_pdf_to_markdown_success(config, monkeypatch):
+    import sys
+    from unittest.mock import MagicMock
+
+    executor = Executor(config)
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.content = b"%PDF-1.4 mock content" * 100
+
+    monkeypatch.setattr("requests.get", lambda *a, **kw: mock_resp)
+
+    mock_pymupdf4llm = MagicMock()
+    mock_pymupdf4llm.to_markdown.return_value = "# Sample Converted Paper\n\nThis is paper content." * 20
+    monkeypatch.setitem(sys.modules, "pymupdf4llm", mock_pymupdf4llm)
+
+    res = executor.convert_pdf_to_markdown("https://example.com/test.pdf")
+    assert res is not None
+    assert "Sample Converted Paper" in res
 
 
+def test_fetch_paper_full_text_openreview(config, monkeypatch):
+    executor = Executor(config)
+    captured_urls = []
+
+    def mock_convert(url, timeout=30):
+        captured_urls.append(url)
+        return "# OpenReview Paper Content\n" * 50
+
+    monkeypatch.setattr(executor, "convert_pdf_to_markdown", mock_convert)
+
+    res = executor.fetch_paper_full_text("https://openreview.net/forum?id=AbCdEf1234")
+    assert res is not None
+    assert captured_urls == ["https://openreview.net/pdf?id=AbCdEf1234"]
+
+
+def test_fetch_paper_full_text_direct_pdf(config, monkeypatch):
+    executor = Executor(config)
+    captured_urls = []
+
+    def mock_convert(url, timeout=30):
+        captured_urls.append(url)
+        return "# Direct PDF Paper Content\n" * 50
+
+    monkeypatch.setattr(executor, "convert_pdf_to_markdown", mock_convert)
+
+    res = executor.fetch_paper_full_text("https://proceedings.mlr.press/v202/author23a/author23a.pdf")
+    assert res is not None
+    assert captured_urls == ["https://proceedings.mlr.press/v202/author23a/author23a.pdf"]
+
+
+def test_fetch_paper_full_text_webpage_with_meta_pdf(config, monkeypatch):
+    import sys
+    from unittest.mock import MagicMock
+
+    executor = Executor(config)
+    captured_urls = []
+
+    def mock_convert(url, timeout=30):
+        captured_urls.append(url)
+        return "# Meta PDF Paper Content\n" * 50
+
+    monkeypatch.setattr(executor, "convert_pdf_to_markdown", mock_convert)
+
+    mock_trafilatura = MagicMock()
+    mock_trafilatura.fetch_url.return_value = (
+        '<html><head><meta name="citation_pdf_url" content="https://aclanthology.org/2026.acl-long.1.pdf"></head></html>'
+    )
+    monkeypatch.setitem(sys.modules, "trafilatura", mock_trafilatura)
+
+    res = executor.fetch_paper_full_text("https://aclanthology.org/2026.acl-long.1/")
+    assert res is not None
+    assert captured_urls == ["https://aclanthology.org/2026.acl-long.1.pdf"]
+
+
+def test_fetch_paper_full_text_webpage_text_fallback(config, monkeypatch):
+    import sys
+    from unittest.mock import MagicMock
+
+    executor = Executor(config)
+    monkeypatch.setattr(executor, "convert_pdf_to_markdown", lambda url, timeout=30: None)
+
+    mock_trafilatura = MagicMock()
+    mock_trafilatura.fetch_url.return_value = "<html><body><h1>Web Paper</h1><p>Body...</p></body></html>"
+    mock_trafilatura.extract.return_value = "# Web Paper\n\nFull text extracted from HTML..." * 50
+    monkeypatch.setitem(sys.modules, "trafilatura", mock_trafilatura)
+
+    res = executor.fetch_paper_full_text("https://some-journal.org/article/12345")
+    assert res is not None
+    assert "Full text extracted from HTML" in res
