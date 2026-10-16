@@ -762,3 +762,62 @@ def test_feishu_fetch_checked_papers_ignores_reading_plan_headers(monkeypatch):
     assert checked == ["1. Real Paper Alpha"]
 
 
+def test_feishu_card_contains_english_abstract(monkeypatch):
+    cfg = OmegaConf.create({
+        "app_id": "test_app_id",
+        "app_secret": "test_app_secret",
+        "wiki_space_id": "space_123",
+        "candidate_node_token": "cand_node_123",
+        "dry_run": False,
+    })
+    client = FeishuClient(cfg)
+
+    posted_blocks = []
+
+    def mock_request(method_or_url, url=None, *args, **kwargs):
+        target_url = str(url if url else method_or_url)
+        resp = MagicMock()
+        resp.status_code = 200
+        if "tenant_access_token" in target_url:
+            val = {"code": 0, "tenant_access_token": "test_token"}
+        elif "/wiki/v2/spaces/get_node" in target_url:
+            val = {"code": 0, "data": {"node": {"obj_token": "cand_doc_123"}}}
+        elif "blocks" in target_url and "children" not in target_url:
+            val = {"code": 0, "data": {"items": []}}
+        elif "children" in target_url:
+            data = kwargs.get("json", {})
+            posted_blocks.extend(data.get("children", []))
+            val = {"code": 0, "data": {"children": []}}
+        else:
+            val = {"code": 0, "data": {}}
+        resp.json = lambda: val
+        resp.raise_for_status = MagicMock()
+        return resp
+
+    monkeypatch.setattr("requests.post", mock_request)
+    monkeypatch.setattr("requests.request", mock_request)
+
+    paper = Paper(
+        source="arxiv",
+        title="Test Abstract Presentation Paper",
+        authors=["Alice"],
+        abstract="This is the full comprehensive abstract describing motivation, method, and results.",
+        url="https://arxiv.org/abs/2401.88888",
+    )
+    client.create_or_update_daily_report([paper])
+
+    # Find the text block that contains TL;DR
+    tldr_blocks = [
+        b for b in posted_blocks
+        if b.get("block_type") == 2
+        and any("TL;DR:" in el.get("text_run", {}).get("content", "") for el in b.get("text", {}).get("elements", []))
+    ]
+    assert len(tldr_blocks) == 1
+    tldr_content = "".join(el.get("text_run", {}).get("content", "") for el in tldr_blocks[0]["text"]["elements"])
+    assert "TL;DR:" in tldr_content
+    assert "中文速览:" in tldr_content
+    assert "英文摘要 (Abstract):" in tldr_content
+    assert "This is the full comprehensive abstract describing motivation, method, and results." in tldr_content
+
+
+
