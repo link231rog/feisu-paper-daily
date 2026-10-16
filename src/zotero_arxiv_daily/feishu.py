@@ -431,14 +431,14 @@ class FeishuClient:
             idx = existing_card_count
             title_display = p.title_with_venue()
 
-            # Heading 2: 1. Paper Title (Conference)
+            # Heading 2: Paper Title (Conference) (no sequential numbering)
             children.append({
                 "block_type": 4,
                 "heading2": {
                     "elements": [
                         {
                             "text_run": {
-                                "content": f"{idx}. {title_display}"
+                                "content": title_display
                             }
                         }
                     ]
@@ -549,12 +549,12 @@ class FeishuClient:
                     tags_str = " ".join(f"[#{t}]" for t in (item.tags or ["Hot"]))
                     stars_str = f" (⭐ {item.stars:,})" if item.stars else ""
 
-                    # Heading 3: 21. [#Agent] vllm-project/vllm (⭐ 28,400)
+                    # Heading 3: [#Agent] vllm-project/vllm (⭐ 28,400)
                     children.append({
                         "block_type": 5,
                         "heading3": {
                             "elements": [
-                                {"text_run": {"content": f"{idx}. {tags_str} {item.title}{stars_str}"}}
+                                {"text_run": {"content": f"{tags_str} {item.title}{stars_str}"}}
                             ]
                         }
                     })
@@ -1165,7 +1165,7 @@ class FeishuClient:
                 "block_type": 5,
                 "heading3": {
                     "elements": [
-                        {"text_run": {"content": f"{next_idx}. {tags_str} {full_title}"}}
+                        {"text_run": {"content": f"• {tags_str} {full_title}"}}
                     ]
                 }
             },
@@ -1238,7 +1238,7 @@ class FeishuClient:
                 "block_type": 5,
                 "heading3": {
                     "elements": [
-                        {"text_run": {"content": f"{next_idx}. {tags_str} {full_title}"}}
+                        {"text_run": {"content": f"• {tags_str} {full_title}"}}
                     ]
                 }
             },
