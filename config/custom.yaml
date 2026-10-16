@@ -78,6 +78,8 @@ feishu:
   notes_parent_node_token: ${oc.env:FEISHU_NOTES_PARENT_NODE_TOKEN,IwxFw1Ioui3TpBkrtsMcEbqanIb}
   master_index_node_token: ${oc.env:FEISHU_MASTER_INDEX_NODE_TOKEN,M7oBwK0LuioCR4kzSNVcj8ACneb}
   tag_graph_node_token: ${oc.env:FEISHU_TAG_GRAPH_NODE_TOKEN,TQHTwgsrhi1GmZkNX3McyBkGnse}
+  idea_parent_node_token: ${oc.env:FEISHU_IDEA_PARENT_NODE_TOKEN,Nm5twd7AbisbgHkvQkCc4Obontb}
+  experiment_parent_node_token: ${oc.env:FEISHU_EXPERIMENT_PARENT_NODE_TOKEN,EFnVwZm9ZijMgnkHhPJc70SknHc}
   dry_run: false
 
 paper_store:
