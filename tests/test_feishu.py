@@ -937,7 +937,7 @@ def test_feishu_append_to_engineering_index(monkeypatch):
     post_call = post_calls[0]
     children = post_call[2]["children"]
     heading_text = "".join(el.get("text_run", {}).get("content", "") for el in children[0]["heading3"]["elements"])
-    assert "2. [#GitHub] [#Skill] NousResearch/hermes-agent" in heading_text
+    assert "• [#GitHub] [#Skill] NousResearch/hermes-agent" in heading_text
     card_text = "".join(el.get("text_run", {}).get("content", "") for el in children[1]["text"]["elements"])
     assert "• 🏷️ 状态: ⏳ 待精读" in card_text
     assert "• 仓库/项目地址: https://github.com/NousResearch/hermes-agent" in card_text
