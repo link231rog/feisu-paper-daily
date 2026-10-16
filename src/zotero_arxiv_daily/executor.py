@@ -561,18 +561,37 @@ class Executor:
 
         top_venues = [v.lower() for v in filter_cfg.get("top_venues", [])]
         top_institutions = [inst.lower() for inst in filter_cfg.get("top_institutions", [])]
-        exclude_workshops = filter_cfg.get("exclude_workshops", True)
+        exclude_non_main = filter_cfg.get("exclude_non_main", True) or filter_cfg.get("exclude_workshops", True)
         min_citations = int(filter_cfg.get("min_citations", 5))
+
+        non_main_patterns = [
+            r"\bworkshop\b",
+            r"\bworkshops\b",
+            r"\bsymposium\b",
+            r"\bshort\s*paper\b",
+            r"\bshort\s*papers\b",
+            r"\bshort\s*track\b",
+            r"\bdemo\s*paper\b",
+            r"\bdemo\s*track\b",
+            r"\bdemonstration\s*track\b",
+            r"\bsystem\s*demonstration\b",
+            r"\bextended\s*abstract\b",
+            r"\bposter\s*abstract\b",
+            r"\bindustry\s*track\b",
+            r"[\(\[\{]\s*(?:demo|short|demonstration|extended abstract)\s*[\)\]\}]",
+        ]
 
         kept: list[Paper] = []
         for p in papers:
             v_str = (p.venue or "").lower()
             t_str = (p.title or "").lower()
 
-            # 0. Reject workshops / symposiums if exclude_workshops is enabled
-            if exclude_workshops and ("workshop" in v_str or "workshop" in t_str or "symposium" in v_str):
-                logger.debug(f"Filtered out workshop paper: '{p.title}' (venue={p.venue})")
-                continue
+            # 0. Reject workshops, short papers, demo papers, extended abstracts
+            if exclude_non_main:
+                combined_check = f"{v_str} {t_str}"
+                if any(re.search(pat, combined_check) for pat in non_main_patterns):
+                    logger.debug(f"Filtered out non-main paper (workshop/short/demo): '{p.title}' (venue={p.venue})")
+                    continue
 
             # 1. Non-arXiv curated sources (e.g. HuggingFace Daily Papers, GitHub repos)
             if p.source in ("huggingface", "github") or any(s in ("huggingface", "github") for s in (p.sources or [])):
