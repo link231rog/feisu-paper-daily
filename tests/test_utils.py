@@ -288,3 +288,23 @@ class TestBm25Pick:
         candidates = {"a.tex": "hello", "b.tex": "world"}
         result = _bm25_pick("", candidates)
         assert result in candidates
+
+
+def test_translate_to_chinese_already_chinese():
+    from zotero_arxiv_daily.utils import translate_to_chinese
+    text = "这是一篇中文总结"
+    assert translate_to_chinese(text) == text
+
+
+def test_translate_to_chinese_mocked_success(monkeypatch):
+    from unittest.mock import MagicMock
+    from zotero_arxiv_daily.utils import translate_to_chinese
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = [["这是翻译结果", "en"]]
+
+    monkeypatch.setattr("requests.get", lambda *a, **kw: mock_resp)
+    res = translate_to_chinese("This is an English test.")
+    assert res == "这是翻译结果"
+

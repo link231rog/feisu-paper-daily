@@ -547,6 +547,59 @@ class Executor:
         logger.info(f"Directly ingested '{title}' into Wiki Knowledge Base: {note_url}")
         return note_url
 
+    def filter_quality_papers(self, papers: list[Paper]) -> list[Paper]:
+        """Filters papers based on academic quality gates:
+        1. Community-curated (Hugging Face / GitHub).
+        2. Top conference / journal acceptance (NeurIPS, ICML, ICLR, ACL, AAAI, CVPR, etc.).
+        3. High citation count (>= min_citations).
+        4. Recognized universities, institutes, or tech AI labs in author affiliations.
+        Preprints with unknown / unverified affiliations and no venue/citations are filtered out.
+        """
+        filter_cfg = self.config.get("filter") or {}
+        if not filter_cfg.get("enabled", False):
+            return papers
+
+        top_venues = [v.lower() for v in filter_cfg.get("top_venues", [])]
+        top_institutions = [inst.lower() for inst in filter_cfg.get("top_institutions", [])]
+        min_citations = int(filter_cfg.get("min_citations", 5))
+
+        kept: list[Paper] = []
+        for p in papers:
+            # 1. Non-arXiv curated sources (e.g. HuggingFace Daily Papers, GitHub repos)
+            if p.source in ("huggingface", "github") or any(s in ("huggingface", "github") for s in (p.sources or [])):
+                kept.append(p)
+                continue
+
+            # 2. Accepted by a reputable conference / journal venue
+            v_str = (p.venue or "").lower()
+            if v_str and any(tv in v_str for tv in top_venues):
+                kept.append(p)
+                continue
+
+            # 3. High citation count (classic / recognized earlier works)
+            if p.citation_count is not None and p.citation_count >= min_citations:
+                kept.append(p)
+                continue
+
+            # 4. Author affiliations match reputable universities or tech labs
+            affils_text = " ".join(p.affiliations or []).lower()
+            authors_text = " ".join(p.authors or []).lower()
+            combined_inst_text = f"{affils_text} {authors_text}"
+
+            if any(inst in combined_inst_text for inst in top_institutions):
+                kept.append(p)
+                continue
+
+            # 5. Check if abstract/comments explicitly mention recognized top institution
+            abs_prefix = (p.abstract[:300] if p.abstract else "").lower()
+            if any(inst in abs_prefix for inst in top_institutions):
+                kept.append(p)
+                continue
+
+            logger.debug(f"Filtered out unverified preprint: '{p.title}' (venue={p.venue})")
+
+        return kept
+
     def run(self):
         # 1. Check and ingest user-confirmed papers from Feishu Wiki
         try:
@@ -585,7 +638,11 @@ class Executor:
 
         # Filter out papers already pushed
         new_papers = self.paper_store.filter_already_pushed(deduped_papers)
-        logger.info(f"{len(new_papers)} new unpushed papers ready for reranking")
+        logger.info(f"{len(new_papers)} new unpushed papers ready for quality filtering")
+
+        # Academic Quality Gate (filter out obscure preprints without top affiliation or recognized venue)
+        quality_papers = self.filter_quality_papers(new_papers)
+        logger.info(f"{len(quality_papers)} / {len(new_papers)} papers passed academic quality gate")
 
         # Quota allocation: balance papers and trending items to adhere to total_daily_quota (default 15)
         trends_cfg = self.config.get("news_and_trends") or {}
@@ -599,21 +656,19 @@ class Executor:
             max_trends = int(trends_cfg.get("max_items", 4))
 
         reranked_papers: list[Paper] = []
-        if len(new_papers) > 0:
+        if len(quality_papers) > 0:
             logger.info("Reranking papers against interest corpus...")
-            reranked_papers = self.reranker.rerank(new_papers, corpus)
+            reranked_papers = self.reranker.rerank(quality_papers, corpus)
             reranked_papers = reranked_papers[:paper_quota]
 
-            if self.openai_client is not None:
-                logger.info("Generating TLDR, affiliations, and conference venue via LLM...")
-                for p in tqdm(reranked_papers, desc="Summarizing papers"):
-                    p.generate_tldr(self.openai_client, self.config.llm)
+            logger.info("Generating TLDR, affiliations, and conference venue...")
+            for p in tqdm(reranked_papers, desc="Summarizing papers"):
+                p.generate_tldr(self.openai_client, self.config.llm if self.openai_client else None)
+                if self.openai_client is not None:
                     p.generate_affiliations(self.openai_client, self.config.llm)
                     p.generate_venue(self.openai_client, self.config.llm)
-            else:
-                for p in reranked_papers:
+                else:
                     p.generate_venue()
-                    p.tldr = p.abstract[:300] + "..." if len(p.abstract) > 300 else p.abstract
 
             # Log formatted summary to console
             logger.info(f"=== Recommended Papers ({len(reranked_papers)} papers) ===")

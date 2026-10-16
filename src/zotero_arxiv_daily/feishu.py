@@ -483,12 +483,20 @@ class FeishuClient:
                 }
             })
 
-            # TL;DR
-            en_summary = p.tldr_en or (p.abstract[:200] + "..." if p.abstract else "N/A")
+            # TL;DR (Bilingual with Free Translation Fallback)
+            from .utils import translate_to_chinese
+
+            en_summary = p.tldr_en or (p.abstract[:250] + "..." if p.abstract else "N/A")
             zh_summary = p.tldr_zh or p.tldr or ""
-            tldr_text = f"TL;DR: {en_summary}"
-            if zh_summary and zh_summary != en_summary:
-                tldr_text += f"\n{zh_summary}"
+
+            # Ensure Chinese summary is genuinely translated Chinese
+            if not zh_summary or not re.search(r"[\u4e00-\u9fff]", zh_summary):
+                zh_summary = translate_to_chinese(en_summary)
+
+            if zh_summary and re.search(r"[\u4e00-\u9fff]", zh_summary):
+                tldr_text = f"TL;DR: {en_summary}\n中文速览: {zh_summary}"
+            else:
+                tldr_text = f"TL;DR: {en_summary}"
 
             children.append({
                 "block_type": 2,

@@ -435,4 +435,30 @@ def test_executor_run_ingest_only(config, monkeypatch):
     assert len(fetch_corpus_called) == 0
 
 
+def test_executor_filter_quality_papers(config):
+    from omegaconf import open_dict
+    from zotero_arxiv_daily.protocol import Paper
+
+    with open_dict(config):
+        config.filter.enabled = True
+
+    executor = Executor(config)
+
+    paper_top_venue = Paper(source="arxiv", title="Top Venue Paper", authors=["Author A"], venue="NeurIPS 2026", abstract="Abstract", url="https://arxiv.org/abs/1")
+    paper_high_cite = Paper(source="semantic_scholar", title="High Citation Paper", authors=["Author B"], citation_count=50, abstract="Abstract", url="https://arxiv.org/abs/2")
+    paper_top_inst = Paper(source="arxiv", title="Top Inst Paper", authors=["Author C"], affiliations=["Tsinghua University"], abstract="Abstract", url="https://arxiv.org/abs/3")
+    paper_hf = Paper(source="huggingface", title="Community Paper", authors=["Author D"], abstract="Abstract", url="https://huggingface.co/papers/4")
+    paper_obscure = Paper(source="arxiv", title="Obscure Paper", authors=["Author E"], venue="arXiv.org", affiliations=["Unknown School"], abstract="Some random abstract", url="https://arxiv.org/abs/5")
+
+    papers = [paper_top_venue, paper_high_cite, paper_top_inst, paper_hf, paper_obscure]
+    filtered = executor.filter_quality_papers(papers)
+
+    assert paper_top_venue in filtered
+    assert paper_high_cite in filtered
+    assert paper_top_inst in filtered
+    assert paper_hf in filtered
+    assert paper_obscure not in filtered
+
+
+
 

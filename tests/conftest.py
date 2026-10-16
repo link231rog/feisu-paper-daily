@@ -48,6 +48,7 @@ def _base_config():
                 "paper_store.path=null",
                 "news_and_trends.enabled=false",
                 "feishu.dry_run=true",
+                "filter.enabled=false",
             ],
         )
     return cfg

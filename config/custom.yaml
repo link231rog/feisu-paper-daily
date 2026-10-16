@@ -126,3 +126,8 @@ news_and_trends:
     - name: "Breaking"
       keywords: ["announces", "release", "launched", "breakthrough"]
 
+filter:
+  enabled: ${oc.env:FILTER_ENABLED,true}
+  min_citations: 5
+
+

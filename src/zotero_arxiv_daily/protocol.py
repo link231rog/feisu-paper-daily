@@ -140,27 +140,45 @@ class Paper:
         )
         return tldr
     
-    def generate_tldr(self, openai_client:OpenAI,llm_params:dict) -> str:
-        try:
-            tldr_raw = self._generate_tldr_with_llm(openai_client,llm_params)
-            en_match = re.search(r'EN:\s*(.+?)(?=\nZH:|$)', tldr_raw, flags=re.DOTALL)
-            zh_match = re.search(r'ZH:\s*(.+)', tldr_raw, flags=re.DOTALL)
-            if en_match and zh_match:
-                self.tldr_en = en_match.group(1).strip()
-                self.tldr_zh = zh_match.group(1).strip()
-                self.tldr = self.tldr_zh
-            else:
-                self.tldr = tldr_raw.strip()
-                self.tldr_zh = self.tldr
-                self.tldr_en = self.abstract[:200] + "..." if self.abstract else self.tldr
+    def generate_tldr(self, openai_client: Optional[OpenAI] = None, llm_params: Optional[dict] = None) -> str:
+        if openai_client is not None and llm_params is not None:
+            try:
+                tldr_raw = self._generate_tldr_with_llm(openai_client, llm_params)
+                en_match = re.search(r'EN:\s*(.+?)(?=\nZH:|$)', tldr_raw, flags=re.DOTALL)
+                zh_match = re.search(r'ZH:\s*(.+)', tldr_raw, flags=re.DOTALL)
+                if en_match and zh_match:
+                    self.tldr_en = en_match.group(1).strip()
+                    self.tldr_zh = zh_match.group(1).strip()
+                    self.tldr = self.tldr_zh
+                    return self.tldr
+                elif tldr_raw.strip():
+                    self.tldr = tldr_raw.strip()
+                    self.tldr_zh = self.tldr
+                    self.tldr_en = self.abstract[:200] + "..." if self.abstract else self.tldr
+                    return self.tldr
+            except Exception as e:
+                logger.warning(f"Failed to generate LLM tldr of {self.url}: {e}, using free translation fallback")
+
+        # If language requested is English, keep raw abstract as fallback
+        if llm_params and str(llm_params.get("language", "")).lower() == "english":
+            self.tldr = self.abstract
+            self.tldr_zh = self.abstract
+            self.tldr_en = self.abstract
             return self.tldr
-        except Exception as e:
-            logger.warning(f"Failed to generate tldr of {self.url}: {e}")
-            tldr = self.abstract
-            self.tldr = tldr
-            self.tldr_zh = tldr
-            self.tldr_en = tldr
-            return tldr
+
+        # Free translation fallback (Google / MyMemory)
+        from .utils import translate_to_chinese
+        first_sentence = self.abstract.split(". ")[0] if self.abstract else self.title
+        if len(first_sentence) < 60 and self.abstract and ". " in self.abstract:
+            parts = self.abstract.split(". ")
+            first_sentence = ". ".join(parts[:2])
+
+        clean_sentence = first_sentence.strip().rstrip(".") + "."
+        self.tldr_en = clean_sentence
+        self.tldr_zh = translate_to_chinese(clean_sentence)
+        self.tldr = self.tldr_zh
+        return self.tldr
+
 
     def _generate_affiliations_with_llm(self, openai_client:OpenAI,llm_params:dict) -> Optional[list[str]]:
         if self.full_text is not None:
