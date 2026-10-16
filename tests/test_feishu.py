@@ -626,23 +626,17 @@ def test_feishu_daily_report_reading_plan(monkeypatch):
 
     client.create_or_update_daily_report([paper1, paper2])
 
-    # Verify Reading Plan Heading
+    # Verify no redundant Reading Plan boilerplate
     heading2_texts = [
         b.get("heading2", {}).get("elements", [{}])[0].get("text_run", {}).get("content", "")
         for b in posted_blocks if b.get("block_type") == 4
     ]
-    assert any("精读任务规划" in h for h in heading2_texts)
+    assert not any("精读任务规划" in h for h in heading2_texts)
+    assert any("一、候选学术论文与研究工作" in h for h in heading2_texts)
 
-    # Verify Todos in Reading Plan
-    todos = [
-        "".join(el.get("text_run", {}).get("content", "") for el in b.get("todo", {}).get("elements", []))
-        for b in posted_blocks if b.get("block_type") == 17
-    ]
-    assert any("通读" in t for t in todos)
-    assert any("📖 核心精读" in t for t in todos)
-    assert any("🎯 落地转化" in t for t in todos)
-    assert any("🔥 优先精读: Top Paper Alpha (NeurIPS 2026)" in t for t in todos)
-    assert any("🔥 进阶研读: Second Paper Beta" in t for t in todos)
+    # Verify paper cards are posted directly
+    assert any("Top Paper Alpha" in h for h in heading2_texts)
+    assert any("Second Paper Beta" in h for h in heading2_texts)
 
 
 def test_feishu_create_reading_task(monkeypatch):
