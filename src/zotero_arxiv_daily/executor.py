@@ -561,10 +561,19 @@ class Executor:
 
         top_venues = [v.lower() for v in filter_cfg.get("top_venues", [])]
         top_institutions = [inst.lower() for inst in filter_cfg.get("top_institutions", [])]
+        exclude_workshops = filter_cfg.get("exclude_workshops", True)
         min_citations = int(filter_cfg.get("min_citations", 5))
 
         kept: list[Paper] = []
         for p in papers:
+            v_str = (p.venue or "").lower()
+            t_str = (p.title or "").lower()
+
+            # 0. Reject workshops / symposiums if exclude_workshops is enabled
+            if exclude_workshops and ("workshop" in v_str or "workshop" in t_str or "symposium" in v_str):
+                logger.debug(f"Filtered out workshop paper: '{p.title}' (venue={p.venue})")
+                continue
+
             # 1. Non-arXiv curated sources (e.g. HuggingFace Daily Papers, GitHub repos)
             if p.source in ("huggingface", "github") or any(s in ("huggingface", "github") for s in (p.sources or [])):
                 kept.append(p)
