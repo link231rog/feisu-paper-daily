@@ -945,4 +945,78 @@ def test_feishu_append_to_engineering_index(monkeypatch):
     assert "• 核心功能与亮点: Self-improving agent framework" in card_text
 
 
+def test_feishu_create_reading_note_with_full_text(monkeypatch):
+    cfg = OmegaConf.create({
+        "app_id": "test_app_id",
+        "app_secret": "test_app_secret",
+        "wiki_space_id": "space_123",
+        "notes_parent_node_token": "notes_parent_123",
+        "dry_run": False,
+    })
+    client = FeishuClient(cfg)
+
+    posted_blocks = []
+
+    def mock_request(method_or_url, url=None, *args, **kwargs):
+        target_url = str(url if url else method_or_url)
+        resp = MagicMock()
+        resp.status_code = 200
+        if "tenant_access_token" in target_url:
+            val = {"code": 0, "tenant_access_token": "test_token"}
+        elif "/wiki/v2/spaces/space_123/nodes" in target_url:
+            val = {
+                "code": 0,
+                "data": {
+                    "node": {
+                        "node_token": "node_new",
+                        "obj_token": "doc_new",
+                        "url": "https://feishu.cn/wiki/node_new",
+                    }
+                }
+            }
+        elif "children" in target_url:
+            data = kwargs.get("json", {})
+            posted_blocks.extend(data.get("children", []))
+            val = {"code": 0, "data": {"children": []}}
+        else:
+            val = {"code": 0, "data": {}}
+        resp.json = lambda: val
+        resp.raise_for_status = MagicMock()
+        return resp
+
+    monkeypatch.setattr("requests.post", mock_request)
+    monkeypatch.setattr("requests.request", mock_request)
+
+    paper = Paper(
+        source="arxiv",
+        title="Sample Paper with Full Text",
+        authors=["Alice"],
+        abstract="Sample abstract",
+        url="https://arxiv.org/abs/2601.55555",
+    )
+
+    sample_md = """## 1 Introduction
+This is the first paragraph of the introduction.
+
+### 1.1 Background
+Here is some detailed background on agent memory.
+- Point 1: Long horizon
+- Point 2: Decay activation
+"""
+
+    note_url = client.create_reading_note(
+        paper,
+        sections={"core_summary": "Summary"},
+        full_text_markdown=sample_md
+    )
+
+    assert note_url == "https://feishu.cn/wiki/node_new"
+    has_full_text_header = any(
+        "论文完整原文与逐节研读区" in "".join(el.get("text_run", {}).get("content", "") for el in b.get("heading2", {}).get("elements", []))
+        for b in posted_blocks if b.get("block_type") == 4
+    )
+    assert has_full_text_header
+    assert any(b.get("block_type") == 22 for b in posted_blocks)  # divider
+
+
 

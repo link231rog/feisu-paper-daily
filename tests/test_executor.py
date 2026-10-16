@@ -388,7 +388,7 @@ def test_executor_ingest_paper_by_url(config, monkeypatch):
     class MockFeishuClient:
         def __init__(self, cfg):
             pass
-        def create_reading_note(self, paper, sections=None, status="todo"):
+        def create_reading_note(self, paper, sections=None, status="todo", full_text_markdown=None, **kwargs):
             created_notes.append(paper.title)
             return f"https://feishu.cn/wiki/note_{paper.title}"
         def append_to_master_index(self, paper, note_url="", tags=None, core_summary=""):
