@@ -169,3 +169,58 @@ def send_email(config:DictConfig, html:str):
     server.login(sender, password)
     server.sendmail(sender, [receiver], msg.as_string())
     server.quit()
+
+
+def translate_to_chinese(text: str, timeout: float = 8.0) -> str:
+    """Translates text to Chinese using free translation endpoints (Google Chrome Extension & MyMemory).
+    
+    Zero configuration, no API keys needed.
+    """
+    if not text or not text.strip():
+        return ""
+
+    # Already contains Chinese characters
+    if re.search(r"[\u4e00-\u9fff]", text):
+        return text.strip()
+
+    clean_text = text.strip()
+
+    # 1. Primary: Google Chrome translation endpoint (fast, high limit)
+    try:
+        import requests
+        url = "https://clients5.google.com/translate_a/t"
+        params = {
+            "client": "dict-chrome-ex",
+            "sl": "auto",
+            "tl": "zh-CN",
+            "q": clean_text[:4000],
+        }
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+        resp = requests.get(url, params=params, headers=headers, timeout=timeout)
+        if resp.status_code == 200:
+            data = resp.json()
+            if isinstance(data, list) and len(data) > 0:
+                first_item = data[0]
+                if isinstance(first_item, list) and len(first_item) > 0 and isinstance(first_item[0], str):
+                    res = first_item[0].strip()
+                    if res:
+                        return res
+                elif isinstance(first_item, str):
+                    return first_item.strip()
+    except Exception as exc:
+        logger.debug(f"Google Chrome translation fallback: {exc}")
+
+    # 2. Secondary fallback: MyMemory Translation API
+    try:
+        import requests
+        url = "https://api.mymemory.translated.net/get"
+        params = {"q": clean_text[:1000], "langpair": "en|zh-CN"}
+        resp = requests.get(url, params=params, timeout=timeout)
+        if resp.status_code == 200:
+            res = resp.json().get("responseData", {}).get("translatedText")
+            if res and isinstance(res, str) and res.strip():
+                return res.strip()
+    except Exception as exc:
+        logger.debug(f"MyMemory translation fallback: {exc}")
+
+    return clean_text
