@@ -14,6 +14,12 @@ topics:
   - name: "Knowledge Graph & Baseline"
     keywords: ["knowledge graph", "knowledge graph construction", "agent benchmark", "memory benchmark", "KG agent", "HotpotQA"]
     description: "Foundational and classical knowledge graph construction, structured reasoning, and multi-agent memory benchmarks."
+  - name: "Agent Harness"
+    keywords: ["agent harness", "evaluation harness", "agent testing harness", "benchmark harness", "agent sandbox", "execution environment", "SWE-bench harness", "agent runtime"]
+    description: "Agent evaluation harnesses, reproducible test environments, sandbox execution runtimes, and standardized interaction benchmarks for autonomous agents."
+  - name: "Recursive Self-Improvement (RSI)"
+    keywords: ["recursive self-improvement", "RSI", "self-improving agent", "self-evolving agent", "self-correction", "self-training", "autonomous self-improvement", "self-play"]
+    description: "Recursive self-improvement (RSI), autonomous self-evolving agents, self-correction feedback loops, self-distillation, and test-time self-alignment."
 
 zotero:
   user_id: ${oc.env:ZOTERO_ID,null}
@@ -49,6 +55,8 @@ source:
       - "reinforcement learning agent memory"
       - "knowledge graph construction agent"
       - "agent benchmark evaluation"
+      - "agent harness evaluation benchmark"
+      - "recursive self-improvement agent RSI"
     date_range: "2025:2026"
     seed_papers:
       - "ARXIV:2310.08560"
@@ -88,7 +96,7 @@ news_and_trends:
   min_github_stars: 50
   github:
     enabled: true
-    topics: ["ai-agent", "agent-memory", "decision-model", "multi-agent-systems", "reinforcement-learning", "knowledge-graph"]
+    topics: ["ai-agent", "agent-memory", "decision-model", "multi-agent-systems", "reinforcement-learning", "knowledge-graph", "agent-harness", "self-improvement"]
     days_back: 7
   news:
     enabled: true
@@ -106,6 +114,10 @@ news_and_trends:
       keywords: ["benchmark", "dataset", "eval-suite", "hotpotqa", "longevalmem", "evaluation"]
     - name: "KnowledgeGraph"
       keywords: ["knowledge graph", "kg", "entity linking", "relation extraction", "transe"]
+    - name: "Harness"
+      keywords: ["harness", "agent harness", "eval harness", "sandbox", "test environment", "swe-bench", "runtime"]
+    - name: "RSI"
+      keywords: ["rsi", "recursive self-improvement", "self-improving", "self-evolving", "self-improvement", "self-correction", "self-training"]
     - name: "OpenSource"
       keywords: ["open-weights", "weights", "llama", "deepseek", "vllm", "sglang", "ollama"]
     - name: "Breaking"

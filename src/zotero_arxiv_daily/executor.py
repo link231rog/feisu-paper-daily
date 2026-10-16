@@ -165,7 +165,7 @@ class Executor:
             "- experiments: 1-2 sentences on key experimental findings (in Chinese)\n"
             "- takeaways: 2 bullet points on takeaways / engineering insights (in Chinese)\n"
             "- venue: accepted conference or journal name and year (e.g. 'ACL 2026', 'NeurIPS 2024', 'ICLR 2025'), or null if preprint / not specified\n"
-            "- tags: array of 2-4 English keyword tags without hash symbol (e.g. [\"Agent\", \"Memory\", \"RL\"])\n"
+            "- tags: array of 2-4 English keyword tags without hash symbol (e.g. [\"Agent\", \"Memory\", \"RL\", \"Harness\", \"RSI\"])\n"
         )
         try:
             resp = self.openai_client.chat.completions.create(
@@ -250,7 +250,7 @@ class Executor:
             "- quick_start: 环境依赖与快速上手。列出具体安装命令（如 pip/npm/brew/docker/git clone）、前置依赖环境与必要环境变量/配置准备。\n"
             "- usage_examples: 具体使用方式与调用示例。给出具体的 CLI 命令行指令、代码调用片段（Python/TypeScript/Shell）、参数说明以及输入输出样例。\n"
             "- key_features_and_tips: 核心功能特性与避坑指南。列出核心配置项、注意事项或已知限制。\n"
-            "- tags: 2-4个英文标签，如 [\"Agent\", \"Skill\", \"Memory\", \"Tool\", \"MAS\", \"DecisionModel\"]\n"
+            "- tags: 2-4个英文标签，如 [\"Agent\", \"Skill\", \"Memory\", \"Tool\", \"MAS\", \"DecisionModel\", \"Harness\", \"RSI\"]\n"
         )
         try:
             resp = self.openai_client.chat.completions.create(
