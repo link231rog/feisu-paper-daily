@@ -2,6 +2,7 @@ from datetime import datetime
 import json
 import random
 import re
+from typing import Any, Optional
 import requests
 from loguru import logger
 from omegaconf import DictConfig, ListConfig
@@ -399,6 +400,151 @@ class Executor:
         except Exception as exc:
             logger.warning(f"Error during paper ingestion check: {exc}")
             return []
+
+    def ingest_paper_by_url(self, url: str, category: Optional[str] = None) -> Optional[str]:
+        """Directly ingests a paper or open-source tool/skill by URL into the Wiki Knowledge Base."""
+        feishu_cfg = self.config.get("feishu")
+        if not feishu_cfg:
+            logger.warning("No feishu configuration found for ingest_paper_by_url")
+            return None
+
+        clean_url = url.strip()
+        title = ""
+        abstract = ""
+        authors = []
+        affiliations = []
+        venue = None
+        sources = []
+
+        is_github_or_tool = (
+            "github.com" in clean_url.lower()
+            or category == "github_repo"
+        )
+
+        if is_github_or_tool:
+            sources = ["github"]
+            match = re.search(r"github\.com/([^/]+)/([^/#?]+)", clean_url)
+            if match:
+                title = f"{match.group(1)}/{match.group(2).removesuffix('.git')}"
+            else:
+                title = clean_url
+            readme_text = self.fetch_github_readme(clean_url)
+            sections, tags = self.generate_app_note_sections(title=title, url=clean_url, readme_text=readme_text)
+            venue = "GitHub / Open Source Tool"
+        elif "arxiv.org" in clean_url.lower():
+            sources = ["arxiv"]
+            import xml.etree.ElementTree as ET
+            arxiv_match = re.search(r"(\d{4}\.\d{4,5})", clean_url)
+            arxiv_id = arxiv_match.group(1) if arxiv_match else ""
+            if arxiv_id:
+                try:
+                    api_url = f"https://export.arxiv.org/api/query?id_list={arxiv_id}"
+                    resp = requests.get(api_url, timeout=10)
+                    if resp.status_code == 200:
+                        root = ET.fromstring(resp.text)
+                        ns = {"atom": "http://www.w3.org/2005/Atom", "arxiv": "http://arxiv.org/schemas/atom"}
+                        entry = root.find("atom:entry", ns)
+                        if entry is not None:
+                            raw_t = entry.findtext("atom:title", default="", namespaces=ns)
+                            title = " ".join(raw_t.split())
+                            raw_abs = entry.findtext("atom:summary", default="", namespaces=ns)
+                            abstract = " ".join(raw_abs.split())
+                            for author_node in entry.findall("atom:author", ns):
+                                a_name = author_node.findtext("atom:name", default="", namespaces=ns)
+                                if a_name:
+                                    authors.append(a_name)
+                            comment_node = entry.findtext("arxiv:comment", default="", namespaces=ns)
+                            if comment_node:
+                                for v in ["NeurIPS", "ICLR", "ICML", "ACL", "EMNLP", "CVPR", "ICCV", "ECCV", "AAAI"]:
+                                    if v.lower() in comment_node.lower():
+                                        venue = v
+                                        break
+                except Exception as exc:
+                    logger.warning(f"Failed to query arXiv API for {arxiv_id}: {exc}")
+            
+            if not title:
+                title = f"Paper ({arxiv_id or clean_url})"
+
+            paper_obj = Paper(
+                source="arxiv",
+                title=title,
+                authors=authors,
+                abstract=abstract,
+                url=clean_url,
+                affiliations=affiliations,
+                sources=sources,
+                venue=venue,
+            )
+            sections, tags = self.generate_reading_note_sections(paper_obj)
+        else:
+            sources = ["web"]
+            title = clean_url
+            paper_obj = Paper(
+                source="web",
+                title=title,
+                authors=[],
+                abstract="",
+                url=clean_url,
+                affiliations=[],
+                sources=sources,
+            )
+            sections, tags = self.generate_reading_note_sections(paper_obj)
+
+        from .feishu import FeishuClient
+        client = FeishuClient(feishu_cfg)
+
+        paper = Paper(
+            source=sources[0] if sources else "web",
+            title=title,
+            authors=authors,
+            abstract=abstract,
+            url=clean_url,
+            affiliations=affiliations,
+            sources=sources,
+            venue=venue,
+            tldr=sections.get("core_summary", ""),
+            tldr_zh=sections.get("core_summary", ""),
+        )
+
+        note_url = client.create_reading_note(paper, sections=sections)
+        client.append_to_master_index(
+            paper,
+            note_url=note_url,
+            tags=tags,
+            core_summary=sections.get("core_summary", "")
+        )
+        client.append_to_tag_graph(
+            paper,
+            note_url=note_url,
+            tags=tags,
+            core_summary=sections.get("core_summary", "")
+        )
+
+        if feishu_cfg.get("create_tasks", True):
+            try:
+                task_res = client.create_reading_task(
+                    paper=paper,
+                    note_url=note_url,
+                    tags=tags,
+                )
+                task_guid = task_res.get("guid") or task_res.get("task", {}).get("guid")
+                logger.info(f"Created Lark Task for '{title}': guid={task_guid}")
+            except Exception as t_exc:
+                logger.warning(f"Notice: creating Lark task for '{title}': {t_exc}")
+
+        self.paper_store.mark_ingested(
+            paper,
+            {
+                "title": title,
+                "url": clean_url,
+                "wiki_url": note_url,
+                "tags": tags,
+            }
+        )
+        if clean_url:
+            self.paper_store.mark_ingested(clean_url, {"title": title, "wiki_url": note_url})
+        logger.info(f"Directly ingested '{title}' into Wiki Knowledge Base: {note_url}")
+        return note_url
 
     def run(self):
         # 1. Check and ingest user-confirmed papers from Feishu Wiki

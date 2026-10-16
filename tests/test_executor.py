@@ -3,7 +3,7 @@
 from datetime import datetime
 
 import pytest
-from omegaconf import OmegaConf
+from omegaconf import OmegaConf, open_dict
 
 from zotero_arxiv_daily.executor import Executor, normalize_path_patterns
 from zotero_arxiv_daily.protocol import CorpusPaper
@@ -370,4 +370,51 @@ def test_executor_total_daily_quota_allocation(config, monkeypatch):
     assert len(t_out) <= 4
     assert len(p_out) <= 11
     assert len(p_out) + len(t_out) <= 15
+
+
+def test_executor_ingest_paper_by_url(config, monkeypatch):
+    test_cfg = config.copy()
+    with open_dict(test_cfg):
+        test_cfg.feishu = OmegaConf.create({
+            "app_id": "mock_id",
+            "app_secret": "mock_sec",
+            "dry_run": False,
+            "create_tasks": False,
+        })
+        test_cfg.paper_store = OmegaConf.create({"path": "data/test_paper_store.json"})
+
+    created_notes = []
+
+    class MockFeishuClient:
+        def __init__(self, cfg):
+            pass
+        def create_reading_note(self, paper, sections=None, status="todo"):
+            created_notes.append(paper.title)
+            return f"https://feishu.cn/wiki/note_{paper.title}"
+        def append_to_master_index(self, paper, note_url="", tags=None, core_summary=""):
+            pass
+        def append_to_tag_graph(self, paper, note_url="", tags=None, core_summary=""):
+            pass
+
+    from unittest.mock import MagicMock
+    sample_xml = """<?xml version="1.0" encoding="utf-8"?>
+    <feed xmlns="http://www.w3.org/2005/Atom">
+      <entry>
+        <title>Mock Paper Title</title>
+        <summary>Mock summary text.</summary>
+        <author><name>Author A</name></author>
+      </entry>
+    </feed>"""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.text = sample_xml
+    monkeypatch.setattr("requests.get", lambda *a, **kw: mock_resp)
+    monkeypatch.setattr("zotero_arxiv_daily.feishu.FeishuClient", MockFeishuClient)
+
+    executor = Executor(test_cfg)
+    note_url = executor.ingest_paper_by_url("https://arxiv.org/abs/2602.05965")
+    assert note_url is not None
+    assert len(created_notes) == 1
+    assert executor.paper_store.is_ingested("https://arxiv.org/abs/2602.05965")
+
 
