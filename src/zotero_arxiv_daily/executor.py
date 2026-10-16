@@ -225,6 +225,53 @@ class Executor:
                 continue
         return ""
 
+    def fetch_paper_full_text(self, url: str) -> Optional[str]:
+        """Fetches the full text of an academic paper via arXiv HTML (trafilatura) or PDF (pymupdf4llm)."""
+        if not url:
+            return None
+        clean_url = url.strip()
+        arxiv_match = re.search(r"(\d{4}\.\d{4,5})", clean_url)
+        if not arxiv_match:
+            return None
+
+        arxiv_id = arxiv_match.group(1)
+
+        # 1. Try arXiv HTML with trafilatura
+        try:
+            import trafilatura
+            html_url = f"https://arxiv.org/html/{arxiv_id}"
+            downloaded = trafilatura.fetch_url(html_url)
+            if downloaded:
+                text = trafilatura.extract(downloaded, output_format="markdown", include_formatting=True, include_links=True)
+                if text and len(text) > 1000:
+                    logger.info(f"Successfully fetched full text HTML for {arxiv_id} ({len(text)} chars)")
+                    return text
+        except Exception as exc:
+            logger.debug(f"Failed to fetch arXiv HTML for {arxiv_id}: {exc}")
+
+        # 2. Fallback to arXiv PDF with pymupdf4llm
+        try:
+            import pymupdf4llm
+            import tempfile
+            pdf_url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
+            resp = requests.get(pdf_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=25)
+            if resp.status_code == 200:
+                with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tf:
+                    tf.write(resp.content)
+                    tf_path = tf.name
+                try:
+                    md_text = pymupdf4llm.to_markdown(tf_path)
+                    if md_text and len(md_text) > 1000:
+                        logger.info(f"Successfully converted PDF to markdown for {arxiv_id} ({len(md_text)} chars)")
+                        return md_text
+                finally:
+                    if os.path.exists(tf_path):
+                        os.remove(tf_path)
+        except Exception as exc:
+            logger.debug(f"Failed to fetch arXiv PDF for {arxiv_id}: {exc}")
+
+        return None
+
     def generate_app_note_sections(self, title: str, url: str, readme_text: str = "", tldr: str = "") -> tuple[dict[str, str], list[str]]:
         """Uses LLM to analyze a GitHub project, AI application, or Agent Skill into an engineering-oriented note."""
         if not self.openai_client:
@@ -357,7 +404,11 @@ class Executor:
                 else:
                     sections, tags = self.generate_reading_note_sections(paper)
 
-                note_url = client.create_reading_note(paper, sections=sections)
+                full_text_md = None
+                if not is_github_or_tool and url:
+                    full_text_md = self.fetch_paper_full_text(url)
+
+                note_url = client.create_reading_note(paper, sections=sections, full_text_markdown=full_text_md)
                 if is_github_or_tool:
                     client.append_to_engineering_index(
                         paper,
@@ -517,7 +568,11 @@ class Executor:
             tldr_zh=sections.get("core_summary", ""),
         )
 
-        note_url = client.create_reading_note(paper, sections=sections)
+        full_text_md = None
+        if not is_github_or_tool and clean_url:
+            full_text_md = self.fetch_paper_full_text(clean_url)
+
+        note_url = client.create_reading_note(paper, sections=sections, full_text_markdown=full_text_md)
         if is_github_or_tool:
             client.append_to_engineering_index(
                 paper,

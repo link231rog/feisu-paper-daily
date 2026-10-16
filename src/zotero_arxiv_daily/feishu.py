@@ -168,6 +168,57 @@ def _build_annotation_workspace_blocks(
     return blocks
 
 
+def markdown_to_feishu_blocks(md_text: str) -> list[dict[str, Any]]:
+    """Converts a Markdown paper string into Feishu Docx block objects."""
+    blocks: list[dict[str, Any]] = []
+    current_para: list[str] = []
+
+    def flush_para():
+        if current_para:
+            p_text = " ".join(current_para).strip()
+            if p_text:
+                for i in range(0, len(p_text), 1500):
+                    chunk = p_text[i : i + 1500]
+                    blocks.append({
+                        "block_type": 2,
+                        "text": {"elements": [{"text_run": {"content": f"{chunk}\n"}}]}
+                    })
+            current_para.clear()
+
+    for line in md_text.split("\n"):
+        line_s = line.strip()
+        if not line_s:
+            flush_para()
+            continue
+
+        if line_s.startswith("# ") or line_s.startswith("## "):
+            flush_para()
+            h_text = re.sub(r"^#+\s*", "", line_s).strip()
+            blocks.append({
+                "block_type": 4,
+                "heading2": {"elements": [{"text_run": {"content": h_text}}]}
+            })
+        elif line_s.startswith("### ") or line_s.startswith("#### ") or line_s.startswith("##### ") or line_s.startswith("###### "):
+            flush_para()
+            h_text = re.sub(r"^#+\s*", "", line_s).strip()
+            blocks.append({
+                "block_type": 5,
+                "heading3": {"elements": [{"text_run": {"content": h_text}}]}
+            })
+        elif line_s.startswith("- ") or line_s.startswith("* "):
+            flush_para()
+            b_text = re.sub(r"^[-*]\s*", "", line_s).strip()
+            blocks.append({
+                "block_type": 12,
+                "bullet": {"elements": [{"text_run": {"content": f"{b_text}\n"}}]}
+            })
+        else:
+            current_para.append(line_s)
+
+    flush_para()
+    return blocks
+
+
 class FeishuClient:
     """Feishu API client supporting both direct HTTP (via App ID & Secret) 
     and local lark-cli fallback.
@@ -901,6 +952,7 @@ class FeishuClient:
         paper: Paper,
         sections: Optional[dict[str, Any]] = None,
         status: str = READING_STATUS_TODO,
+        full_text_markdown: Optional[str] = None,
     ) -> str:
         """Creates a structured deep reading note or AI tool / skill note under the Wiki notes parent node."""
         if self.dry_run:
@@ -1104,6 +1156,27 @@ class FeishuClient:
                     "text": {"elements": [{"text_run": {"content": f"{takeaways}\n"}}]}
                 },
             ])
+
+        # If original paper full text is provided, append it for in-line annotation
+        if full_text_markdown and full_text_markdown.strip():
+            blocks.append({"block_type": 22, "divider": {}})
+            blocks.append({
+                "block_type": 4,
+                "heading2": {
+                    "elements": [
+                        {"text_run": {"content": "📄 论文完整原文与逐节研读区 (Original Full Paper & In-line Annotation)"}}
+                    ]
+                }
+            })
+            blocks.append({
+                "block_type": 2,
+                "text": {
+                    "elements": [
+                        {"text_run": {"content": "💡 提示：您可以直接在下方论文原文中划词选中任意语句或段落，点击「划词评论 / 添加批注」，直接在原文对应位置记录您的研读想法与疑问。\n"}}
+                    ]
+                }
+            })
+            blocks.extend(markdown_to_feishu_blocks(full_text_markdown))
 
         # Append blocks in batches of 50 to respect Feishu Docx API limit
         batch_size = 50
