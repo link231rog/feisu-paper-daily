@@ -81,6 +81,7 @@ feishu:
   idea_parent_node_token: ${oc.env:FEISHU_IDEA_PARENT_NODE_TOKEN,Nm5twd7AbisbgHkvQkCc4Obontb}
   experiment_parent_node_token: ${oc.env:FEISHU_EXPERIMENT_PARENT_NODE_TOKEN,EFnVwZm9ZijMgnkHhPJc70SknHc}
   synthesis_parent_node_token: ${oc.env:FEISHU_SYNTHESIS_PARENT_NODE_TOKEN,QGQQw8FwQi2SAtkDHlhcl6DInvb}
+  engineering_parent_node_token: ${oc.env:FEISHU_ENGINEERING_PARENT_NODE_TOKEN,BJQUwLdDriZ3eekJOl9cRQn8nib}
   dry_run: false
 
 paper_store:

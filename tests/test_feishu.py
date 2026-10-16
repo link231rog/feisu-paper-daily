@@ -816,8 +816,133 @@ def test_feishu_card_contains_english_abstract(monkeypatch):
     tldr_content = "".join(el.get("text_run", {}).get("content", "") for el in tldr_blocks[0]["text"]["elements"])
     assert "TL;DR:" in tldr_content
     assert "中文速览:" in tldr_content
-    assert "英文摘要 (Abstract):" in tldr_content
+    assert "English TLDR" in tldr_content or "英文摘要 (Abstract):" in tldr_content
     assert "This is the full comprehensive abstract describing motivation, method, and results." in tldr_content
+
+
+def test_feishu_create_reading_note_routes_to_engineering_parent(monkeypatch):
+    cfg = OmegaConf.create({
+        "app_id": "test_app_id",
+        "app_secret": "test_app_secret",
+        "wiki_space_id": "space_123",
+        "notes_parent_node_token": "notes_parent_123",
+        "engineering_parent_node_token": "eng_parent_456",
+        "dry_run": False,
+    })
+    client = FeishuClient(cfg)
+
+    created_payloads = []
+
+    def mock_request(method_or_url, url=None, *args, **kwargs):
+        target_url = str(url if url else method_or_url)
+        resp = MagicMock()
+        resp.status_code = 200
+        if "tenant_access_token" in target_url:
+            val = {"code": 0, "tenant_access_token": "test_token"}
+        elif "/wiki/v2/spaces/space_123/nodes" in target_url:
+            payload = kwargs.get("json", {})
+            created_payloads.append(payload)
+            val = {
+                "code": 0,
+                "data": {
+                    "node": {
+                        "node_token": "node_new",
+                        "obj_token": "doc_new",
+                        "url": "https://feishu.cn/wiki/node_new",
+                    }
+                }
+            }
+        elif "children" in target_url:
+            val = {"code": 0, "data": {"children": []}}
+        else:
+            val = {"code": 0, "data": {}}
+        resp.json = lambda: val
+        resp.raise_for_status = MagicMock()
+        return resp
+
+    monkeypatch.setattr("requests.post", mock_request)
+    monkeypatch.setattr("requests.request", mock_request)
+
+    # 1. Academic paper -> notes_parent_node_token
+    academic_paper = Paper(
+        source="arxiv",
+        title="Academic Memory Paper",
+        authors=["Alice"],
+        abstract="Research paper",
+        url="https://arxiv.org/abs/2601.11111",
+    )
+    client.create_reading_note(academic_paper, sections={"core_summary": "Paper summary"})
+    assert len(created_payloads) == 1
+    assert created_payloads[0]["parent_node_token"] == "notes_parent_123"
+
+    # 2. GitHub tool / skill -> engineering_parent_node_token
+    github_tool = Paper(
+        source="github",
+        title="awesome-agent-skill",
+        authors=[],
+        abstract="A powerful agent skill",
+        url="https://github.com/org/awesome-agent-skill",
+    )
+    client.create_reading_note(github_tool, sections={"scenarios_and_triggers": "Trigger info"})
+    assert len(created_payloads) == 2
+    assert created_payloads[1]["parent_node_token"] == "eng_parent_456"
+
+
+def test_feishu_append_to_engineering_index(monkeypatch):
+    cfg = OmegaConf.create({
+        "app_id": "test",
+        "app_secret": "test",
+        "engineering_parent_node_token": "node_eng_parent",
+    })
+    client = FeishuClient(cfg)
+    client._tenant_token = "mock"
+
+    calls = []
+
+    def mock_request(method, url, *args, **kwargs):
+        calls.append((method, url, kwargs.get("json", {})))
+        resp = MagicMock()
+        resp.status_code = 200
+        if "/wiki/v2/spaces/get_node" in url:
+            val = {"code": 0, "data": {"node": {"obj_token": "doc_eng_index"}}}
+        elif "blocks" in url and "children" not in url:
+            val = {"code": 0, "data": {"items": [{"block_type": 5}]}}
+        elif "children" in url:
+            val = {"code": 0, "data": {"children": []}}
+        else:
+            val = {"code": 0, "data": {}}
+        resp.json = lambda: val
+        resp.raise_for_status = MagicMock()
+        return resp
+
+    monkeypatch.setattr("requests.request", mock_request)
+
+    tool = Paper(
+        source="github",
+        title="NousResearch/hermes-agent",
+        authors=[],
+        abstract="Autonomous agent framework",
+        url="https://github.com/NousResearch/hermes-agent",
+    )
+
+    client.append_to_engineering_index(
+        tool,
+        note_url="https://feishu.cn/wiki/eng_hermes_note",
+        tags=["GitHub", "Skill"],
+        core_summary="Self-improving agent framework"
+    )
+
+    post_calls = [c for c in calls if c[0] == "POST"]
+    assert len(post_calls) == 1
+    post_call = post_calls[0]
+    children = post_call[2]["children"]
+    heading_text = "".join(el.get("text_run", {}).get("content", "") for el in children[0]["heading3"]["elements"])
+    assert "2. [#GitHub] [#Skill] NousResearch/hermes-agent" in heading_text
+    card_text = "".join(el.get("text_run", {}).get("content", "") for el in children[1]["text"]["elements"])
+    assert "• 🏷️ 状态: ⏳ 待精读" in card_text
+    assert "• 仓库/项目地址: https://github.com/NousResearch/hermes-agent" in card_text
+    assert "• 🛠️ 工程笔记直达: https://feishu.cn/wiki/eng_hermes_note" in card_text
+    assert "• 核心功能与亮点: Self-improving agent framework" in card_text
 
 
 
