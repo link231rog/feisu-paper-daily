@@ -358,6 +358,13 @@ class Executor:
                     sections, tags = self.generate_reading_note_sections(paper)
 
                 note_url = client.create_reading_note(paper, sections=sections)
+                if is_github_or_tool:
+                    client.append_to_engineering_index(
+                        paper,
+                        note_url=note_url,
+                        tags=tags,
+                        core_summary=sections.get("core_summary", "")
+                    )
                 client.append_to_master_index(
                     paper,
                     note_url=note_url,
@@ -508,6 +515,13 @@ class Executor:
         )
 
         note_url = client.create_reading_note(paper, sections=sections)
+        if is_github_or_tool:
+            client.append_to_engineering_index(
+                paper,
+                note_url=note_url,
+                tags=tags,
+                core_summary=sections.get("core_summary", "")
+            )
         client.append_to_master_index(
             paper,
             note_url=note_url,

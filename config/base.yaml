@@ -70,6 +70,7 @@ feishu:
   idea_parent_node_token: null
   experiment_parent_node_token: null
   synthesis_parent_node_token: null
+  engineering_parent_node_token: null
   dry_run: false
   create_tasks: true
 

@@ -184,6 +184,7 @@ class FeishuClient:
         self.notes_parent_node_token = config.get("notes_parent_node_token")
         self.master_index_node_token = config.get("master_index_node_token")
         self.tag_graph_node_token = config.get("tag_graph_node_token")
+        self.engineering_parent_node_token = config.get("engineering_parent_node_token")
         dry_run_val = config.get("dry_run", False)
         if isinstance(dry_run_val, str):
             self.dry_run = dry_run_val.strip().lower() in ("true", "1", "yes")
@@ -913,8 +914,19 @@ class FeishuClient:
         doc_id = None
         note_url = None
 
+        is_app_note = bool(
+            sections.get("scenarios_and_triggers")
+            or sections.get("quick_start")
+            or sections.get("usage_examples")
+            or ("github.com" in (paper.url or "").lower())
+        )
+
         if self.wiki_space_id:
-            parent_token = self.notes_parent_node_token or ""
+            parent_token = (
+                self.engineering_parent_node_token
+                if (is_app_note and self.engineering_parent_node_token)
+                else (self.notes_parent_node_token or "")
+            )
             node_payload = {
                 "obj_type": "docx",
                 "node_type": "origin",
@@ -949,13 +961,6 @@ class FeishuClient:
         affil_str = ", ".join(paper.affiliations) if paper.affiliations else "N/A"
         date_str = paper.published_date.strftime("%Y-%m-%d") if paper.published_date else today
         venue_str = getattr(paper, "venue", None) or "Preprint"
-
-        is_app_note = bool(
-            sections.get("scenarios_and_triggers")
-            or sections.get("quick_start")
-            or sections.get("usage_examples")
-            or ("github.com" in (paper.url or "").lower())
-        )
 
         blocks: list[dict[str, Any]] = []
 
@@ -1189,6 +1194,76 @@ class FeishuClient:
             logger.info(f"Appended paper '{paper.title}' to Feishu Wiki master index document")
         except Exception as exc:
             logger.error(f"Failed to append to master index: {exc}")
+
+    def append_to_engineering_index(
+        self,
+        paper: Paper,
+        note_url: str,
+        tags: Optional[list[str]] = None,
+        core_summary: str = "",
+        status: str = READING_STATUS_TODO,
+    ) -> None:
+        """Appends a new engineering asset (Skill / GitHub Repo / AI App) entry to the Engineering Hub index document."""
+        if not self.engineering_parent_node_token or self.dry_run:
+            return
+
+        eng_doc_id = None
+        try:
+            node_info = self._call_api("GET", f"/wiki/v2/spaces/get_node", params={"token": str(self.engineering_parent_node_token)})
+            node = node_info.get("node", {})
+            eng_doc_id = node.get("obj_token")
+        except Exception:
+            eng_doc_id = str(self.engineering_parent_node_token)
+
+        if not eng_doc_id:
+            logger.warning(f"Could not resolve document ID for engineering parent node {self.engineering_parent_node_token}")
+            return
+
+        try:
+            blocks_res = self._call_api("GET", f"/docx/v1/documents/{eng_doc_id}/blocks")
+            blocks = blocks_res.get("items", [])
+            heading3_count = sum(1 for b in blocks if b.get("block_type") == 5)
+            next_idx = heading3_count + 1
+        except Exception:
+            next_idx = 1
+
+        tag_list = tags or ["Engineering", "GitHub"]
+        tags_str = " ".join(f"[#{t}]" for t in tag_list)
+        summary = core_summary or paper.tldr_zh or paper.tldr or (paper.abstract[:150] + "...")
+        full_title = paper.title_with_venue()
+        current_status = normalize_reading_status(status)
+
+        index_blocks: list[dict[str, Any]] = [
+            {
+                "block_type": 5,
+                "heading3": {
+                    "elements": [
+                        {"text_run": {"content": f"{next_idx}. {tags_str} {full_title}"}}
+                    ]
+                }
+            },
+            {
+                "block_type": 2,
+                "text": {
+                    "elements": [
+                        {"text_run": {"content": f"• 🏷️ 状态: {current_status}  {READING_STATUS_BAR}\n"}},
+                        {"text_run": {"content": f"• 仓库/项目地址: {paper.url or 'N/A'}\n"}},
+                        {"text_run": {"content": f"• 🛠️ 工程笔记直达: {note_url}\n"}},
+                        {"text_run": {"content": f"• 核心功能与亮点: {summary}\n"}},
+                    ]
+                }
+            }
+        ]
+
+        try:
+            self._call_api(
+                "POST",
+                f"/docx/v1/documents/{eng_doc_id}/blocks/{eng_doc_id}/children",
+                data={"children": index_blocks, "index": -1}
+            )
+            logger.info(f"Appended engineering asset '{paper.title}' to Feishu Wiki engineering index document")
+        except Exception as exc:
+            logger.error(f"Failed to append to engineering index: {exc}")
 
     def append_to_tag_graph(
         self,
