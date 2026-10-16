@@ -1,8 +1,13 @@
 name: Feishu Paper Daily
 on:
   workflow_dispatch:
+    inputs:
+      ingest_only:
+        description: 'Only ingest checked papers (skip new retrieval)'
+        type: boolean
+        default: false
   schedule:
-    - cron: '0 0 * * *' # Every day at 00:00 UTC (08:00 AM Beijing Time)
+    - cron: '0 1,7,11 * * *' # 09:00, 15:00, 19:00 Beijing Time (01:00, 07:00, 11:00 UTC)
 
 permissions:
   contents: write
@@ -39,6 +44,21 @@ jobs:
             echo "Using custom config from repository variable:"
             cat config/custom.yaml
           fi
+
+          # Schedule breakdown:
+          # - 09:00 Beijing Time (01:00 UTC): Full pipeline (ingest checked + daily literature recommendation)
+          # - 15:00 & 19:00 Beijing Time (07:00 & 11:00 UTC): Scheduled ingestion of user-checked papers
+          CURRENT_HOUR=$(date -u +%H)
+          if [ "${{ inputs.ingest_only }}" = "true" ]; then
+            echo "Running in ingest-only mode (manual dispatch)"
+            export INGEST_ONLY="true"
+          elif [ "$GITHUB_EVENT_NAME" = "schedule" ] && [ "$CURRENT_HOUR" -gt 3 ]; then
+            echo "Running scheduled ingestion at $(date) (UTC hour $CURRENT_HOUR, ingest-only)"
+            export INGEST_ONLY="true"
+          else
+            echo "Running full pipeline at $(date) (UTC hour $CURRENT_HOUR)"
+          fi
+
           uv run src/zotero_arxiv_daily/main.py
 
       - name: Commit pushed history

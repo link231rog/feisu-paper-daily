@@ -1,3 +1,4 @@
+import os
 from datetime import datetime
 import json
 import random
@@ -552,6 +553,10 @@ class Executor:
             self.ingest_checked_papers()
         except Exception as exc:
             logger.warning(f"Notice during ingest_checked_papers: {exc}")
+
+        if self.config.executor.get("ingest_only", False) or os.environ.get("INGEST_ONLY", "").lower() in ("true", "1"):
+            logger.info("Ingest-only mode enabled. Skipping paper retrieval.")
+            return
 
         # 2. Fetch interest corpus (including newly ingested reading notes)
         corpus = self.fetch_corpus()

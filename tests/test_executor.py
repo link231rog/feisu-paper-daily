@@ -418,3 +418,21 @@ def test_executor_ingest_paper_by_url(config, monkeypatch):
     assert executor.paper_store.is_ingested("https://arxiv.org/abs/2602.05965")
 
 
+def test_executor_run_ingest_only(config, monkeypatch):
+    with open_dict(config):
+        config.executor.ingest_only = True
+
+    executor = Executor(config)
+    ingest_called = []
+    fetch_corpus_called = []
+
+    monkeypatch.setattr(executor, "ingest_checked_papers", lambda: ingest_called.append(True))
+    monkeypatch.setattr(executor, "fetch_corpus", lambda: fetch_corpus_called.append(True))
+
+    executor.run()
+
+    assert ingest_called == [True]
+    assert len(fetch_corpus_called) == 0
+
+
+
