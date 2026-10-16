@@ -498,6 +498,11 @@ class FeishuClient:
             else:
                 tldr_text = f"TL;DR: {en_summary}"
 
+            # English Abstract under TL;DR
+            if p.abstract and p.abstract.strip():
+                clean_abs = p.abstract.strip()
+                tldr_text += f"\n\n📄 英文摘要 (Abstract):\n{clean_abs}"
+
             children.append({
                 "block_type": 2,
                 "text": {
