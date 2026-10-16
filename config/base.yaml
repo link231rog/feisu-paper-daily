@@ -114,6 +114,7 @@ news_and_trends:
 
 filter:
   enabled: false
+  exclude_workshops: true
   min_citations: 5
   top_venues:
     - "neurips"
