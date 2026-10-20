@@ -11,6 +11,12 @@ wheels/
 .vscode/
 *.egg-info
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
 
 # Virtual environments
 .venv
@@ -20,6 +26,11 @@ logs
 models
 test-compose.yml
 outputs
-config/private.yaml
+config/private*.yaml
 data/
 .coverage
+.coverage.*
+.pytest_cache/
+htmlcov/
+*.log
+.hydra/

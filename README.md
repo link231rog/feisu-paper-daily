@@ -1,8 +1,3 @@
-<p align="center">
-  <a href="" rel="noopener">
- <img width=200px height=200px src="assets/logo.svg" alt="logo"></a>
-</p>
-
 <h3 align="center">Zotero-arXiv-Daily</h3>
 
 <div align="center">
@@ -12,7 +7,6 @@
   [![GitHub Issues](https://img.shields.io/github/issues/TideDra/zotero-arxiv-daily)](https://github.com/TideDra/zotero-arxiv-daily/issues)
   [![GitHub Pull Requests](https://img.shields.io/github/issues-pr/TideDra/zotero-arxiv-daily)](https://github.com/TideDra/zotero-arxiv-daily/pulls)
   [![License](https://img.shields.io/github/license/TideDra/zotero-arxiv-daily)](/LICENSE)
-  [<img src="https://api.gitsponsors.com/api/badge/img?id=893025857" height="20">](https://api.gitsponsors.com/api/badge/link?p=PKMtRut1dWWuC1oFdJweyDSvJg454/GkdIx4IinvBblaX2AY4rQ7FYKAK1ZjApoiNhYEeduIEhfeZVIwoIVlvcwdJXVFD2nV2EE5j6lYXaT/RHrcsQbFl3aKe1F3hliP26OMayXOoZVDidl05wj+yg==)
 
 </div>
 
@@ -46,33 +40,27 @@
   - medrxiv
   - chemrxiv
 
-## 📷 Screenshot
-![screenshot](./assets/screenshot.png)
-
 ## 🚀 Usage
 ### Quick Start
 1. Fork (and star😘) this repo.
-![fork](./assets/fork.png)
 
 2. Set Github Action environment variables.
-![secrets](./assets/secrets.png)
 
 Below are all the secrets you need to set. They are invisible to anyone including you once they are set, for security.
 
 | Key |Description | Example |
 | :---  | :---  | :--- |
-| ZOTERO_ID  | User ID of your Zotero account. **User ID is not your username, but a sequence of numbers**Get your ID from [here](https://www.zotero.org/settings/security). You can find it at the position shown in this [screenshot](https://github.com/TideDra/zotero-arxiv-daily/blob/main/assets/userid.png). | 12345678  |
-| ZOTERO_KEY | An Zotero API key with read access. Get a key from [here](https://www.zotero.org/settings/security).  | AB5tZ877P2j7Sm2Mragq041H   |
+| ZOTERO_ID  | User ID of your Zotero account, not your username. Get it from [here](https://www.zotero.org/settings/security). | YOUR_ZOTERO_ID |
+| ZOTERO_KEY | A Zotero API key with read access. Get a key from [here](https://www.zotero.org/settings/security). | YOUR_ZOTERO_API_KEY |
 | SENDER | The email account of the SMTP server that sends you email. | abc@qq.com |
-| SENDER_PASSWORD | The password of the sender account. Note that it's not necessarily the password for logging in the e-mail client, but the authentication code for SMTP service. Ask your email provider for this.   | abcdefghijklmn |
+| SENDER_PASSWORD | The SMTP authentication code from your email provider. | YOUR_SMTP_PASSWORD |
 | RECEIVER | The e-mail address that receives the paper list. | abc@outlook.com |
-| OPENAI_API_KEY | API Key when using the API to access LLMs. You can get FREE API for using advanced open source LLMs in [SiliconFlow](https://cloud.siliconflow.cn/i/b3XhBRAm). | sk-xxx |
+| OPENAI_API_KEY | API key for your LLM provider, such as [SiliconFlow](https://cloud.siliconflow.cn/). | YOUR_LLM_API_KEY |
 | OPENAI_API_BASE | API URL when using the API to access LLMs. | https://api.siliconflow.cn/v1 |
 
-Then you should also set a public variable `CUSTOM_CONFIG` for your custom configuration.
-![vars](./assets/repo_var.png)
-![custom_config](./assets/config_var.png)
-Paste the following content into the value of `CUSTOM_CONFIG` variable:
+Store all `FEISHU_*` identifiers and credentials as GitHub Actions **Secrets**, including folder tokens, Wiki space IDs, and node tokens. Use the names listed in `.github/workflows/main.yml`; never put their values in tracked files or repository Variables.
+
+Optional custom configuration belongs in the `CUSTOM_CONFIG` **Secret**, using environment references rather than literal credentials. For example:
 ```yaml
 zotero:
   user_id: ${oc.env:ZOTERO_ID}
@@ -164,15 +152,11 @@ executor:
   reranker: local # The reranker to use. Example: 'local' or 'api'
 ```
 
-That's all! Now you can test the workflow by manually triggering it:
-![test](./assets/test.png)
+Manually trigger **Feishu Paper Daily** from the Actions page. Public logs show completion or failure only; application output is suppressed to protect private Feishu responses and document links. Diagnose failures locally with your private `.env`.
 
-> [!NOTE]
-> The Test-Workflow Action is the debug version of the main workflow (Send-emails-daily), which always retrieve 5 arxiv papers regardless of the date. While the main workflow will be automatically triggered everyday and retrieve new papers released yesterday. There is no new arxiv paper at weekends and holiday, in which case you may see "No new papers found" in the log of main workflow.
+The schedule runs at 01:00, 07:00, and 11:00 UTC. The latter two runs only ingest checked papers. Edit `.github/workflows/main.yml` to change it.
 
-Then check the log and the receiver email after it finishes.
-
-By default, the main workflow runs on 22:00 UTC everyday. You can change this time by editting the workflow config `.github/workflows/main.yml`.
+Private runtime state (`data/`, `outputs/`, and logs) is never committed or uploaded as an artifact or cache. Local runs retain `data/paper_store.json`; hosted runs start without previous local deduplication state. Use a private persistent runner if that state must survive between runs.
 
 ### Local Running
 Supported by [uv](https://github.com/astral-sh/uv), this workflow can easily run on your local device if uv is installed:
@@ -181,13 +165,12 @@ Supported by [uv](https://github.com/astral-sh/uv), this workflow can easily run
 # export ZOTERO_ID=xxxx
 # ...
 cd zotero-arxiv-daily
-uv run main.py
+uv run src/zotero_arxiv_daily/main.py
 ```
 
 ## 🚀 Sync with the latest version
 This project is in active development. You can subscribe this repo via `Watch` so that you can be notified once we publish new release.
 
-![Watch](./assets/subscribe_release.png)
 
 
 ## 📖 How it works
@@ -202,15 +185,7 @@ This project is in active development. You can subscribe this repo via `Watch` s
 Distributed under the AGPLv3 License. See `LICENSE` for detail.
 
 ## ❤️ Acknowledgement
+- Based on [TideDra/zotero-arxiv-daily](https://github.com/TideDra/zotero-arxiv-daily).
 - [pyzotero](https://github.com/urschrei/pyzotero)
 - [arxiv](https://github.com/lukasschwab/arxiv.py)
 - [sentence_transformers](https://github.com/UKPLab/sentence-transformers)
-
-## ☕ Buy Me A Coffee
-If you find this project helpful, welcome to sponsor me via WeChat or via [ko-fi](https://ko-fi.com/tidedra).
-![wechat_qr](assets/wechat_sponsor.JPG)
-
-
-## 🌟 Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=TideDra/zotero-arxiv-daily&type=Date)](https://star-history.com/#TideDra/zotero-arxiv-daily&Date)

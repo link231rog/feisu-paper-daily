@@ -10,7 +10,7 @@ on:
     - cron: '0 1,7,11 * * *' # 09:00, 15:00, 19:00 Beijing Time (01:00, 07:00, 11:00 UTC)
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   paper-daily:
@@ -18,6 +18,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Setup uv
         uses: astral-sh/setup-uv@v5
@@ -28,17 +30,18 @@ jobs:
           OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
           FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
           FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
-          FEISHU_DAILY_FOLDER_TOKEN: ${{ vars.FEISHU_DAILY_FOLDER_TOKEN }}
-          FEISHU_WIKI_SPACE_ID: ${{ vars.FEISHU_WIKI_SPACE_ID }}
-          FEISHU_DAILY_PARENT_NODE_TOKEN: ${{ vars.FEISHU_DAILY_PARENT_NODE_TOKEN }}
-          FEISHU_CANDIDATE_NODE_TOKEN: ${{ vars.FEISHU_CANDIDATE_NODE_TOKEN }}
-          FEISHU_NOTES_PARENT_NODE_TOKEN: ${{ vars.FEISHU_NOTES_PARENT_NODE_TOKEN }}
-          FEISHU_MASTER_INDEX_NODE_TOKEN: ${{ vars.FEISHU_MASTER_INDEX_NODE_TOKEN }}
-          FEISHU_TAG_GRAPH_NODE_TOKEN: ${{ vars.FEISHU_TAG_GRAPH_NODE_TOKEN }}
-          FEISHU_IDEA_PARENT_NODE_TOKEN: ${{ vars.FEISHU_IDEA_PARENT_NODE_TOKEN }}
-          FEISHU_EXPERIMENT_PARENT_NODE_TOKEN: ${{ vars.FEISHU_EXPERIMENT_PARENT_NODE_TOKEN }}
-          FEISHU_SYNTHESIS_PARENT_NODE_TOKEN: ${{ vars.FEISHU_SYNTHESIS_PARENT_NODE_TOKEN }}
-          FEISHU_ENGINEERING_PARENT_NODE_TOKEN: ${{ vars.FEISHU_ENGINEERING_PARENT_NODE_TOKEN }}
+          FEISHU_DAILY_FOLDER_TOKEN: ${{ secrets.FEISHU_DAILY_FOLDER_TOKEN }}
+          FEISHU_NOTES_FOLDER_TOKEN: ${{ secrets.FEISHU_NOTES_FOLDER_TOKEN }}
+          FEISHU_WIKI_SPACE_ID: ${{ secrets.FEISHU_WIKI_SPACE_ID }}
+          FEISHU_DAILY_PARENT_NODE_TOKEN: ${{ secrets.FEISHU_DAILY_PARENT_NODE_TOKEN }}
+          FEISHU_CANDIDATE_NODE_TOKEN: ${{ secrets.FEISHU_CANDIDATE_NODE_TOKEN }}
+          FEISHU_NOTES_PARENT_NODE_TOKEN: ${{ secrets.FEISHU_NOTES_PARENT_NODE_TOKEN }}
+          FEISHU_MASTER_INDEX_NODE_TOKEN: ${{ secrets.FEISHU_MASTER_INDEX_NODE_TOKEN }}
+          FEISHU_TAG_GRAPH_NODE_TOKEN: ${{ secrets.FEISHU_TAG_GRAPH_NODE_TOKEN }}
+          FEISHU_IDEA_PARENT_NODE_TOKEN: ${{ secrets.FEISHU_IDEA_PARENT_NODE_TOKEN }}
+          FEISHU_EXPERIMENT_PARENT_NODE_TOKEN: ${{ secrets.FEISHU_EXPERIMENT_PARENT_NODE_TOKEN }}
+          FEISHU_SYNTHESIS_PARENT_NODE_TOKEN: ${{ secrets.FEISHU_SYNTHESIS_PARENT_NODE_TOKEN }}
+          FEISHU_ENGINEERING_PARENT_NODE_TOKEN: ${{ secrets.FEISHU_ENGINEERING_PARENT_NODE_TOKEN }}
           FEISHU_DRY_RUN: "false"
           SEMANTIC_SCHOLAR_API_KEY: ${{ secrets.SEMANTIC_SCHOLAR_API_KEY }}
           TRANSLATION_ENABLED: ${{ vars.TRANSLATION_ENABLED || 'true' }}
@@ -46,13 +49,11 @@ jobs:
           TRANSLATION_API_KEY: ${{ secrets.TRANSLATION_API_KEY }}
           TRANSLATION_BACKUP_API_KEY: ${{ secrets.TRANSLATION_BACKUP_API_KEY }}
           TRANSLATION_MODEL: ${{ vars.TRANSLATION_MODEL || 'z-ai/glm-5.3-flash' }}
-          CUSTOM_CONFIG: ${{ vars.CUSTOM_CONFIG }}
+          CUSTOM_CONFIG: ${{ secrets.CUSTOM_CONFIG }}
           HF_ENDPOINT: "https://hf-mirror.com"
         run: |
           if [ -n "$CUSTOM_CONFIG" ]; then
-            printf "%b\n" "$CUSTOM_CONFIG" > config/custom.yaml
-            echo "Using custom config from repository variable:"
-            cat config/custom.yaml
+            printf "%s\n" "$CUSTOM_CONFIG" > config/custom.yaml
           fi
 
           # Schedule breakdown:
@@ -69,10 +70,9 @@ jobs:
             echo "Running full pipeline at $(date) (UTC hour $CURRENT_HOUR)"
           fi
 
-          uv run src/zotero_arxiv_daily/main.py
-
-      - name: Commit pushed history
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "chore: update pushed papers history [skip ci]"
-          file_pattern: "data/paper_store.json"
+          # Public Actions logs must not contain private Feishu responses or document links.
+          if ! uv run src/zotero_arxiv_daily/main.py >/dev/null 2>&1; then
+            echo "::error::Pipeline failed. Run locally to inspect private logs."
+            exit 1
+          fi
+          echo "Pipeline completed."
