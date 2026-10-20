@@ -3,6 +3,7 @@ import re
 import glob
 import math
 import smtplib
+import unicodedata
 from collections import Counter
 from email.header import Header
 from email.mime.text import MIMEText
@@ -132,8 +133,30 @@ def extract_tex_code_from_tar(file_path:str, paper_id:str, paper_title:str | Non
     tar.close()
     return file_contents
 
-def extract_markdown_from_pdf(file_path:str) -> str:
-    return pymupdf4llm.to_markdown(file_path,use_ocr=False,header=False,footer=False,ignore_code=True)
+def clean_paper_markdown(text: str) -> str:
+    """Cleans up academic paper markdown extracted from PDF / HTML."""
+    if not text:
+        return ""
+    # Unicode normalize NFKD (fixes ligatures like fi, fl, ff)
+    text = unicodedata.normalize("NFKD", text)
+    # Fix HTML pseudo-anchor citations [[1]](#bib.bib1) -> [1]
+    text = re.sub(r"\[\[(.*?)\]\]\(#.*?\)", r"[\1]", text)
+    # Fix multiple separated brackets like [[1], [2]] -> [1, 2]
+    text = re.sub(r"\[\[(.*?)\]\]", r"[\1]", text)
+    # Fix broken spaced bracket citations e.g. [ 1 , 2 ] -> [1, 2], [ 12 - 15 ] -> [12–15]
+    text = re.sub(
+        r"\[\s*(\d+(?:\s*,\s*\d+|\s*[-–]\s*\d+)*)\s*\]",
+        lambda m: "[" + re.sub(r"\s*[-–]\s*", "–", re.sub(r"\s*,\s*", ", ", m.group(1).strip())) + "]",
+        text,
+    )
+    # Fix mid-sentence line breaks right before citation brackets e.g. "word\n[1]" -> "word [1]"
+    text = re.sub(r"([a-zA-Z0-9])\s*\n\s*(\[\d+\])", r"\1 \2", text)
+    return text
+
+
+def extract_markdown_from_pdf(file_path: str) -> str:
+    raw_md = pymupdf4llm.to_markdown(file_path, use_ocr=False, header=False, footer=False, ignore_code=True)
+    return clean_paper_markdown(raw_md)
 
 def glob_match(path:str, pattern:str) -> bool:
     re_pattern = glob.translate(pattern,recursive=True)

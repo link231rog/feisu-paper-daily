@@ -1,7 +1,11 @@
 import json
+import os
 import re
 import shutil
 import subprocess
+import tempfile
+import time
+import unicodedata
 from datetime import datetime, timedelta
 from typing import Any, Optional, Union
 import requests
@@ -61,17 +65,17 @@ def _build_annotation_workspace_blocks(
     insights_content = (
         sections.get("personal_insights")
         or sections.get("insights")
-        or "• [请在此记录触动最大的一两个核心机制、新范式或反直觉结论...]\n"
+        or ""
     )
     critique_content = (
         sections.get("personal_critique")
         or sections.get("critique")
-        or "• [请在此记录假设是否过强、基线是否不公平、评测泄漏或算力开销过大等局限...]\n"
+        or ""
     )
     relevance_content = (
         sections.get("personal_relevance")
         or sections.get("relevance")
-        or "• [请在此记录与当前选题的契合度，可否作为Baseline、借鉴其架构/Prompt或消融方案...]\n"
+        or ""
     )
 
     action_items = sections.get("action_items")
@@ -94,7 +98,7 @@ def _build_annotation_workspace_blocks(
             "block_type": 4,
             "heading2": {
                 "elements": [
-                    {"text_run": {"content": "✍️ 个人研读批注与思考区 (My Reading Notes & Reflections)"}}
+                    {"text_run": {"content": "✍️ Reading Notes & Reflections"}}
                 ]
             }
         },
@@ -102,7 +106,7 @@ def _build_annotation_workspace_blocks(
             "block_type": 5,
             "heading3": {
                 "elements": [
-                    {"text_run": {"content": "💡 核心亮点与认知刷新 (Key Insights & Surprises)"}}
+                    {"text_run": {"content": "💡 Key Insights & Surprises"}}
                 ]
             }
         },
@@ -110,7 +114,7 @@ def _build_annotation_workspace_blocks(
             "block_type": 2,
             "text": {
                 "elements": [
-                    {"text_run": {"content": insights_content}}
+                    {"text_run": {"content": f"{insights_content}\n" if insights_content else ""}}
                 ]
             }
         },
@@ -118,7 +122,7 @@ def _build_annotation_workspace_blocks(
             "block_type": 5,
             "heading3": {
                 "elements": [
-                    {"text_run": {"content": "❓ 批判性质疑与硬伤 (Critique, Method Flaws, Limitations)"}}
+                    {"text_run": {"content": "❓ Critique, Method Flaws, Limitations"}}
                 ]
             }
         },
@@ -126,7 +130,7 @@ def _build_annotation_workspace_blocks(
             "block_type": 2,
             "text": {
                 "elements": [
-                    {"text_run": {"content": critique_content}}
+                    {"text_run": {"content": f"{critique_content}\n" if critique_content else ""}}
                 ]
             }
         },
@@ -134,7 +138,7 @@ def _build_annotation_workspace_blocks(
             "block_type": 5,
             "heading3": {
                 "elements": [
-                    {"text_run": {"content": "🎯 与我当前研究的结合点 (Relevance to my Research / Idea / Baseline adoption)"}}
+                    {"text_run": {"content": "🎯 Relevance to my Research / Idea / Baseline adoption"}}
                 ]
             }
         },
@@ -142,7 +146,7 @@ def _build_annotation_workspace_blocks(
             "block_type": 2,
             "text": {
                 "elements": [
-                    {"text_run": {"content": relevance_content}}
+                    {"text_run": {"content": f"{relevance_content}\n" if relevance_content else ""}}
                 ]
             }
         },
@@ -150,7 +154,7 @@ def _build_annotation_workspace_blocks(
             "block_type": 5,
             "heading3": {
                 "elements": [
-                    {"text_run": {"content": "📌 衍生待办 Action Items"}}
+                    {"text_run": {"content": "📌 Action Items"}}
                 ]
             }
         },
@@ -168,9 +172,390 @@ def _build_annotation_workspace_blocks(
     return blocks
 
 
+def _build_annotation_workspace_markdown(
+    sections: dict[str, Any],
+    is_app_note: bool = False
+) -> str:
+    """Builds markdown for the Personal Reading Annotation & Reflection Workspace with Feishu XML checkboxes."""
+    insights = (
+        sections.get("personal_insights")
+        or sections.get("insights")
+        or ""
+    )
+    critique = (
+        sections.get("personal_critique")
+        or sections.get("critique")
+        or ""
+    )
+    relevance = (
+        sections.get("personal_relevance")
+        or sections.get("relevance")
+        or ""
+    )
+
+    action_items = sections.get("action_items")
+    if not action_items:
+        if is_app_note:
+            action_items = [
+                "克隆代码仓库并在本地环境完成依赖配置与试运行",
+                "编写/适配当前智能体工作流的 Tool Wrapper 或 Prompt 模板",
+                "实测边界情况与错误恢复机制，沉淀最佳实践",
+            ]
+        else:
+            action_items = [
+                "复现论文核心算法 / 部署运行 Demo",
+                "引入当前对比实验作为 Baseline 评测",
+                "追踪跟踪作者后续工作、引用开源进展与评测更新",
+            ]
+
+    lines = [
+        "## ✍️ Reading Notes & Reflections",
+        "",
+        "### 💡 Key Insights & Surprises",
+        insights if insights else "*(可在研读后直接划词批注或记录关键洞察)*",
+        "",
+        "### ❓ Critique, Method Flaws, Limitations",
+        critique if critique else "*(记录论文假设漏洞、对比缺陷或未解决的边界条件)*",
+        "",
+        "### 🎯 Relevance to my Research / Idea / Baseline adoption",
+        relevance if relevance else "*(记录对自身研究/业务体系的迁移启发)*",
+        "",
+        "### 📌 Action Items",
+    ]
+    for item in action_items:
+        lines.append(f"<checkbox done=\"false\">{item}</checkbox>")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _split_markdown_chunks(
+    text: str,
+    max_chunk_chars: int = 6000,
+    max_images_per_chunk: int = 2,
+) -> list[str]:
+    """Splits markdown into safe chunks for Feishu Docs AI endpoint, respecting section boundaries and image density."""
+    if not text:
+        return []
+
+    sections = re.split(r"(?=\n(?:#{1,3}\s|!\[))", text)
+    chunks = []
+    current_chunk = []
+    current_len = 0
+    current_imgs = 0
+
+    for sec in sections:
+        if not sec:
+            continue
+        sec_len = len(sec)
+        sec_imgs = len(re.findall(r"!\[.*?\]\(.*?\)", sec))
+
+        if (current_len + sec_len <= max_chunk_chars) and (current_imgs + sec_imgs <= max_images_per_chunk or current_imgs == 0):
+            current_chunk.append(sec)
+            current_len += sec_len
+            current_imgs += sec_imgs
+        else:
+            if current_chunk:
+                chunks.append("".join(current_chunk))
+                current_chunk = []
+                current_len = 0
+                current_imgs = 0
+
+            if sec_len > max_chunk_chars:
+                paragraphs = re.split(r"(?=\n\n)", sec)
+                p_chunk = []
+                p_len = 0
+                p_imgs = 0
+                for p in paragraphs:
+                    p_img_count = len(re.findall(r"!\[.*?\]\(.*?\)", p))
+                    if (p_len + len(p) <= max_chunk_chars) and (p_imgs + p_img_count <= max_images_per_chunk or p_imgs == 0):
+                        p_chunk.append(p)
+                        p_len += len(p)
+                        p_imgs += p_img_count
+                    else:
+                        if p_chunk:
+                            chunks.append("".join(p_chunk))
+                            p_chunk = []
+                            p_len = 0
+                            p_imgs = 0
+                        if len(p) > max_chunk_chars:
+                            for i in range(0, len(p), max_chunk_chars):
+                                chunks.append(p[i : i + max_chunk_chars])
+                        else:
+                            p_chunk.append(p)
+                            p_len = len(p)
+                            p_imgs = p_img_count
+                if p_chunk:
+                    chunks.append("".join(p_chunk))
+            else:
+                current_chunk.append(sec)
+                current_len = sec_len
+                current_imgs = sec_imgs
+
+    if current_chunk:
+        chunks.append("".join(current_chunk))
+
+    return chunks
+
+
+def autocrop_image_to_png(
+    image_data: Union[str, bytes],
+    ext: str = ".png",
+    pad: int = 15,
+    whitespace_threshold: float = 0.03,
+) -> tuple[Optional[str], int, int]:
+    """Inspects an image (SVG, PNG, JPG, WebP, etc.) and crops it tightly to its non-white content boundary.
+
+    Args:
+        image_data: Either a local file path (str) or raw file bytes (bytes).
+        ext: File extension (e.g. '.svg', '.png', '.jpg').
+        pad: Padding in pixels to keep around the cropped content boundary.
+        whitespace_threshold: Minimum fraction of whitespace on any side to trigger cropping for raster images.
+                              (SVGs are always cropped to ensure crisp bounding boxes).
+
+    Returns:
+        (temp_png_path, width, height) if cropping was performed,
+        (None, orig_width, orig_height) if no cropping was necessary or on error.
+    """
+    try:
+        import pymupdf
+        import numpy as np
+
+        if isinstance(image_data, str):
+            if not os.path.exists(image_data):
+                return None, 0, 0
+            doc = pymupdf.open(image_data)
+        else:
+            doc = pymupdf.open(stream=image_data, filetype=ext.lstrip("."))
+
+        if len(doc) == 0:
+            return None, 0, 0
+
+        page = doc[0]
+        # Initial render at 150 DPI for fast bounding box detection
+        pix = page.get_pixmap(dpi=150)
+        samples = np.frombuffer(pix.samples, dtype=np.uint8).reshape((pix.height, pix.width, pix.n))
+        rgb = samples[:, :, :3]
+        non_white = np.any(rgb < 245, axis=2)
+        if pix.alpha:
+            non_white = non_white & (samples[:, :, 3] > 10)
+
+        y_idx, x_idx = np.where(non_white)
+        if len(y_idx) == 0 or len(x_idx) == 0:
+            return None, pix.width, pix.height
+
+        ymin, ymax = int(y_idx.min()), int(y_idx.max())
+        xmin, xmax = int(x_idx.min()), int(x_idx.max())
+
+        top_ws = ymin / pix.height
+        bot_ws = (pix.height - ymax) / pix.height
+        left_ws = xmin / pix.width
+        right_ws = (pix.width - xmax) / pix.width
+
+        is_svg = ext.lower().endswith("svg")
+        # For raster images, only crop if there is notable white space
+        if not is_svg and max(top_ws, bot_ws, left_ws, right_ws) < whitespace_threshold:
+            return None, pix.width, pix.height
+
+        scale_x = page.rect.width / pix.width
+        scale_y = page.rect.height / pix.height
+        p_xmin = max(0, xmin * scale_x - pad)
+        p_xmax = min(page.rect.width, xmax * scale_x + pad)
+        p_ymin = max(0, ymin * scale_y - pad)
+        p_ymax = min(page.rect.height, ymax * scale_y + pad)
+
+        clip = pymupdf.Rect(p_xmin, p_ymin, p_xmax, p_ymax)
+        # Render final cropped image at 200 DPI for high fidelity
+        final_pix = page.get_pixmap(dpi=200, clip=clip)
+        tf = tempfile.NamedTemporaryFile(dir="/tmp", suffix=".png", delete=False)
+        final_pix.save(tf.name)
+        tf.close()
+        return tf.name, final_pix.width, final_pix.height
+    except Exception as exc:
+        logger.debug(f"autocrop_image_to_png failed: {exc}")
+        return None, 0, 0
+
+
+def clean_paper_markdown(text: str) -> str:
+    """Cleans up academic paper markdown extracted from PDF / HTML."""
+    if not text:
+        return ""
+    # Unicode normalize NFKD (fixes ligatures like fi, fl, ff)
+    text = unicodedata.normalize("NFKD", text)
+    # Fix HTML pseudo-anchor citations [[1]](#bib.bib1) -> [1]
+    text = re.sub(r"\[\[(.*?)\]\]\(#.*?\)", r"[\1]", text)
+    # Fix multiple separated brackets like [[1], [2]] -> [1, 2]
+    text = re.sub(r"\[\[(.*?)\]\]", r"[\1]", text)
+    # Fix broken spaced bracket citations e.g. [ 1 , 2 ] -> [1, 2], [ 12 - 15 ] -> [12–15]
+    text = re.sub(
+        r"\[\s*(\d+(?:\s*,\s*\d+|\s*[-–]\s*\d+)*)\s*\]",
+        lambda m: "[" + re.sub(r"\s*[-–]\s*", "–", re.sub(r"\s*,\s*", ", ", m.group(1).strip())) + "]",
+        text,
+    )
+    # Fix mid-sentence line breaks right before citation brackets e.g. "word\n[1]" -> "word [1]"
+    text = re.sub(r"([a-zA-Z0-9])\s*\n\s*(\[\d+\])", r"\1 \2", text)
+    return text
+
+
+def parse_inline_elements(text: str) -> list[dict[str, Any]]:
+    """Parses inline Markdown formatting into Feishu Docx elements."""
+    elements: list[dict[str, Any]] = []
+
+    # Pre-normalize HTML bold and italic tags to markdown
+    text = re.sub(r"<(?:b|strong)>(.*?)</(?:b|strong)>", r"**\1**", text, flags=re.IGNORECASE)
+    text = re.sub(r"<(?:i|em)>(.*?)</(?:i|em)>", r"*\1*", text, flags=re.IGNORECASE)
+
+    pattern = re.compile(
+        r"(\$[^$\n]+\$)"                             # 1. inline LaTeX equation
+        r"|(\[[^\]]+\]\([^\s\)]+\))"                 # 2. markdown link [text](url)
+        r"|(\*\*\*[^*]+\*\*\*)"                      # 3. bold + italic ***text***
+        r"|(\*\*[^*]+\*\*|__[^\_]+__)"               # 4. bold **text** or __text__
+        r"|(`[^`\n]+`)"                              # 5. inline code `code`
+        r"|(~~[^~]+~~)"                              # 6. strikethrough ~~text~~
+        r"|((?<!\w)\*[^*\n]+?\*(?!\w)|(?<!\w)_[^_\n]+?_(?!\w))" # 7. italic *text* or _text_
+    )
+
+    pos = 0
+    for match in pattern.finditer(text):
+        start, end = match.span()
+        if start > pos:
+            plain = text[pos:start]
+            if plain:
+                elements.append({"text_run": {"content": plain}})
+
+        token = match.group(0)
+        # 1. Math equation
+        if token.startswith("$") and token.endswith("$") and len(token) > 2:
+            eq_content = token[1:-1].strip()
+            elements.append({"equation": {"content": eq_content}})
+        # 2. Markdown Link
+        elif token.startswith("[") and "](" in token and token.endswith(")"):
+            link_match = re.match(r"\[([^\]]+)\]\((https?://[^\s\)]+)\)", token)
+            if link_match:
+                link_text, link_url = link_match.groups()
+                elements.append({
+                    "text_run": {
+                        "content": link_text,
+                        "text_element_style": {"link": {"url": link_url}},
+                    }
+                })
+            else:
+                elements.append({"text_run": {"content": token}})
+        # 3. Bold + Italic
+        elif token.startswith("***") and token.endswith("***") and len(token) > 6:
+            content = token[3:-3]
+            elements.append({
+                "text_run": {
+                    "content": content,
+                    "text_element_style": {"bold": True, "italic": True},
+                }
+            })
+        # 4. Bold (**text** or __text__)
+        elif ((token.startswith("**") and token.endswith("**")) or (token.startswith("__") and token.endswith("__"))) and len(token) > 4:
+            content = token[2:-2]
+            elements.append({
+                "text_run": {
+                    "content": content,
+                    "text_element_style": {"bold": True},
+                }
+            })
+        # 5. Inline Code
+        elif token.startswith("`") and token.endswith("`") and len(token) > 2:
+            code_text = token[1:-1]
+            elements.append({
+                "text_run": {
+                    "content": code_text,
+                    "text_element_style": {"inline_code": True},
+                }
+            })
+        # 6. Strikethrough
+        elif token.startswith("~~") and token.endswith("~~") and len(token) > 4:
+            content = token[2:-2]
+            elements.append({
+                "text_run": {
+                    "content": content,
+                    "text_element_style": {"strikethrough": True},
+                }
+            })
+        # 7. Italic (*text* or _text_)
+        elif ((token.startswith("*") and token.endswith("*")) or (token.startswith("_") and token.endswith("_"))) and len(token) > 2:
+            content = token[1:-1]
+            elements.append({
+                "text_run": {
+                    "content": content,
+                    "text_element_style": {"italic": True},
+                }
+            })
+        pos = end
+
+    if pos < len(text):
+        plain = text[pos:]
+        if plain:
+            elements.append({"text_run": {"content": plain}})
+
+    return elements or [{"text_run": {"content": ""}}]
+
+
+def parse_markdown_table_rows(table_lines: list[str]) -> list[list[str]]:
+    """Parses markdown table lines into a normalized 2D list of cell strings."""
+    rows: list[list[str]] = []
+    for line in table_lines:
+        line_s = line.strip()
+        if not line_s.startswith("|") or not line_s.endswith("|"):
+            continue
+        cells = [c.strip() for c in line_s.split("|")[1:-1]]
+        # Skip separator rows like |:---|:---|
+        if all(re.match(r"^:?-+:?$", c) for c in cells if c):
+            continue
+        if any(c for c in cells):
+            rows.append(cells)
+    if not rows:
+        return []
+    max_cols = max(len(r) for r in rows)
+    normalized = []
+    for r in rows:
+        normalized.append(r + [""] * (max_cols - len(r)))
+    return normalized
+
+
+def chunk_table_rows(rows: list[list[str]], max_rows: int = 9, max_cols: int = 9) -> list[list[list[str]]]:
+    """Splits wide or long tables into sub-tables of <= max_rows and <= max_cols (Feishu Docx limit is 9x9)."""
+    if not rows or not rows[0]:
+        return []
+    header = rows[0]
+    data_rows = rows[1:]
+    col_step = max_cols - 1  # 8 data cols + col 0
+    row_step = max_rows - 1  # 8 data rows + 1 header row
+
+    num_cols = len(header)
+    col_slices: list[list[int]] = []
+    if num_cols <= max_cols:
+        col_slices.append(list(range(num_cols)))
+    else:
+        for c_start in range(1, num_cols, col_step):
+            c_end = min(c_start + col_step, num_cols)
+            col_slices.append([0] + list(range(c_start, c_end)))
+
+    tables: list[list[list[str]]] = []
+    for c_slice in col_slices:
+        sub_header = [header[ci] for ci in c_slice]
+        sub_data = [[r[ci] for ci in c_slice] for r in data_rows]
+        if len(sub_data) + 1 <= max_rows:
+            tables.append([sub_header] + sub_data)
+        else:
+            for r_start in range(0, len(sub_data), row_step):
+                r_end = min(r_start + row_step, len(sub_data))
+                chunk = [sub_header] + sub_data[r_start:r_end]
+                tables.append(chunk)
+    return tables
+
+
 def markdown_to_feishu_blocks(md_text: str) -> list[dict[str, Any]]:
-    """Converts a Markdown paper string into Feishu Docx block objects."""
+    """Converts a Markdown paper string into rich Feishu Docx block objects."""
+    md_text = clean_paper_markdown(md_text)
     blocks: list[dict[str, Any]] = []
+    lines = md_text.split("\n")
+    idx = 0
+    total_lines = len(lines)
     current_para: list[str] = []
 
     def flush_para():
@@ -181,39 +566,199 @@ def markdown_to_feishu_blocks(md_text: str) -> list[dict[str, Any]]:
                     chunk = p_text[i : i + 1500]
                     blocks.append({
                         "block_type": 2,
-                        "text": {"elements": [{"text_run": {"content": f"{chunk}\n"}}]}
+                        "text": {"elements": parse_inline_elements(f"{chunk}\n")},
                     })
             current_para.clear()
 
-    for line in md_text.split("\n"):
+    while idx < total_lines:
+        line = lines[idx]
         line_s = line.strip()
-        if not line_s:
+
+        # Check block math equation $$ ... $$
+        if line_s.startswith("$$"):
             flush_para()
+            eq_lines = []
+            if len(line_s) > 2 and line_s.endswith("$$") and line_s != "$$":
+                eq_lines.append(line_s[2:-2].strip())
+                idx += 1
+            else:
+                idx += 1
+                while idx < total_lines and not lines[idx].strip().endswith("$$"):
+                    eq_lines.append(lines[idx])
+                    idx += 1
+                if idx < total_lines and lines[idx].strip().endswith("$$"):
+                    tail = lines[idx].strip()[:-2].strip()
+                    if tail:
+                        eq_lines.append(tail)
+                    idx += 1
+            eq_content = "\n".join(eq_lines).strip()
+            if eq_content:
+                blocks.append({
+                    "block_type": 16,
+                    "equation": {"content": f"{eq_content}\n"},
+                })
             continue
 
-        if line_s.startswith("# ") or line_s.startswith("## "):
+        # Check code block ```
+        if line_s.startswith("```"):
             flush_para()
-            h_text = re.sub(r"^#+\s*", "", line_s).strip()
+            code_lines = []
+            idx += 1
+            while idx < total_lines and not lines[idx].strip().startswith("```"):
+                code_lines.append(lines[idx])
+                idx += 1
+            if idx < total_lines and lines[idx].strip().startswith("```"):
+                idx += 1
+            code_content = "\n".join(code_lines)
+            blocks.append({
+                "block_type": 14,
+                "code": {
+                    "style": {"language": 1},
+                    "elements": [{"text_run": {"content": f"{code_content}\n"}}],
+                },
+            })
+            continue
+
+        # Check table | col | col |
+        if line_s.startswith("|") and line_s.endswith("|"):
+            flush_para()
+            table_lines = [line_s]
+            idx += 1
+            while idx < total_lines and lines[idx].strip().startswith("|") and lines[idx].strip().endswith("|"):
+                table_lines.append(lines[idx].strip())
+                idx += 1
+            rows = parse_markdown_table_rows(table_lines)
+            if rows and len(rows) >= 1 and len(rows[0]) >= 1:
+                sub_tables = chunk_table_rows(rows, max_rows=9, max_cols=9)
+                for tbl_i, s_rows in enumerate(sub_tables):
+                    if len(sub_tables) > 1:
+                        blocks.append({
+                            "block_type": 2,
+                            "text": {
+                                "elements": [
+                                    {"text_run": {"content": f"📊 表格 (Part {tbl_i + 1}/{len(sub_tables)}):\n", "text_element_style": {"bold": True}}}
+                                ]
+                            }
+                        })
+                    blocks.append({
+                        "block_type": 31,
+                        "table": {
+                            "property": {
+                                "row_size": len(s_rows),
+                                "column_size": len(s_rows[0]),
+                            }
+                        },
+                        "_table_rows": s_rows,
+                    })
+            continue
+
+        if not line_s:
+            flush_para()
+            idx += 1
+            continue
+
+        # Check image ![alt](url_or_path)
+        img_match = re.match(r"^!\[(.*?)\]\((.*?)\)(.*)$", line_s)
+        if img_match:
+            flush_para()
+            alt_text = img_match.group(1).strip()
+            img_src = img_match.group(2).strip()
+            blocks.append({
+                "block_type": 27,
+                "image": {},
+                "_image_src": img_src,
+                "_image_caption": alt_text,
+            })
+            trailing = img_match.group(3).strip()
+            if trailing:
+                blocks.append({
+                    "block_type": 2,
+                    "text": {"elements": parse_inline_elements(f"{trailing}\n")},
+                })
+            idx += 1
+            continue
+
+        # Dividers
+        if line_s in ("---", "***", "___", "- - -", "* * *"):
+            flush_para()
+            blocks.append({"block_type": 22, "divider": {}})
+            idx += 1
+            continue
+
+        # Headings
+        if line_s.startswith("# ") and not line_s.startswith("## "):
+            flush_para()
+            h_text = line_s[2:].strip()
+            blocks.append({
+                "block_type": 3,
+                "heading1": {"elements": parse_inline_elements(h_text)},
+            })
+            idx += 1
+            continue
+        elif line_s.startswith("## "):
+            flush_para()
+            h_text = line_s[3:].strip()
             blocks.append({
                 "block_type": 4,
-                "heading2": {"elements": [{"text_run": {"content": h_text}}]}
+                "heading2": {"elements": parse_inline_elements(h_text)},
             })
-        elif line_s.startswith("### ") or line_s.startswith("#### ") or line_s.startswith("##### ") or line_s.startswith("###### "):
+            idx += 1
+            continue
+        elif line_s.startswith("### "):
+            flush_para()
+            h_text = line_s[4:].strip()
+            blocks.append({
+                "block_type": 5,
+                "heading3": {"elements": parse_inline_elements(h_text)},
+            })
+            idx += 1
+            continue
+        elif line_s.startswith("#### ") or line_s.startswith("##### ") or line_s.startswith("###### "):
             flush_para()
             h_text = re.sub(r"^#+\s*", "", line_s).strip()
             blocks.append({
                 "block_type": 5,
-                "heading3": {"elements": [{"text_run": {"content": h_text}}]}
+                "heading3": {"elements": parse_inline_elements(h_text)},
             })
-        elif line_s.startswith("- ") or line_s.startswith("* "):
+            idx += 1
+            continue
+
+        # Bullet lists
+        if line_s.startswith("- ") or line_s.startswith("* "):
             flush_para()
-            b_text = re.sub(r"^[-*]\s*", "", line_s).strip()
+            b_text = line_s[2:].strip()
             blocks.append({
                 "block_type": 12,
-                "bullet": {"elements": [{"text_run": {"content": f"{b_text}\n"}}]}
+                "bullet": {"elements": parse_inline_elements(f"{b_text}\n")},
             })
-        else:
-            current_para.append(line_s)
+            idx += 1
+            continue
+
+        # Numbered lists
+        num_match = re.match(r"^(\d+)\.\s+(.*)", line_s)
+        if num_match:
+            flush_para()
+            o_text = num_match.group(2).strip()
+            blocks.append({
+                "block_type": 13,
+                "ordered": {"elements": parse_inline_elements(f"{o_text}\n")},
+            })
+            idx += 1
+            continue
+
+        # Quotes
+        if line_s.startswith("> "):
+            flush_para()
+            q_text = line_s[2:].strip()
+            blocks.append({
+                "block_type": 15,
+                "quote": {"elements": parse_inline_elements(f"{q_text}\n")},
+            })
+            idx += 1
+            continue
+
+        current_para.append(line_s)
+        idx += 1
 
     flush_para()
     return blocks
@@ -270,7 +815,7 @@ class FeishuClient:
                 "Content-Type": "application/json; charset=utf-8",
             }
             url = f"{FEISHU_BASE_URL}{path}"
-            resp = requests.request(method, url, headers=headers, params=params, json=data, timeout=30)
+            resp = requests.request(method, url, headers=headers, params=params, json=data, timeout=60)
             resp.raise_for_status()
             res_json = resp.json()
             if res_json.get("code") != 0 and res_json.get("code") is not None:
@@ -294,6 +839,276 @@ class FeishuClient:
             return res_json.get("data", res_json)
 
         raise ValueError("Neither Feishu app credentials (app_id/app_secret) nor lark-cli are available.")
+
+    def _upload_and_bind_image(self, doc_id: str, block_id: str, image_src: str) -> bool:
+        """Uploads an image (from local path or remote URL) and binds its token to a docx image block."""
+        if self.dry_run:
+            return True
+        temp_files_to_clean: list[str] = []
+        try:
+            local_path = image_src
+
+            # 1. If remote HTTP/HTTPS URL, download to temporary file
+            if image_src.startswith("http://") or image_src.startswith("https://"):
+                ext = ".png"
+                clean_url = image_src.split("?")[0].lower()
+                for e in [".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"]:
+                    if clean_url.endswith(e):
+                        ext = e
+                        break
+                with tempfile.NamedTemporaryFile(dir="/tmp", suffix=ext, delete=False) as tf:
+                    temp_files_to_clean.append(tf.name)
+                    headers = {
+                        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                    }
+                    resp = requests.get(image_src, headers=headers, timeout=20)
+                    resp.raise_for_status()
+                    tf.write(resp.content)
+                local_path = tf.name
+
+            if not os.path.exists(local_path) or os.path.getsize(local_path) == 0:
+                logger.warning(f"Image file does not exist or is empty: {image_src}")
+                return False
+
+            # If SVG, rasterize to PNG via PyMuPDF since Feishu Docx images must be raster images
+            if local_path.lower().endswith(".svg") or image_src.lower().endswith(".svg"):
+                try:
+                    import pymupdf
+                    with open(local_path, "rb") as sf:
+                        svg_bytes = sf.read()
+                    svg_doc = pymupdf.open("svg", svg_bytes)
+                    if len(svg_doc) > 0:
+                        pix = svg_doc[0].get_pixmap(dpi=150)
+                        png_temp = tempfile.NamedTemporaryFile(dir="/tmp", suffix=".png", delete=False)
+                        pix.save(png_temp.name)
+                        png_temp.close()
+                        local_path = png_temp.name
+                        temp_files_to_clean.append(local_path)
+                except Exception as svg_err:
+                    logger.warning(f"Failed to rasterize SVG image {image_src} to PNG: {svg_err}")
+
+            file_token = None
+
+            # 2. Upload via lark-cli or direct API
+            if self._has_lark_cli:
+                cmd = [
+                    "lark-cli", "docs", "+media-upload",
+                    "--as", "bot",
+                    "--doc-id", str(doc_id),
+                    "--parent-node", str(block_id),
+                    "--parent-type", "docx_image",
+                    "--file", str(local_path),
+                    "--format", "json",
+                ]
+                res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+                if res.returncode == 0 and res.stdout.strip():
+                    try:
+                        res_json = json.loads(res.stdout)
+                        file_token = res_json.get("data", {}).get("file_token")
+                    except Exception as exc:
+                        logger.debug(f"Failed to parse lark-cli media-upload response: {exc}")
+
+            if not file_token and self.app_id and self.app_secret:
+                token = self._get_tenant_token()
+                upload_url = f"{FEISHU_BASE_URL}/drive/v1/medias/upload_all"
+                filename = os.path.basename(local_path)
+                with open(local_path, "rb") as f:
+                    file_bytes = f.read()
+                data = {
+                    "file_name": filename,
+                    "parent_type": "docx_image",
+                    "parent_node": str(block_id),
+                    "size": len(file_bytes),
+                }
+                files = {
+                    "file": (filename, file_bytes, "image/png")
+                }
+                headers = {"Authorization": f"Bearer {token}"}
+                resp = requests.post(upload_url, headers=headers, data=data, files=files, timeout=30)
+                if resp.status_code == 200:
+                    res_json = resp.json()
+                    if res_json.get("code") == 0:
+                        file_token = res_json.get("data", {}).get("file_token")
+
+            if not file_token:
+                logger.warning(f"Failed to upload image {image_src} to Feishu")
+                return False
+
+            # 3. Bind file_token to the block via batch_update
+            bind_payload = {
+                "requests": [
+                    {
+                        "block_id": str(block_id),
+                        "replace_image": {
+                            "token": str(file_token)
+                        }
+                    }
+                ]
+            }
+            self._call_api("PATCH", f"/docx/v1/documents/{doc_id}/blocks/batch_update", data=bind_payload)
+            logger.info(f"Successfully uploaded and bound image {image_src} to block {block_id}")
+            return True
+
+        except Exception as exc:
+            logger.warning(f"Error uploading/binding image {image_src}: {exc}")
+            return False
+        finally:
+            for tf_path in temp_files_to_clean:
+                if tf_path and os.path.exists(tf_path):
+                    try:
+                        os.remove(tf_path)
+                    except Exception:
+                        pass
+
+    def optimize_document_images(self, doc_id: str, note_markdown: str) -> int:
+        """Finds each image block in a document created by Docs AI, downloads its source,
+        removes excess whitespace borders, and updates the block with the tight cropped image.
+        """
+        if self.dry_run or not note_markdown:
+            return 0
+
+        img_matches = re.findall(r"!\[(.*?)\]\((.*?)\)", note_markdown)
+        if not img_matches:
+            return 0
+
+        all_blocks = self.get_document_blocks(doc_id)
+        doc_img_blocks = [b for b in all_blocks if b.get("block_type") == 27]
+        if not doc_img_blocks:
+            return 0
+
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+
+        updated_count = 0
+        for idx, blk in enumerate(doc_img_blocks):
+            if idx >= len(img_matches):
+                break
+            cap, src = img_matches[idx]
+            src = src.strip()
+            if not src:
+                continue
+
+            ext = os.path.splitext(src.split("?")[0])[1].lower() or ".png"
+            b_id = blk.get("block_id")
+            if not b_id:
+                continue
+
+            try:
+                if src.startswith("http://") or src.startswith("https://"):
+                    resp = requests.get(src, headers=headers, timeout=20)
+                    if resp.status_code != 200 or not resp.content:
+                        continue
+                    img_data: Union[str, bytes] = resp.content
+                else:
+                    if not os.path.exists(src):
+                        continue
+                    img_data = src
+
+                cropped_path, w, h = autocrop_image_to_png(img_data, ext=ext)
+                if not cropped_path or not os.path.exists(cropped_path):
+                    continue
+
+                try:
+                    file_token = None
+                    if self._has_lark_cli:
+                        cmd = [
+                            "lark-cli", "docs", "+media-upload",
+                            "--as", "bot",
+                            "--doc-id", str(doc_id),
+                            "--parent-node", str(b_id),
+                            "--parent-type", "docx_image",
+                            "--file", str(cropped_path),
+                            "--format", "json",
+                        ]
+                        res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+                        if res.returncode == 0 and res.stdout.strip():
+                            try:
+                                res_json = json.loads(res.stdout)
+                                file_token = res_json.get("data", {}).get("file_token")
+                            except Exception:
+                                pass
+
+                    if not file_token and self.app_id and self.app_secret:
+                        token = self._get_tenant_token()
+                        upload_url = f"{FEISHU_BASE_URL}/drive/v1/medias/upload_all"
+                        filename = os.path.basename(cropped_path)
+                        with open(cropped_path, "rb") as f:
+                            file_bytes = f.read()
+                        data = {
+                            "file_name": filename,
+                            "parent_type": "docx_image",
+                            "parent_node": str(b_id),
+                            "size": len(file_bytes),
+                        }
+                        files = {"file": (filename, file_bytes, "image/png")}
+                        auth_headers = {"Authorization": f"Bearer {token}"}
+                        resp = requests.post(upload_url, headers=auth_headers, data=data, files=files, timeout=30)
+                        if resp.status_code == 200:
+                            res_json = resp.json()
+                            if res_json.get("code") == 0:
+                                file_token = res_json.get("data", {}).get("file_token")
+
+                    if file_token:
+                        payload = {
+                            "requests": [
+                                {
+                                    "block_id": str(b_id),
+                                    "replace_image": {
+                                        "token": str(file_token),
+                                        "width": int(w),
+                                        "height": int(h),
+                                    }
+                                }
+                            ]
+                        }
+                        self._call_api("PATCH", f"/docx/v1/documents/{doc_id}/blocks/batch_update", data=payload)
+                        logger.info(f"Tight-cropped image block {b_id} ({src}) to {w}x{h}")
+                        updated_count += 1
+                finally:
+                    if cropped_path and os.path.exists(cropped_path):
+                        os.remove(cropped_path)
+            except Exception as err:
+                logger.warning(f"Failed to optimize image block {b_id} ({src}): {err}")
+
+        logger.info(f"Optimized {updated_count}/{len(doc_img_blocks)} images to tight bounds for doc {doc_id}")
+        return updated_count
+
+    def _populate_table_cells(self, doc_id: str, cells: list[str], rows: list[list[str]]) -> None:
+        """Populates each cell in a Feishu Docx table with formatted elements."""
+        if self.dry_run or not cells or not rows:
+            return
+        try:
+            num_cols = len(rows[0])
+            for r_idx, row in enumerate(rows):
+                is_header = (r_idx == 0)
+                for c_idx, cell_text in enumerate(row):
+                    cell_pos = r_idx * num_cols + c_idx
+                    if cell_pos >= len(cells):
+                        break
+                    cell_id = cells[cell_pos]
+                    if not cell_text.strip():
+                        continue
+                    elements = parse_inline_elements(f"{cell_text}\n")
+                    if is_header:
+                        for el in elements:
+                            if "text_run" in el:
+                                el["text_run"].setdefault("text_element_style", {})["bold"] = True
+                    self._call_api(
+                        "POST",
+                        f"/docx/v1/documents/{doc_id}/blocks/{cell_id}/children",
+                        data={
+                            "children": [
+                                {
+                                    "block_type": 2,
+                                    "text": {"elements": elements}
+                                }
+                            ],
+                            "index": -1
+                        }
+                    )
+        except Exception as exc:
+            logger.warning(f"Error populating table cells in {doc_id}: {exc}")
 
     def _ensure_doc_permissions(self, doc_id: str) -> None:
         """Grants tenant-wide edit rights and adds authorized openids as full_access members."""
@@ -336,13 +1151,25 @@ class FeishuClient:
                 logger.debug(f"Notice adding member {uid} to {doc_id}: {exc}")
 
     def get_document_blocks(self, document_id: str) -> list[dict[str, Any]]:
-        """Fetches all blocks for a given document."""
-        try:
-            res = self._call_api("GET", f"/docx/v1/documents/{document_id}/blocks", params={"page_size": 500})
-            return res.get("items", [])
-        except Exception as exc:
-            logger.warning(f"Failed to fetch blocks for document {document_id}: {exc}")
-            return []
+        """Fetches all blocks for a given document with full pagination."""
+        all_items: list[dict[str, Any]] = []
+        page_token = None
+        while True:
+            params: dict[str, Any] = {"page_size": 500}
+            if page_token:
+                params["page_token"] = page_token
+            try:
+                res = self._call_api("GET", f"/docx/v1/documents/{document_id}/blocks", params=params)
+                items = res.get("items", [])
+                all_items.extend(items)
+                has_more = res.get("has_more", False)
+                page_token = res.get("page_token")
+                if not has_more or not page_token:
+                    break
+            except Exception as exc:
+                logger.warning(f"Failed to fetch blocks for document {document_id}: {exc}")
+                break
+        return all_items
 
     def get_obj_token_from_node_token(self, node_token: str) -> tuple[Optional[str], Optional[str]]:
         """Gets (obj_token, url) for a given Wiki node token."""
@@ -741,9 +1568,14 @@ class FeishuClient:
                 else:
                     chunks.append([idx])
 
-            for chunk in reversed(chunks):
-                start_idx = chunk[0]
-                end_idx = chunk[-1] + 1
+            # Ensure each deletion range does not exceed Feishu's 50-block batch limit
+            safe_ranges = []
+            for chunk in chunks:
+                for sub_i in range(0, len(chunk), 50):
+                    sub = chunk[sub_i : sub_i + 50]
+                    safe_ranges.append((sub[0], sub[-1] + 1))
+
+            for start_idx, end_idx in reversed(safe_ranges):
                 self._call_api(
                     "DELETE",
                     f"/docx/v1/documents/{document_id}/blocks/{document_id}/children/batch_delete",
@@ -776,6 +1608,7 @@ class FeishuClient:
                     or "Reading Plan" in raw_heading
                     or "任务规划" in raw_heading
                     or "个人研读批注" in raw_heading
+                    or "Reading Notes" in raw_heading
                 )
                 if not is_system_header:
                     last_heading = raw_heading
@@ -858,22 +1691,29 @@ class FeishuClient:
 
     def fetch_checked_papers_from_wiki(self) -> list[dict[str, Any]]:
         """Discovers checked papers across candidate document and daily reports in the Wiki space."""
-        if not self.wiki_space_id or not self.daily_parent_node_token or self.dry_run:
+        if not self.wiki_space_id or self.dry_run:
             return []
 
         all_checked: list[dict[str, Any]] = []
+        doc_ids: list[str] = []
         try:
-            res = self._call_api(
-                "GET",
-                f"/wiki/v2/spaces/{self.wiki_space_id}/nodes",
-                params={"parent_node_token": str(self.daily_parent_node_token)}
-            )
-            reports = res.get("items", [])
-            doc_ids = [r.get("obj_token") for r in reports if r.get("obj_token")]
+            if self.daily_parent_node_token:
+                try:
+                    res = self._call_api(
+                        "GET",
+                        f"/wiki/v2/spaces/{self.wiki_space_id}/nodes",
+                        params={"parent_node_token": str(self.daily_parent_node_token)}
+                    )
+                    reports = res.get("items", [])
+                    doc_ids.extend([r.get("obj_token") for r in reports if r.get("obj_token")])
+                except Exception as exc:
+                    logger.debug(f"Notice listing daily_parent_node_token: {exc}")
+
             if self.candidate_node_token:
                 cand_obj, _ = self.get_obj_token_from_node_token(str(self.candidate_node_token))
                 if cand_obj and cand_obj not in doc_ids:
                     doc_ids.append(cand_obj)
+
             for doc_id in doc_ids:
                 checked = self.fetch_checked_paper_details(doc_id)
                 all_checked.extend(checked)
@@ -883,21 +1723,30 @@ class FeishuClient:
 
     def fetch_unreviewed_cards_from_wiki(self) -> list[dict[str, Any]]:
         """Discovers unreviewed (pending) candidate cards across daily reports in the Wiki space."""
-        if not self.wiki_space_id or not self.daily_parent_node_token or self.dry_run:
+        if not self.wiki_space_id or self.dry_run:
             return []
 
         unreviewed_cards: list[dict[str, Any]] = []
+        doc_ids: list[str] = []
         try:
-            res = self._call_api(
-                "GET",
-                f"/wiki/v2/spaces/{self.wiki_space_id}/nodes",
-                params={"parent_node_token": str(self.daily_parent_node_token)}
-            )
-            reports = res.get("items", [])
-            for r in reports:
-                doc_id = r.get("obj_token")
-                if not doc_id:
-                    continue
+            if self.daily_parent_node_token:
+                try:
+                    res = self._call_api(
+                        "GET",
+                        f"/wiki/v2/spaces/{self.wiki_space_id}/nodes",
+                        params={"parent_node_token": str(self.daily_parent_node_token)}
+                    )
+                    reports = res.get("items", [])
+                    doc_ids.extend([r.get("obj_token") for r in reports if r.get("obj_token")])
+                except Exception as exc:
+                    logger.debug(f"Notice listing daily_parent_node_token: {exc}")
+
+            if self.candidate_node_token:
+                cand_obj, _ = self.get_obj_token_from_node_token(str(self.candidate_node_token))
+                if cand_obj and cand_obj not in doc_ids:
+                    doc_ids.append(cand_obj)
+
+            for doc_id in doc_ids:
                 blocks_res = self._call_api("GET", f"/docx/v1/documents/{doc_id}/blocks")
                 items = blocks_res.get("items", [])
 
@@ -914,6 +1763,7 @@ class FeishuClient:
                             or "Reading Plan" in raw_heading
                             or "任务规划" in raw_heading
                             or "个人研读批注" in raw_heading
+                            or "Reading Notes" in raw_heading
                         )
                         if not is_system_header:
                             if current_card and not current_card["has_done"]:
@@ -953,6 +1803,8 @@ class FeishuClient:
         sections: Optional[dict[str, Any]] = None,
         status: str = READING_STATUS_TODO,
         full_text_markdown: Optional[str] = None,
+        existing_doc_id: Optional[str] = None,
+        existing_node_token: Optional[str] = None,
     ) -> str:
         """Creates a structured deep reading note or AI tool / skill note under the Wiki notes parent node."""
         if self.dry_run:
@@ -965,6 +1817,8 @@ class FeishuClient:
 
         doc_id = None
         note_url = None
+        old_children_to_clean: list[str] = []
+        commented_block_ids: set[str] = set()
 
         is_app_note = bool(
             sections.get("scenarios_and_triggers")
@@ -973,7 +1827,21 @@ class FeishuClient:
             or ("github.com" in (paper.url or "").lower())
         )
 
-        if self.wiki_space_id:
+        if existing_doc_id:
+            doc_id = existing_doc_id
+            if existing_node_token:
+                note_url = f"https://feishu.cn/wiki/{existing_node_token}"
+            else:
+                note_url = f"https://feishu.cn/docx/{doc_id}"
+            try:
+                root_res = self._call_api("GET", f"/docx/v1/documents/{doc_id}/blocks/{doc_id}")
+                old_children_to_clean = root_res.get("block", {}).get("children", [])
+                for blk in self.get_document_blocks(doc_id):
+                    if blk.get("comment_ids"):
+                        commented_block_ids.add(blk.get("block_id"))
+            except Exception as scan_err:
+                logger.warning(f"Failed to scan existing doc blocks for cleanup: {scan_err}")
+        elif self.wiki_space_id:
             parent_token = (
                 self.engineering_parent_node_token
                 if (is_app_note and self.engineering_parent_node_token)
@@ -1008,13 +1876,75 @@ class FeishuClient:
 
         self._ensure_doc_permissions(doc_id)
 
-        # Build reading note blocks
+        # If updating an existing document, clean up old blocks that don't have user comments
+        if old_children_to_clean:
+            blocks_to_delete = [cid for cid in old_children_to_clean if cid not in commented_block_ids]
+            if blocks_to_delete:
+                logger.info(f"Cleaning up {len(blocks_to_delete)} old blocks from {doc_id} (preserving {len(commented_block_ids)} commented blocks)")
+                self.delete_document_blocks(doc_id, blocks_to_delete)
+
+        # Build reading note as native Markdown (with standard Feishu XML callouts & checkboxes)
+        note_markdown = self._build_reading_note_markdown(
+            paper=paper,
+            sections=sections,
+            current_status=current_status,
+            today=today,
+            is_app_note=is_app_note,
+            full_text_markdown=full_text_markdown,
+        )
+
+        if not self.dry_run:
+            # Chunk markdown into safe sections (~6000 chars, max 2 images per chunk) to prevent server timeout
+            chunks = _split_markdown_chunks(note_markdown, max_chunk_chars=6000, max_images_per_chunk=2)
+            for chunk_idx, chunk in enumerate(chunks):
+                if not chunk.strip():
+                    continue
+                for attempt in range(3):
+                    try:
+                        self._call_api(
+                            "PUT",
+                            f"/docs_ai/v1/documents/{doc_id}",
+                            data={
+                                "block_id": "-1",
+                                "command": "block_insert_after",
+                                "content": chunk,
+                                "format": "markdown",
+                                "revision_id": -1,
+                            }
+                        )
+                        break
+                    except Exception as chunk_err:
+                        if attempt < 2:
+                            logger.warning(f"Retrying chunk {chunk_idx+1}/{len(chunks)} after error: {chunk_err}")
+                            time.sleep(2 * (attempt + 1))
+                        else:
+                            raise chunk_err
+
+            # Tight-crop images to correct visual boundaries and update dimensions
+            try:
+                self.optimize_document_images(doc_id, note_markdown)
+            except Exception as opt_err:
+                logger.warning(f"Image optimization warning for {doc_id}: {opt_err}")
+
+        logger.info(f"Published reading note successfully: {note_url}")
+        return note_url
+
+    def _build_reading_note_markdown(
+        self,
+        paper: Paper,
+        sections: dict[str, Any],
+        current_status: str,
+        today: str,
+        is_app_note: bool,
+        full_text_markdown: Optional[str] = None,
+    ) -> str:
+        """Builds complete reading note in native Markdown with Feishu XML extensions."""
         src_str = ", ".join(paper.sources or [paper.source])
         affil_str = ", ".join(paper.affiliations) if paper.affiliations else "N/A"
         date_str = paper.published_date.strftime("%Y-%m-%d") if paper.published_date else today
         venue_str = getattr(paper, "venue", None) or "Preprint"
 
-        blocks: list[dict[str, Any]] = []
+        parts: list[str] = []
 
         if is_app_note:
             overview = sections.get("overview") or sections.get("core_summary") or paper.tldr_zh or paper.tldr or paper.abstract[:200]
@@ -1023,65 +1953,34 @@ class FeishuClient:
             usage_examples = sections.get("usage_examples") or f"# 详细使用与调用示例请参阅仓库主页:\n# {paper.url or 'N/A'}"
             tips = sections.get("key_features_and_tips") or "1. 遵循工具入参调用规范。\n2. 注意运行环境版本兼容性。"
 
-            # Top Metadata & Status Block
-            blocks.append({
-                "block_type": 2,
-                "text": {
-                    "elements": [
-                        {"text_run": {"content": f"🏷️ 阅读状态: {current_status}  {READING_STATUS_BAR}\n"}},
-                        {"text_run": {"content": f"项目类型: AI 应用 / 开源项目 / Agent Skill\n"}},
-                        {"text_run": {"content": f"来源: [{src_str}] | 项目主页: {paper.url or 'N/A'}\n"}},
-                        {"text_run": {"content": f"收录日期: {date_str}\n"}},
-                    ]
-                }
-            })
+            parts.append(f"""<callout emoji="🏷️" background-color="light-gray">
+<p>🏷️ <b>阅读状态</b>: {current_status}  {READING_STATUS_BAR}<br/>
+<b>项目类型</b>: AI 应用 / 开源项目 / Agent Skill<br/>
+<b>来源</b>: [{src_str}] | <b>项目主页</b>: <a href="{paper.url or ''}">{paper.url or 'N/A'}</a><br/>
+<b>收录日期</b>: {date_str}</p>
+</callout>""")
 
-            # Top: Personal Annotation and Reflection Workspace
-            blocks.extend(_build_annotation_workspace_blocks(sections, is_app_note=True))
+            parts.append(_build_annotation_workspace_markdown(sections, is_app_note=True))
 
-            # Structured Sections
-            blocks.extend([
-                {
-                    "block_type": 4,
-                    "heading2": {"elements": [{"text_run": {"content": "一、项目定位与核心功能"}}]}
-                },
-                {
-                    "block_type": 2,
-                    "text": {"elements": [{"text_run": {"content": f"{overview}\n"}}]}
-                },
-                {
-                    "block_type": 4,
-                    "heading2": {"elements": [{"text_run": {"content": "二、适用场景与触发时机 (When to Use / Triggers)"}}]}
-                },
-                {
-                    "block_type": 2,
-                    "text": {"elements": [{"text_run": {"content": f"{scenarios}\n"}}]}
-                },
-                {
-                    "block_type": 4,
-                    "heading2": {"elements": [{"text_run": {"content": "三、环境依赖与快速上手 (Installation & Setup)"}}]}
-                },
-                {
-                    "block_type": 2,
-                    "text": {"elements": [{"text_run": {"content": f"{quick_start}\n"}}]}
-                },
-                {
-                    "block_type": 4,
-                    "heading2": {"elements": [{"text_run": {"content": "四、具体使用方式与调用示例 (Usage & Examples)"}}]}
-                },
-                {
-                    "block_type": 2,
-                    "text": {"elements": [{"text_run": {"content": f"{usage_examples}\n"}}]}
-                },
-                {
-                    "block_type": 4,
-                    "heading2": {"elements": [{"text_run": {"content": "五、核心配置与注意事项 (Configuration & Tips)"}}]}
-                },
-                {
-                    "block_type": 2,
-                    "text": {"elements": [{"text_run": {"content": f"{tips}\n"}}]}
-                },
-            ])
+            parts.append(f"""## 一、项目定位与核心功能
+
+{overview}
+
+## 二、适用场景与触发时机 (When to Use / Triggers)
+
+{scenarios}
+
+## 三、环境依赖与快速上手 (Installation & Setup)
+
+{quick_start}
+
+## 四、具体使用方式与调用示例 (Usage & Examples)
+
+{usage_examples}
+
+## 五、核心配置与注意事项 (Configuration & Tips)
+
+{tips}""")
         else:
             core_summary = sections.get("core_summary") or paper.tldr_zh or paper.tldr or paper.abstract[:200]
             motivation = sections.get("motivation") or (
@@ -1097,98 +1996,53 @@ class FeishuClient:
                 "1. 适用于自主智能体工作流与长程记忆持久化。\n2. 机制具备跨领域泛化潜力。"
             )
 
-            # Top Metadata & Status Block
-            blocks.append({
-                "block_type": 2,
-                "text": {
-                    "elements": [
-                        {"text_run": {"content": f"🏷️ 阅读状态: {current_status}  {READING_STATUS_BAR}\n"}},
-                        {"text_run": {"content": f"来源: [{src_str}] | 日期: {date_str} | 录用会议/期刊: {venue_str}\n"}},
-                        {"text_run": {"content": f"发表单位/实验室: {affil_str}\n"}},
-                        {"text_run": {"content": f"原文直达: {paper.url or 'N/A'}\n"}},
-                    ]
-                }
-            })
+            parts.append(f"""<callout emoji="📄" background-color="light-gray">
+<p>🏷️ <b>阅读状态</b>: {current_status}  {READING_STATUS_BAR}<br/>
+<b>来源</b>: [{src_str}] | <b>发表时间</b>: {date_str} | <b>评级/会议</b>: {venue_str}<br/>
+<b>发表单位/实验室</b>: {affil_str}<br/>
+<b>原文直达</b>: <a href="{paper.url or ''}">{paper.url or 'N/A'}</a></p>
+</callout>""")
 
-            # Top: Personal Annotation and Reflection Workspace
-            blocks.extend(_build_annotation_workspace_blocks(sections, is_app_note=False))
+            parts.append(_build_annotation_workspace_markdown(sections, is_app_note=False))
 
-            # Structured Sections
-            blocks.extend([
-                {
-                    "block_type": 4,
-                    "heading2": {"elements": [{"text_run": {"content": "一、核心一句话总结"}}]}
-                },
-                {
-                    "block_type": 2,
-                    "text": {"elements": [{"text_run": {"content": f"{core_summary}\n"}}]}
-                },
-                {
-                    "block_type": 4,
-                    "heading2": {"elements": [{"text_run": {"content": "二、研究动机与问题背景"}}]}
-                },
-                {
-                    "block_type": 2,
-                    "text": {"elements": [{"text_run": {"content": f"{motivation}\n"}}]}
-                },
-                {
-                    "block_type": 4,
-                    "heading2": {"elements": [{"text_run": {"content": "三、核心架构与机制设计"}}]}
-                },
-                {
-                    "block_type": 2,
-                    "text": {"elements": [{"text_run": {"content": f"{method}\n"}}]}
-                },
-                {
-                    "block_type": 4,
-                    "heading2": {"elements": [{"text_run": {"content": "四、关键实验与结论"}}]}
-                },
-                {
-                    "block_type": 2,
-                    "text": {"elements": [{"text_run": {"content": f"{experiments}\n"}}]}
-                },
-                {
-                    "block_type": 4,
-                    "heading2": {"elements": [{"text_run": {"content": "五、落地启示与思考"}}]}
-                },
-                {
-                    "block_type": 2,
-                    "text": {"elements": [{"text_run": {"content": f"{takeaways}\n"}}]}
-                },
-            ])
+            hero_img_md = ""
+            first_img_match = re.search(r"!\[(.*?)\]\((.*?)\)", full_text_markdown or "")
+            if first_img_match:
+                hero_cap = first_img_match.group(1).strip() or "Figure 1: 核心系统架构与工作流设计"
+                hero_src = first_img_match.group(2).strip()
+                hero_img_md = f"\n\n![{hero_cap}]({hero_src})\n*{hero_cap}*\n"
 
-        # If original paper full text is provided, append it for in-line annotation
+            parts.append(f"""## 一、核心一句话总结
+
+{core_summary}
+
+## 二、研究动机与问题背景
+
+{motivation}
+
+## 三、核心架构与机制设计
+
+{method}{hero_img_md}
+
+## 四、关键实验与结论
+
+{experiments}
+
+## 五、落地启示与思考
+
+{takeaways}""")
+
         if full_text_markdown and full_text_markdown.strip():
-            blocks.append({"block_type": 22, "divider": {}})
-            blocks.append({
-                "block_type": 4,
-                "heading2": {
-                    "elements": [
-                        {"text_run": {"content": "📄 论文完整原文与逐节研读区 (Original Full Paper & In-line Annotation)"}}
-                    ]
-                }
-            })
-            blocks.append({
-                "block_type": 2,
-                "text": {
-                    "elements": [
-                        {"text_run": {"content": "💡 提示：您可以直接在下方论文原文中划词选中任意语句或段落，点击「划词评论 / 添加批注」，直接在原文对应位置记录您的研读想法与疑问。\n"}}
-                    ]
-                }
-            })
-            blocks.extend(markdown_to_feishu_blocks(full_text_markdown))
+            parts.append("""---
 
-        # Append blocks in batches of 50 to respect Feishu Docx API limit
-        batch_size = 50
-        for i in range(0, len(blocks), batch_size):
-            chunk = blocks[i : i + batch_size]
-            self._call_api(
-                "POST",
-                f"/docx/v1/documents/{doc_id}/blocks/{doc_id}/children",
-                data={"children": chunk, "index": -1}
-            )
-        logger.info(f"Published reading note successfully: {note_url}")
-        return note_url
+## 📄 论文完整原文与逐节研读区 (Original Full Paper & In-line Annotation)
+
+> 💡 **提示**：您可以直接在下方论文原文中划词选中任意语句或段落，点击「划词评论 / 添加批注」，直接在原文对应位置记录您的研读想法与疑问。
+""")
+            cleaned_full_text = clean_paper_markdown(full_text_markdown)
+            parts.append(cleaned_full_text)
+
+        return "\n\n".join(parts)
 
     def append_to_master_index(
         self,

@@ -17,7 +17,7 @@ from .paper_store import PaperStore
 from .protocol import CorpusPaper, Paper, TrendingItem
 from .reranker import get_reranker_cls
 from .retriever import get_retriever_cls
-from .utils import glob_match, send_email
+from .utils import glob_match, send_email, clean_paper_markdown
 
 
 def normalize_path_patterns(patterns: list[str] | ListConfig | None, config_key: str) -> list[str] | None:
@@ -67,6 +67,14 @@ class Executor:
         # Paper store for deduplication and pushed history
         store_path = config.get("paper_store", {}).get("path", "data/paper_store.json")
         self.paper_store = PaperStore(store_path)
+
+        # Academic translator for full text bilingual generation
+        trans_cfg = config.get("translation")
+        if trans_cfg and trans_cfg.get("enabled", True):
+            from .translator import AcademicTranslator
+            self.translator = AcademicTranslator(trans_cfg)
+        else:
+            self.translator = None
 
     def fetch_zotero_corpus(self) -> list[CorpusPaper]:
         logger.info("Fetching zotero corpus")
@@ -226,7 +234,7 @@ class Executor:
         return ""
 
     def convert_pdf_to_markdown(self, pdf_url: str, timeout: int = 30) -> Optional[str]:
-        """Downloads a PDF from a URL and converts it to markdown via pymupdf4llm."""
+        """Downloads a PDF from a URL and converts it to markdown via pymupdf4llm, preserving images in section context."""
         try:
             import pymupdf4llm
             import tempfile
@@ -239,9 +247,13 @@ class Executor:
                     tf.write(resp.content)
                     tf_path = tf.name
                 try:
-                    md_text = pymupdf4llm.to_markdown(tf_path)
+                    safe_slug = re.sub(r"[^a-zA-Z0-9_\-]", "_", pdf_url.split("/")[-1].replace(".pdf", ""))
+                    img_dir = os.path.join(tempfile.gettempdir(), "paper_images", safe_slug)
+                    os.makedirs(img_dir, exist_ok=True)
+                    md_text = pymupdf4llm.to_markdown(tf_path, write_images=True, image_path=img_dir)
                     if md_text and len(md_text) > 500:
-                        logger.info(f"Successfully converted PDF to markdown from {pdf_url} ({len(md_text)} chars)")
+                        md_text = clean_paper_markdown(md_text)
+                        logger.info(f"Successfully converted PDF to markdown with images from {pdf_url} ({len(md_text)} chars)")
                         return md_text
                 finally:
                     if os.path.exists(tf_path):
@@ -249,6 +261,149 @@ class Executor:
         except Exception as exc:
             logger.debug(f"Failed to convert PDF from {pdf_url}: {exc}")
         return None
+
+    def _preprocess_arxiv_html(self, html_str: str, base_url: str = "") -> tuple[str, dict[str, str]]:
+        """Preprocesses arXiv HTML to preserve LaTeX formulas, clean citations, footnotes, and retain figures."""
+        math_placeholders: dict[str, str] = {}
+        try:
+            import urllib.parse
+            from lxml import html
+            tree = html.fromstring(html_str)
+
+            # 1. Convert math elements to unique placeholders to prevent trafilatura markdown formatting mangling
+            for i, m in enumerate(tree.xpath("//math")):
+                tex = m.xpath(".//annotation[@encoding='application/x-tex']/text()")
+                code = tex[0] if tex else (m.get("alttext") or "")
+                code = code.strip()
+                parent = m.getparent()
+                if parent is None:
+                    continue
+
+                prev = m.getprevious()
+                pre_text = prev.tail if prev is not None else parent.text
+
+                if not code:
+                    full_rep = m.tail or ""
+                    if prev is not None:
+                        prev.tail = (prev.tail or "") + full_rep
+                    else:
+                        parent.text = (parent.text or "") + full_rep
+                    parent.remove(m)
+                    continue
+
+                disp = m.get("display", "inline")
+                is_block = disp == "block" or any(k in (parent.get("class") or "") for k in ["equation", "display"])
+                token = f"XXMATHPH{i}TOKENXX"
+                formula = f"\n\n$$\n{code}\n$$\n\n" if is_block else f"${code}$"
+                math_placeholders[token] = formula
+
+                lead_sp = " " if (pre_text and pre_text[-1].isalnum()) else ""
+                trail_sp = " " if (m.tail and m.tail[0].isalnum()) else ""
+                replacement = f"\n\n{token}\n\n" if is_block else f"{lead_sp}{token}{trail_sp}"
+                full_rep = replacement + (m.tail or "")
+
+                if prev is not None:
+                    prev.tail = (prev.tail or "") + full_rep
+                else:
+                    parent.text = (parent.text or "") + full_rep
+                parent.remove(m)
+
+            # 2. Convert footnotes to clean [注: {text}]
+            for fn in tree.xpath("//span[contains(@class, 'ltx_role_footnote') or contains(@class, 'ltx_role_footnotemark')]"):
+                note_content = fn.xpath(".//span[contains(@class, 'ltx_note_content')]")
+                fn_text = ""
+                if note_content:
+                    for sup in note_content[0].xpath(".//sup[contains(@class, 'ltx_note_mark')]"):
+                        sup.text = ""
+                        for c in sup:
+                            c.text = ""
+                    for tag in note_content[0].xpath(".//span[contains(@class, 'ltx_tag')]"):
+                        tag.text = ""
+                    fn_text = note_content[0].text_content().strip()
+                else:
+                    for sup in fn.xpath(".//sup[contains(@class, 'ltx_note_mark')]"):
+                        sup.text = ""
+                        for c in sup:
+                            c.text = ""
+                    for tag in fn.xpath(".//span[contains(@class, 'ltx_tag')]"):
+                        tag.text = ""
+                    fn_text = fn.text_content().strip()
+                parent = fn.getparent()
+                if parent is not None:
+                    replacement = f" [注: {fn_text}] " if fn_text else ""
+                    full_rep = replacement + (fn.tail or "")
+                    prev = fn.getprevious()
+                    if prev is not None:
+                        prev.tail = (prev.tail or "") + full_rep
+                    else:
+                        parent.text = (parent.text or "") + full_rep
+                    parent.remove(fn)
+
+            # 3. Convert citations to clean [1] or [Author et al.]
+            for cite in tree.xpath("//cite[contains(@class, 'ltx_cite')]"):
+                text_content = cite.text_content().strip()
+                parent = cite.getparent()
+                if parent is not None:
+                    if text_content:
+                        prev = cite.getprevious()
+                        pre_text = prev.tail if prev is not None else parent.text
+                        lead_sp = " " if (pre_text and pre_text[-1].isalnum()) else ""
+                        trail_sp = " " if (cite.tail and cite.tail[0].isalnum()) else ""
+                        formatted = f"[{text_content}]" if not text_content.startswith("[") else text_content
+                        replacement = f"{lead_sp}{formatted}{trail_sp}"
+                    else:
+                        replacement = ""
+                    full_rep = replacement + (cite.tail or "")
+                    prev = cite.getprevious()
+                    if prev is not None:
+                        prev.tail = (prev.tail or "") + full_rep
+                    else:
+                        parent.text = (parent.text or "") + full_rep
+                    parent.remove(cite)
+
+            # 4. Convert figures to markdown image paragraphs so trafilatura retains them in exact section positions
+            for fig in tree.xpath("//figure[not(contains(@class, 'ltx_table'))]"):
+                captions = fig.xpath(".//figcaption")
+                cap_text = captions[0].text_content().strip() if captions else ""
+                raw_sources = []
+                for img in fig.xpath(".//img"):
+                    src = img.get("src") or ""
+                    if src and not src.startswith("data:"):
+                        raw_sources.append(src)
+                for obj in fig.xpath(".//object"):
+                    data = obj.get("data") or ""
+                    if data and not data.startswith("data:"):
+                        raw_sources.append(data)
+                for emb in fig.xpath(".//embed"):
+                    src = emb.get("src") or ""
+                    if src and not src.startswith("data:"):
+                        raw_sources.append(src)
+                img_urls = []
+                for src in raw_sources:
+                    abs_src = urllib.parse.urljoin(base_url, src) if base_url else src
+                    img_urls.append(abs_src)
+                parent = fig.getparent()
+                if parent is not None:
+                    if img_urls:
+                        rep_parts = []
+                        for src in img_urls:
+                            rep_parts.append(f"<p>![{cap_text}]({src})</p>")
+                        if cap_text:
+                            rep_parts.append(f"<p><em>{cap_text}</em></p>")
+                        rep_elem = html.fragment_fromstring(f"<div>{' '.join(rep_parts)}</div>")
+                        for child in rep_elem:
+                            fig.addprevious(child)
+                    if fig.tail:
+                        prev = fig.getprevious()
+                        if prev is not None:
+                            prev.tail = (prev.tail or "") + fig.tail
+                        else:
+                            parent.text = (parent.text or "") + fig.tail
+                    parent.remove(fig)
+            return html.tostring(tree, encoding="utf-8").decode("utf-8"), math_placeholders
+        except Exception as exc:
+            logger.debug(f"Failed to preprocess arXiv HTML: {exc}")
+            return html_str, math_placeholders
 
     def fetch_paper_full_text(self, url: str) -> Optional[str]:
         """Fetches the full text of an academic paper via arXiv HTML (trafilatura), PDF (pymupdf4llm), or web fallback."""
@@ -260,14 +415,23 @@ class Executor:
         arxiv_match = re.search(r"(\d{4}\.\d{4,5})", clean_url)
         if arxiv_match:
             arxiv_id = arxiv_match.group(1)
-            # 1a. Try arXiv HTML with trafilatura
+            # 1a. Try arXiv HTML with trafilatura + LaTeX preprocessing
             try:
                 import trafilatura
                 html_url = f"https://arxiv.org/html/{arxiv_id}"
                 downloaded = trafilatura.fetch_url(html_url)
                 if downloaded:
-                    text = trafilatura.extract(downloaded, output_format="markdown", include_formatting=True, include_links=True)
+                    preprocessed_html, math_placeholders = self._preprocess_arxiv_html(downloaded, base_url=html_url)
+                    text = trafilatura.extract(
+                        preprocessed_html,
+                        output_format="markdown",
+                        include_formatting=True,
+                        include_links=False,
+                    )
                     if text and len(text) > 1000:
+                        for token, formula in math_placeholders.items():
+                            text = text.replace(token, formula)
+                        text = clean_paper_markdown(text)
                         logger.info(f"Successfully fetched full text HTML for {arxiv_id} ({len(text)} chars)")
                         return text
             except Exception as exc:
@@ -320,6 +484,16 @@ class Executor:
             logger.debug(f"Failed to fetch webpage/PDF for {clean_url}: {exc}")
 
         return None
+
+    def translate_full_text_to_bilingual(self, full_text_md: Optional[str]) -> Optional[str]:
+        """Translates paper full text into bilingual English + Chinese layout if translator is enabled."""
+        if not full_text_md or not getattr(self, "translator", None) or not self.translator.enabled:
+            return full_text_md
+        try:
+            return self.translator.make_bilingual_markdown(full_text_md)
+        except Exception as exc:
+            logger.warning(f"Failed to generate bilingual markdown: {exc}")
+            return full_text_md
 
     def generate_app_note_sections(self, title: str, url: str, readme_text: str = "", tldr: str = "") -> tuple[dict[str, str], list[str]]:
         """Uses LLM to analyze a GitHub project, AI application, or Agent Skill into an engineering-oriented note."""
@@ -455,7 +629,8 @@ class Executor:
 
                 full_text_md = None
                 if not is_github_or_tool and url:
-                    full_text_md = self.fetch_paper_full_text(url)
+                    raw_text = self.fetch_paper_full_text(url)
+                    full_text_md = self.translate_full_text_to_bilingual(raw_text)
 
                 note_url = client.create_reading_note(paper, sections=sections, full_text_markdown=full_text_md)
                 if is_github_or_tool:
@@ -619,7 +794,8 @@ class Executor:
 
         full_text_md = None
         if not is_github_or_tool and clean_url:
-            full_text_md = self.fetch_paper_full_text(clean_url)
+            raw_text = self.fetch_paper_full_text(clean_url)
+            full_text_md = self.translate_full_text_to_bilingual(raw_text)
 
         note_url = client.create_reading_note(paper, sections=sections, full_text_markdown=full_text_md)
         if is_github_or_tool:
@@ -667,6 +843,110 @@ class Executor:
             self.paper_store.mark_ingested(clean_url, {"title": title, "wiki_url": note_url})
         logger.info(f"Directly ingested '{title}' into Wiki Knowledge Base: {note_url}")
         return note_url
+
+    def rebuild_reading_note(self, paper_url_or_title: str) -> Optional[str]:
+        """Rebuilds an existing reading note with native Feishu Docx blocks (tables, images, formulas)."""
+        feishu_cfg = self.config.get("feishu")
+        if not feishu_cfg:
+            logger.warning("No feishu configuration found for rebuild_reading_note")
+            return None
+
+        from .feishu import FeishuClient
+        client = FeishuClient(feishu_cfg)
+
+        target = paper_url_or_title.strip()
+        target_token = target.rstrip("/").split("/")[-1]
+        ingested_dict = self.paper_store.data.get("ingested", {})
+
+        # Match paper by URL, wiki_url, node token, or title
+        matched_info = None
+        for key, val in ingested_dict.items():
+            if not isinstance(val, dict):
+                continue
+            v_url = val.get("url", "")
+            v_wiki = val.get("wiki_url", "")
+            v_title = val.get("title", "")
+            if (
+                target == key
+                or target == v_url
+                or target == v_wiki
+                or (target_token and v_wiki and target_token == v_wiki.rstrip("/").split("/")[-1])
+                or (v_wiki and target in v_wiki)
+                or (v_title and target.lower() in v_title.lower())
+                or (v_url and target in v_url)
+            ):
+                matched_info = dict(val)
+                if not matched_info.get("url") and key.startswith("http"):
+                    matched_info["url"] = key
+                break
+
+        if not matched_info:
+            logger.warning(f"Could not find ingested paper record for: {target}")
+            return None
+
+        title = matched_info.get("title", target)
+        url = matched_info.get("url", "")
+        wiki_url = matched_info.get("wiki_url", "")
+        tags = matched_info.get("tags", ["Agent", "Research"])
+
+        node_token = wiki_url.split("/")[-1] if wiki_url else ""
+        doc_id, _ = client.get_obj_token_from_node_token(node_token) if node_token else (None, None)
+        if not doc_id:
+            logger.warning(f"Could not resolve Feishu doc_id for {title} (node: {node_token})")
+            return None
+
+        is_github = "github.com" in (url or "").lower()
+        paper = Paper(
+            source="github" if is_github else "arxiv",
+            title=title,
+            authors=[],
+            abstract="",
+            url=url,
+            affiliations=[],
+            sources=["github"] if is_github else ["arxiv"],
+        )
+
+        if is_github:
+            readme_text = self.fetch_github_readme(url)
+            sections, tags = self.generate_app_note_sections(title=title, url=url, readme_text=readme_text)
+            full_text_md = None
+        else:
+            sections, tags = self.generate_reading_note_sections(paper)
+            raw_text = self.fetch_paper_full_text(url) if url else None
+            full_text_md = self.translate_full_text_to_bilingual(raw_text)
+
+        updated_url = client.create_reading_note(
+            paper=paper,
+            sections=sections,
+            full_text_markdown=full_text_md,
+            existing_doc_id=doc_id,
+            existing_node_token=node_token,
+        )
+        logger.info(f"Successfully rebuilt reading note for '{title}': {updated_url}")
+        return updated_url
+
+    def rebuild_all_ingested_notes(self) -> dict[str, str]:
+        """Rebuilds all previously ingested notes in the knowledge base."""
+        results = {}
+        ingested = self.paper_store.data.get("ingested", {})
+        seen_urls = set()
+        for k, v in list(ingested.items()):
+            if not isinstance(v, dict):
+                continue
+            url = v.get("url") or (k if k.startswith("http") else "") or v.get("wiki_url")
+            wiki_url = v.get("wiki_url")
+            if not url or url in seen_urls or (wiki_url and wiki_url in seen_urls):
+                continue
+            seen_urls.add(url)
+            if wiki_url:
+                seen_urls.add(wiki_url)
+            try:
+                res = self.rebuild_reading_note(url)
+                if res:
+                    results[v.get("title", k)] = res
+            except Exception as exc:
+                logger.error(f"Failed to rebuild note for {k}: {exc}")
+        return results
 
     def filter_quality_papers(self, papers: list[Paper]) -> list[Paper]:
         """Filters papers based on academic quality gates:
