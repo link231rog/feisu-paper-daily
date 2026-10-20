@@ -1,0 +1,143 @@
+topics:
+  - name: "Agent Memory"
+    keywords: ["agent memory", "memory-augmented agent", "memory management", "long-horizon memory", "episodic memory", "RL memory", "Memory-R1", "memgpt"]
+    description: "Active memory management (ADD/UPDATE/DELETE), memory distillation, reinforcement learning for agent memory, and long-horizon dialog consistency."
+  - name: "Decision Model"
+    keywords: ["decision model", "deliberative reasoning", "autothink", "test-time compute", "world model decision", "agent planning", "policy optimization"]
+    description: "Deliberative decision-making, test-time reasoning search, calibrated decision policies, and world model planning for autonomous agents."
+  - name: "Multi-Agent System (MAS)"
+    keywords: ["multi-agent system", "multi-agent", "MAS", "agent collaboration", "adversarial agents", "agent communication", "cooperative AI"]
+    description: "Multi-agent cooperation, role specialization, communication protocols, adversarial co-evolution, and multi-agent coordination frameworks."
+  - name: "Reinforcement Learning (RL)"
+    keywords: ["reinforcement learning", "RL", "PPO", "GRPO", "outcome-driven reward", "policy gradient", "agent RL", "actor-critic"]
+    description: "Outcome-driven reward mechanisms, reinforcement learning from scratch or minimal seed data, test-time policy search, and agent self-alignment."
+  - name: "Knowledge Graph & Baseline"
+    keywords: ["knowledge graph", "knowledge graph construction", "agent benchmark", "memory benchmark", "KG agent", "HotpotQA"]
+    description: "Foundational and classical knowledge graph construction, structured reasoning, and multi-agent memory benchmarks."
+  - name: "Agent Harness"
+    keywords: ["agent harness", "evaluation harness", "agent testing harness", "benchmark harness", "agent sandbox", "execution environment", "SWE-bench harness", "agent runtime"]
+    description: "Agent evaluation harnesses, reproducible test environments, sandbox execution runtimes, and standardized interaction benchmarks for autonomous agents."
+  - name: "Recursive Self-Improvement (RSI)"
+    keywords: ["recursive self-improvement", "RSI", "self-improving agent", "self-evolving agent", "self-correction", "self-training", "autonomous self-improvement", "self-play"]
+    description: "Recursive self-improvement (RSI), autonomous self-evolving agents, self-correction feedback loops, self-distillation, and test-time self-alignment."
+
+zotero:
+  user_id: ${oc.env:ZOTERO_ID,null}
+  api_key: ${oc.env:ZOTERO_KEY,null}
+  include_path: null
+
+email:
+  sender: ${oc.env:SENDER,null}
+  receiver: ${oc.env:RECEIVER,null}
+  smtp_server: ${oc.env:SMTP_SERVER,smtp.qq.com}
+  smtp_port: ${oc.env:SMTP_PORT,465}
+  sender_password: ${oc.env:SENDER_PASSWORD,null}
+
+llm:
+  api:
+    key: ${oc.env:OPENAI_API_KEY,null}
+    base_url: ${oc.env:OPENAI_API_BASE,https://api.openai.com/v1}
+  api_mode: chat_completion
+  generation_kwargs:
+    model: ${oc.env:OPENAI_MODEL,gpt-4o-mini}
+  language: Chinese
+
+translation:
+  enabled: ${oc.env:TRANSLATION_ENABLED,true}
+  api_base: ${oc.env:TRANSLATION_API_BASE,https://integrate.api.nvidia.com/v1}
+  api_key: ${oc.env:TRANSLATION_API_KEY,null}
+  backup_api_key: ${oc.env:TRANSLATION_BACKUP_API_KEY,null}
+  model: ${oc.env:TRANSLATION_MODEL,z-ai/glm-5.3-flash}
+  layout: ${oc.env:TRANSLATION_LAYOUT,quote}
+  batch_size: ${oc.env:TRANSLATION_BATCH_SIZE,5}
+
+source:
+  arxiv:
+    category: ["cs.AI", "cs.LG", "cs.CL"]
+  huggingface:
+    limit: 30
+  semantic_scholar:
+    queries:
+      - "agent memory"
+      - "decision model agent"
+      - "multi-agent system MAS"
+      - "reinforcement learning agent memory"
+      - "knowledge graph construction agent"
+      - "agent benchmark evaluation"
+      - "agent harness evaluation benchmark"
+      - "recursive self-improvement agent RSI"
+    date_range: "2025:2026"
+    seed_papers:
+      - "ARXIV:2310.08560"
+      - "ARXIV:2304.03442"
+      - "ARXIV:2303.11366"
+      - "ARXIV:2002.00388"
+    limit_per_query: 10
+    seed_limit: 8
+    api_key: ${oc.env:SEMANTIC_SCHOLAR_API_KEY,null}
+
+feishu:
+  app_id: ${oc.env:FEISHU_APP_ID,null}
+  app_secret: ${oc.env:FEISHU_APP_SECRET,null}
+  daily_folder_token: ${oc.env:FEISHU_DAILY_FOLDER_TOKEN,null}
+  notes_folder_token: ${oc.env:FEISHU_NOTES_FOLDER_TOKEN,null}
+  wiki_space_id: ${oc.env:FEISHU_WIKI_SPACE_ID,null}
+  daily_parent_node_token: ${oc.env:FEISHU_DAILY_PARENT_NODE_TOKEN,null}
+  candidate_node_token: ${oc.env:FEISHU_CANDIDATE_NODE_TOKEN,null}
+  notes_parent_node_token: ${oc.env:FEISHU_NOTES_PARENT_NODE_TOKEN,null}
+  master_index_node_token: ${oc.env:FEISHU_MASTER_INDEX_NODE_TOKEN,null}
+  tag_graph_node_token: ${oc.env:FEISHU_TAG_GRAPH_NODE_TOKEN,null}
+  idea_parent_node_token: ${oc.env:FEISHU_IDEA_PARENT_NODE_TOKEN,null}
+  experiment_parent_node_token: ${oc.env:FEISHU_EXPERIMENT_PARENT_NODE_TOKEN,null}
+  synthesis_parent_node_token: ${oc.env:FEISHU_SYNTHESIS_PARENT_NODE_TOKEN,null}
+  engineering_parent_node_token: ${oc.env:FEISHU_ENGINEERING_PARENT_NODE_TOKEN,null}
+  dry_run: false
+
+paper_store:
+  path: "data/paper_store.json"
+
+executor:
+  debug: false
+  max_paper_num: 35
+  total_daily_quota: 40
+  source: ['arxiv', 'huggingface', 'semantic_scholar']
+  reranker: local
+
+news_and_trends:
+  enabled: ${oc.env:TRENDS_ENABLED,true}
+  max_items: 4
+  min_github_stars: 50
+  github:
+    enabled: true
+    topics: ["ai-agent", "agent-memory", "decision-model", "multi-agent-systems", "reinforcement-learning", "knowledge-graph", "agent-harness", "self-improvement"]
+    days_back: 7
+  news:
+    enabled: true
+    min_hn_points: 60
+  tags:
+    - name: "Memory"
+      keywords: ["memory", "episodic memory", "working memory", "memgpt", "long-context", "memory management", "memory-r1"]
+    - name: "DecisionModel"
+      keywords: ["decision", "decision model", "planning", "autothink", "reasoning", "policy", "world model"]
+    - name: "MAS"
+      keywords: ["multi-agent", "multiagent", "cooperative agent", "swarm", "agent communication", "adversarial agent", "mas"]
+    - name: "RL"
+      keywords: ["reinforcement learning", "ppo", "grpo", "reward", "policy gradient", "q-learning", "actor-critic"]
+    - name: "Benchmark"
+      keywords: ["benchmark", "dataset", "eval-suite", "hotpotqa", "longevalmem", "evaluation"]
+    - name: "KnowledgeGraph"
+      keywords: ["knowledge graph", "kg", "entity linking", "relation extraction", "transe"]
+    - name: "Harness"
+      keywords: ["harness", "agent harness", "eval harness", "sandbox", "test environment", "swe-bench", "runtime"]
+    - name: "RSI"
+      keywords: ["rsi", "recursive self-improvement", "self-improving", "self-evolving", "self-improvement", "self-correction", "self-training"]
+    - name: "OpenSource"
+      keywords: ["open-weights", "weights", "llama", "deepseek", "vllm", "sglang", "ollama"]
+    - name: "Breaking"
+      keywords: ["announces", "release", "launched", "breakthrough"]
+
+filter:
+  enabled: ${oc.env:FILTER_ENABLED,true}
+  min_citations: 5
+
+
