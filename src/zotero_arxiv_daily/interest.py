@@ -81,7 +81,10 @@ def build_corpus_from_console(
     return corpus
 
 
-def get_interest_corpus(config: DictConfig) -> list[CorpusPaper]:
+def get_interest_corpus(
+    config: DictConfig,
+    console_settings: dict[str, list[str]] | None = None,
+) -> list[CorpusPaper]:
     """Retrieves interest corpus from configured topics, reading notes, or Zotero fallback."""
     corpus: list[CorpusPaper] = []
 
@@ -110,27 +113,21 @@ def get_interest_corpus(config: DictConfig) -> list[CorpusPaper]:
         except Exception as exc:
             logger.warning(f"Could not load Feishu reading notes: {exc}")
 
-    # 3. Feishu console: tracked tags and questions
+    # 3. Console: tracked tags and questions, from whichever provider the user configured
     console_cfg = config.get("console")
-    if console_cfg and console_cfg.get("enabled", True):
-        settings = {
-            "tags": [str(t) for t in (console_cfg.get("tags") or [])],
-            "questions": [str(q) for q in (console_cfg.get("questions") or [])],
-        }
-        if console_cfg.get("node_token") and feishu_config and not feishu_config.get("dry_run", False):
-            try:
-                from .feishu import FeishuClient
-                client = FeishuClient(feishu_config)
-                remote = client.fetch_console_settings(str(console_cfg.node_token))
-                settings["tags"] = remote["tags"] or settings["tags"]
-                settings["questions"] = remote["questions"] or settings["questions"]
-            except Exception as exc:
-                logger.warning(f"Could not read Feishu console: {exc}")
+    if console_cfg and str(console_cfg.get("enabled", True)).lower() not in ("false", "0", "no"):
+        if console_settings is None:
+            from .console import load_console_settings
 
-        console_corpus = build_corpus_from_console(settings["tags"], settings["questions"], tag_members)
+            console_settings = load_console_settings(config)
+
+        console_corpus = build_corpus_from_console(
+            console_settings.get("tags"), console_settings.get("questions"), tag_members
+        )
         if console_corpus:
             logger.info(
-                f"Loaded {len(settings['tags'])} console tags and {len(settings['questions'])} tracked questions"
+                f"Loaded {len(console_settings.get('tags', []))} console tags and "
+                f"{len(console_settings.get('questions', []))} tracked questions"
             )
             corpus.extend(console_corpus)
 

@@ -1514,48 +1514,13 @@ class FeishuClient:
         return doc_url
 
     def fetch_console_settings(self, node_token: str) -> dict[str, list[str]]:
-        """Reads tracked tags and questions from the Feishu recommendation console document.
+        """Reads tracked tags and questions from the Feishu recommendation console document."""
+        from .console import feishu_blocks_to_text, parse_console_text
 
-        Sections are detected by headings containing '标签' or '问题'; list items under them
-        become the active settings. Missing or unreadable console returns empty lists.
-        """
-        settings: dict[str, list[str]] = {"tags": [], "questions": []}
         obj_token, _ = self.get_obj_token_from_node_token(str(node_token))
         if not obj_token:
-            return settings
-
-        section = None
-        for block in self.get_document_blocks(obj_token):
-            b_type = block.get("block_type")
-            if b_type in (3, 4, 5, 6, 7):
-                key = {3: "heading1", 4: "heading2", 5: "heading3", 6: "heading4", 7: "heading5"}[b_type]
-                heading = "".join(
-                    el.get("text_run", {}).get("content", "") for el in block.get(key, {}).get("elements", [])
-                )
-                if "标签" in heading:
-                    section = "tags"
-                elif "问题" in heading or "QA" in heading.upper():
-                    section = "questions"
-                else:
-                    section = None
-                continue
-
-            if not section:
-                continue
-
-            if b_type in (12, 13):
-                key = "bullet" if b_type == 12 else "ordered"
-                text = "".join(
-                    el.get("text_run", {}).get("content", "") for el in block.get(key, {}).get("elements", [])
-                )
-            else:
-                continue
-
-            text = re.sub(r"^[-*]\s*|^\d+[.)]\s*", "", text.strip()).strip()
-            if text and text not in settings[section]:
-                settings[section].append(text)
-
-        return settings
+            return {"tags": [], "questions": []}
+        return parse_console_text(feishu_blocks_to_text(self.get_document_blocks(obj_token)))
 
     def fetch_reading_notes(self) -> list[CorpusPaper]:
         """Fetches reading notes from Wiki space or Drive folder to use as interest corpus."""

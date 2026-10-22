@@ -5,6 +5,7 @@ zotero:
   api_key: null # A Zotero API key with read access.
   include_path: null # A list of glob patterns marking the Zotero collections that should be included. Example: ["2026/survey/**","2026/reading-group/**"]
   ignore_path: null # A list of glob patterns marking the Zotero collections that should be excluded. Example: ["2026/ignore/**","archive/**"]
+  console_note_key: null # Zotero note key used as the console when console.provider is zotero
 
 source:
   arxiv:
@@ -76,19 +77,22 @@ feishu:
 
 console:
   enabled: true
+  provider: auto # auto | feishu | obsidian | notion | zotero | config
   node_token: null # Feishu Wiki node of the recommendation console document
-  tags: null # Active research tags, overridden by the console document when set
-  questions: null # Tracked questions, overridden by the console document when set
+  tags: null # Active research tags, overridden by the console provider when set
+  questions: null # Tracked questions, overridden by the console provider when set
 
 obsidian:
   enabled: false
   vault_path: null # Local Obsidian vault directory
   include_folders: null # Optional list of vault-relative folders to read
+  console_path: null # Vault-relative note used as the console, e.g. "Console.md"
 
 notion:
   enabled: false
   token: null # Notion integration token
   database_id: null # Notion database holding your reading list
+  console_page_id: null # Notion page used as the console
 
 paper_store:
   path: "data/paper_store.json"

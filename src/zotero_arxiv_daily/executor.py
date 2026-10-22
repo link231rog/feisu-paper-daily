@@ -74,6 +74,7 @@ class Executor:
         # Paper store for deduplication and pushed history
         store_path = config.get("paper_store", {}).get("path", "data/paper_store.json")
         self.paper_store = PaperStore(store_path)
+        self._console_settings: Optional[dict[str, list[str]]] = None
 
         # Academic translator for full text bilingual generation
         trans_cfg = config.get("translation")
@@ -138,9 +139,17 @@ class Executor:
             logger.info(f"Selected {len(corpus)} zotero papers:\n{samples}\n...")
         return corpus
 
+    def console(self) -> dict[str, list[str]]:
+        """Console settings (tags and questions), read once per run."""
+        if self._console_settings is None:
+            from .console import load_console_settings
+
+            self._console_settings = load_console_settings(self.config)
+        return self._console_settings
+
     def fetch_corpus(self) -> list[CorpusPaper]:
         """Loads the interest corpus from every configured source and merges them."""
-        corpus = get_interest_corpus(self.config)
+        corpus = get_interest_corpus(self.config, self.console())
 
         zot_cfg = self.config.get("zotero")
         if zot_cfg and zot_cfg.get("user_id") and zot_cfg.get("api_key") and zot_cfg.user_id != "???":
@@ -168,21 +177,8 @@ class Executor:
         return corpus
 
     def load_tracked_questions(self) -> list[str]:
-        """Reads the tracked QA list from config, overridden by the Feishu console when set."""
-        console_cfg = self.config.get("console")
-        if not console_cfg or not console_cfg.get("enabled", True):
-            return []
-
-        questions = [str(q).strip() for q in (console_cfg.get("questions") or []) if str(q).strip()]
-        feishu_cfg = self.config.get("feishu")
-        if console_cfg.get("node_token") and feishu_cfg and not feishu_cfg.get("dry_run", False):
-            try:
-                from .feishu import FeishuClient
-                settings = FeishuClient(feishu_cfg).fetch_console_settings(str(console_cfg.node_token))
-                questions = settings["questions"] or questions
-            except Exception as exc:
-                logger.warning(f"Could not read tracked questions from Feishu console: {exc}")
-        return questions
+        """Tracked QA list from the configured console provider."""
+        return self.console().get("questions", [])
 
     def _qa_llm(self) -> tuple[Optional[OpenAI], Optional[str]]:
         """Prefers the main LLM, then the translation client, for question matching."""

@@ -25,6 +25,7 @@ zotero:
   user_id: ${oc.env:ZOTERO_ID,null}
   api_key: ${oc.env:ZOTERO_KEY,null}
   include_path: null
+  console_note_key: ${oc.env:ZOTERO_CONSOLE_NOTE_KEY,null}
 
 email:
   sender: ${oc.env:SENDER,null}
@@ -95,6 +96,7 @@ feishu:
 
 console:
   enabled: true
+  provider: ${oc.env:CONSOLE_PROVIDER,auto}
   node_token: ${oc.env:FEISHU_CONSOLE_NODE_TOKEN,null}
   tags: []
   questions: []
@@ -103,11 +105,13 @@ obsidian:
   enabled: ${oc.env:OBSIDIAN_ENABLED,false}
   vault_path: ${oc.env:OBSIDIAN_VAULT_PATH,null}
   include_folders: null
+  console_path: ${oc.env:OBSIDIAN_CONSOLE_PATH,null}
 
 notion:
   enabled: ${oc.env:NOTION_ENABLED,false}
   token: ${oc.env:NOTION_TOKEN,null}
   database_id: ${oc.env:NOTION_DATABASE_ID,null}
+  console_page_id: ${oc.env:NOTION_CONSOLE_PAGE_ID,null}
 
 paper_store:
   path: "data/paper_store.json"

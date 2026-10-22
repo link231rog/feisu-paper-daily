@@ -45,6 +45,8 @@ jobs:
           FEISHU_CONSOLE_NODE_TOKEN: ${{ secrets.FEISHU_CONSOLE_NODE_TOKEN }}
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           NOTION_DATABASE_ID: ${{ vars.NOTION_DATABASE_ID }}
+          NOTION_CONSOLE_PAGE_ID: ${{ vars.NOTION_CONSOLE_PAGE_ID }}
+          CONSOLE_PROVIDER: ${{ vars.CONSOLE_PROVIDER || 'auto' }}
           FEISHU_DRY_RUN: "false"
           SEMANTIC_SCHOLAR_API_KEY: ${{ secrets.SEMANTIC_SCHOLAR_API_KEY }}
           TRANSLATION_ENABLED: ${{ vars.TRANSLATION_ENABLED || 'true' }}
