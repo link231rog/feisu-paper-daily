@@ -80,6 +80,16 @@ console:
   tags: null # Active research tags, overridden by the console document when set
   questions: null # Tracked questions, overridden by the console document when set
 
+obsidian:
+  enabled: false
+  vault_path: null # Local Obsidian vault directory
+  include_folders: null # Optional list of vault-relative folders to read
+
+notion:
+  enabled: false
+  token: null # Notion integration token
+  database_id: null # Notion database holding your reading list
+
 paper_store:
   path: "data/paper_store.json"
 

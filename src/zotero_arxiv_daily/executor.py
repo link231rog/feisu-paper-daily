@@ -21,6 +21,12 @@ from .retriever import get_retriever_cls
 from .utils import glob_match, send_email, clean_paper_markdown
 
 
+def as_bool(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in ("true", "1", "yes")
+    return bool(value)
+
+
 def normalize_path_patterns(patterns: list[str] | ListConfig | None, config_key: str) -> list[str] | None:
     if patterns is None:
         return None
@@ -133,21 +139,33 @@ class Executor:
         return corpus
 
     def fetch_corpus(self) -> list[CorpusPaper]:
-        """Loads corpus from configured topics/notes first, falling back to Zotero if configured."""
+        """Loads the interest corpus from every configured source and merges them."""
         corpus = get_interest_corpus(self.config)
-        if corpus:
-            return corpus
 
-        # Fallback to Zotero if configured with real credentials
         zot_cfg = self.config.get("zotero")
         if zot_cfg and zot_cfg.get("user_id") and zot_cfg.get("api_key") and zot_cfg.user_id != "???":
             try:
-                z_corpus = self.fetch_zotero_corpus()
-                return self.filter_corpus(z_corpus)
+                corpus.extend(self.filter_corpus(self.fetch_zotero_corpus()))
             except Exception as exc:
                 logger.warning(f"Failed to fetch Zotero corpus: {exc}")
 
-        return []
+        obsidian_cfg = self.config.get("obsidian")
+        if obsidian_cfg and as_bool(obsidian_cfg.get("enabled")) and obsidian_cfg.get("vault_path"):
+            try:
+                from .library import load_obsidian_corpus
+                corpus.extend(load_obsidian_corpus(str(obsidian_cfg.vault_path), obsidian_cfg.get("include_folders")))
+            except Exception as exc:
+                logger.warning(f"Failed to load Obsidian vault: {exc}")
+
+        notion_cfg = self.config.get("notion")
+        if notion_cfg and as_bool(notion_cfg.get("enabled")) and notion_cfg.get("token") and notion_cfg.get("database_id"):
+            try:
+                from .library import load_notion_corpus
+                corpus.extend(load_notion_corpus(str(notion_cfg.token), str(notion_cfg.database_id)))
+            except Exception as exc:
+                logger.warning(f"Failed to load Notion database: {exc}")
+
+        return corpus
 
     def load_tracked_questions(self) -> list[str]:
         """Reads the tracked QA list from config, overridden by the Feishu console when set."""

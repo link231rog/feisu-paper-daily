@@ -99,6 +99,16 @@ console:
   tags: []
   questions: []
 
+obsidian:
+  enabled: ${oc.env:OBSIDIAN_ENABLED,false}
+  vault_path: ${oc.env:OBSIDIAN_VAULT_PATH,null}
+  include_folders: null
+
+notion:
+  enabled: ${oc.env:NOTION_ENABLED,false}
+  token: ${oc.env:NOTION_TOKEN,null}
+  database_id: ${oc.env:NOTION_DATABASE_ID,null}
+
 paper_store:
   path: "data/paper_store.json"
 
