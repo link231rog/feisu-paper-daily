@@ -1,4 +1,5 @@
 import os
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 import json
 import random
@@ -186,12 +187,13 @@ class Executor:
             return
 
         numbered = "\n".join(f"{i}. {q}" for i, q in enumerate(questions, 1))
-        for paper in papers:
+
+        def match_one(paper: Paper) -> None:
             prompt = (
                 "You match research papers against a reader's tracked questions.\n"
                 f"Questions:\n{numbered}\n\n"
                 f"Paper title: {paper.title}\n"
-                f"Abstract: {(paper.abstract or '')[:3000]}\n\n"
+                f"Abstract: {(paper.abstract or '')[:1500]}\n\n"
                 "Return ONLY a JSON array. Include an object only for questions this paper "
                 "substantially addresses, with the question number and a one-sentence answer "
                 "grounded in the abstract. Use [] if none apply.\n"
@@ -201,14 +203,14 @@ class Executor:
                 resp = client.chat.completions.create(
                     model=model,
                     messages=[{"role": "user", "content": prompt}],
-                    max_tokens=600,
+                    max_tokens=400,
                     temperature=0.1,
-                    timeout=90,
+                    timeout=45,
                 )
                 raw = resp.choices[0].message.content or ""
                 match = re.search(r"\[.*\]", raw, flags=re.DOTALL)
                 if not match:
-                    continue
+                    return
                 matches = []
                 for item in json.loads(match.group(0)):
                     try:
@@ -221,6 +223,10 @@ class Executor:
                 paper.qa_matches = matches or None
             except Exception as exc:
                 logger.warning(f"Question matching failed for '{paper.title}': {exc}")
+
+        # Bounded concurrency keeps the daily job inside its runtime budget.
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            list(pool.map(match_one, papers[:20]))
 
     def generate_reading_note_sections(self, paper: Paper) -> tuple[dict[str, str], list[str]]:
         """Uses LLM to generate deep reading note sections and tags for an ingested paper."""
