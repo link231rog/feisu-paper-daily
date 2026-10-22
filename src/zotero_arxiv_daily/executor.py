@@ -1172,12 +1172,20 @@ class Executor:
 
             logger.info("Generating TLDR, affiliations, and conference venue...")
             for p in tqdm(reranked_papers, desc="Summarizing papers"):
-                p.generate_tldr(self.openai_client, self.config.llm if self.openai_client else None)
-                if self.openai_client is not None:
-                    p.generate_affiliations(self.openai_client, self.config.llm)
-                    p.generate_venue(self.openai_client, self.config.llm)
-                else:
+                if self.openai_client is None and self.translator is not None:
+                    # Use the configured translator instead of the slow free endpoints.
+                    first = (p.abstract or p.title).split(". ")[0].strip().rstrip(".") + "."
+                    p.tldr_en = first
+                    p.tldr_zh = self.translator.translate_single(first) or first
+                    p.tldr = p.tldr_zh
                     p.generate_venue()
+                else:
+                    p.generate_tldr(self.openai_client, self.config.llm if self.openai_client else None)
+                    if self.openai_client is not None:
+                        p.generate_affiliations(self.openai_client, self.config.llm)
+                        p.generate_venue(self.openai_client, self.config.llm)
+                    else:
+                        p.generate_venue()
 
             logger.info("Matching papers against tracked questions...")
             self.match_tracked_questions(reranked_papers)
