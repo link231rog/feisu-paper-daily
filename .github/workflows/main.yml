@@ -50,7 +50,6 @@ jobs:
           TRANSLATION_BACKUP_API_KEY: ${{ secrets.TRANSLATION_BACKUP_API_KEY }}
           TRANSLATION_MODEL: ${{ vars.TRANSLATION_MODEL || 'z-ai/glm-5.3-flash' }}
           CUSTOM_CONFIG: ${{ secrets.CUSTOM_CONFIG }}
-          HF_ENDPOINT: "https://hf-mirror.com"
         run: |
           if [ -n "$CUSTOM_CONFIG" ]; then
             printf "%s\n" "$CUSTOM_CONFIG" > config/custom.yaml
@@ -70,9 +69,4 @@ jobs:
             echo "Running full pipeline at $(date) (UTC hour $CURRENT_HOUR)"
           fi
 
-          # Public Actions logs must not contain private Feishu responses or document links.
-          if ! uv run src/zotero_arxiv_daily/main.py >/dev/null 2>&1; then
-            echo "::error::Pipeline failed. Run locally to inspect private logs."
-            exit 1
-          fi
-          echo "Pipeline completed."
+          uv run src/zotero_arxiv_daily/main.py
