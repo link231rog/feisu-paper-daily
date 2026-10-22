@@ -93,6 +93,12 @@ feishu:
   engineering_parent_node_token: ${oc.env:FEISHU_ENGINEERING_PARENT_NODE_TOKEN,null}
   dry_run: false
 
+console:
+  enabled: true
+  node_token: ${oc.env:FEISHU_CONSOLE_NODE_TOKEN,null}
+  tags: []
+  questions: []
+
 paper_store:
   path: "data/paper_store.json"
 

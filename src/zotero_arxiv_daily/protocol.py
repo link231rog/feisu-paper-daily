@@ -56,6 +56,7 @@ class Paper:
     published_date: Optional[datetime] = None
     venue: Optional[str] = None
     citation_count: Optional[int] = None
+    qa_matches: Optional[list[dict]] = None  # [{"question": str, "answer": str}]
 
     @property
     def published_year(self) -> Optional[int]:

@@ -781,6 +781,8 @@ class FeishuClient:
         self.master_index_node_token = config.get("master_index_node_token")
         self.tag_graph_node_token = config.get("tag_graph_node_token")
         self.engineering_parent_node_token = config.get("engineering_parent_node_token")
+        self.console_node_token = config.get("console_node_token")
+        self.reading_note_tags: dict[str, list[str]] = {}
         dry_run_val = config.get("dry_run", False)
         if isinstance(dry_run_val, str):
             self.dry_run = dry_run_val.strip().lower() in ("true", "1", "yes")
@@ -1391,6 +1393,20 @@ class FeishuClient:
                 }
             })
 
+            # Tracked-question matches (only when the console questions were answered)
+            if p.qa_matches:
+                qa_lines = ["🎯 关注问题匹配:"]
+                for match in p.qa_matches:
+                    qa_lines.append(f"Q: {match.get('question', '')}\nA: {match.get('answer', '')}")
+                children.append({
+                    "block_type": 2,
+                    "text": {
+                        "elements": [
+                            {"text_run": {"content": "\n".join(qa_lines) + "\n"}}
+                        ]
+                    }
+                })
+
         # 5. Filter and sequentially append AI Dynamics & GitHub Trending items
         if trending_items:
             trends_to_add: list[TrendingItem] = []
@@ -1497,6 +1513,50 @@ class FeishuClient:
         logger.info(f"Feishu candidate document updated successfully: {doc_url}")
         return doc_url
 
+    def fetch_console_settings(self, node_token: str) -> dict[str, list[str]]:
+        """Reads tracked tags and questions from the Feishu recommendation console document.
+
+        Sections are detected by headings containing '标签' or '问题'; list items under them
+        become the active settings. Missing or unreadable console returns empty lists.
+        """
+        settings: dict[str, list[str]] = {"tags": [], "questions": []}
+        obj_token, _ = self.get_obj_token_from_node_token(str(node_token))
+        if not obj_token:
+            return settings
+
+        section = None
+        for block in self.get_document_blocks(obj_token):
+            b_type = block.get("block_type")
+            if b_type in (3, 4, 5, 6, 7):
+                key = {3: "heading1", 4: "heading2", 5: "heading3", 6: "heading4", 7: "heading5"}[b_type]
+                heading = "".join(
+                    el.get("text_run", {}).get("content", "") for el in block.get(key, {}).get("elements", [])
+                )
+                if "标签" in heading:
+                    section = "tags"
+                elif "问题" in heading or "QA" in heading.upper():
+                    section = "questions"
+                else:
+                    section = None
+                continue
+
+            if not section:
+                continue
+
+            if b_type in (12, 13):
+                key = "bullet" if b_type == 12 else "ordered"
+                text = "".join(
+                    el.get("text_run", {}).get("content", "") for el in block.get(key, {}).get("elements", [])
+                )
+            else:
+                continue
+
+            text = re.sub(r"^[-*]\s*|^\d+[.)]\s*", "", text.strip()).strip()
+            if text and text not in settings[section]:
+                settings[section].append(text)
+
+        return settings
+
     def fetch_reading_notes(self) -> list[CorpusPaper]:
         """Fetches reading notes from Wiki space or Drive folder to use as interest corpus."""
         if self.dry_run:
@@ -1514,10 +1574,14 @@ class FeishuClient:
                 for item in items:
                     title = item.get("title", "")
                     clean_title = re.sub(r"^📄\s*\[精读\]\s*", "", title).strip()
+                    tags = re.findall(r"\[#([^\]]+)\]", title)
+                    for tag in tags:
+                        self.reading_note_tags.setdefault(tag.strip(), []).append(clean_title)
+                    tag_note = f" Tags: {', '.join(tags)}." if tags else ""
                     corpus.append(
                         CorpusPaper(
                             title=clean_title,
-                            abstract=f"User curated deep reading note: {clean_title}",
+                            abstract=f"User curated deep reading note: {clean_title}.{tag_note}",
                             added_date=datetime.now(),
                             paths=[f"wiki/notes/{clean_title}"],
                         )

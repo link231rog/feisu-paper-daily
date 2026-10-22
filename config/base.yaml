@@ -74,6 +74,12 @@ feishu:
   dry_run: false
   create_tasks: true
 
+console:
+  enabled: true
+  node_token: null # Feishu Wiki node of the recommendation console document
+  tags: null # Active research tags, overridden by the console document when set
+  questions: null # Tracked questions, overridden by the console document when set
+
 paper_store:
   path: "data/paper_store.json"
 

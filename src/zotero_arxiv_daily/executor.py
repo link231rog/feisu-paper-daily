@@ -148,6 +148,80 @@ class Executor:
 
         return []
 
+    def load_tracked_questions(self) -> list[str]:
+        """Reads the tracked QA list from config, overridden by the Feishu console when set."""
+        console_cfg = self.config.get("console")
+        if not console_cfg or not console_cfg.get("enabled", True):
+            return []
+
+        questions = [str(q).strip() for q in (console_cfg.get("questions") or []) if str(q).strip()]
+        feishu_cfg = self.config.get("feishu")
+        if console_cfg.get("node_token") and feishu_cfg and not feishu_cfg.get("dry_run", False):
+            try:
+                from .feishu import FeishuClient
+                settings = FeishuClient(feishu_cfg).fetch_console_settings(str(console_cfg.node_token))
+                questions = settings["questions"] or questions
+            except Exception as exc:
+                logger.warning(f"Could not read tracked questions from Feishu console: {exc}")
+        return questions
+
+    def _qa_llm(self) -> tuple[Optional[OpenAI], Optional[str]]:
+        """Prefers the main LLM, then the translation client, for question matching."""
+        if self.openai_client is not None:
+            model = self.config.llm.generation_kwargs.get("model")
+            return self.openai_client, str(model) if model else None
+        if self.translator is not None and getattr(self.translator, "client", None) is not None:
+            return self.translator.client, getattr(self.translator, "model", None)
+        return None, None
+
+    def match_tracked_questions(self, papers: list[Paper]) -> None:
+        """Annotates each paper with the tracked questions it can answer."""
+        questions = self.load_tracked_questions()
+        if not questions:
+            return
+
+        client, model = self._qa_llm()
+        if client is None or not model:
+            logger.info("No LLM client available for question matching; skipping.")
+            return
+
+        numbered = "\n".join(f"{i}. {q}" for i, q in enumerate(questions, 1))
+        for paper in papers:
+            prompt = (
+                "You match research papers against a reader's tracked questions.\n"
+                f"Questions:\n{numbered}\n\n"
+                f"Paper title: {paper.title}\n"
+                f"Abstract: {(paper.abstract or '')[:3000]}\n\n"
+                "Return ONLY a JSON array. Include an object only for questions this paper "
+                "substantially addresses, with the question number and a one-sentence answer "
+                "grounded in the abstract. Use [] if none apply.\n"
+                'Format: [{"question": 1, "answer": "..."}]'
+            )
+            try:
+                resp = client.chat.completions.create(
+                    model=model,
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=600,
+                    temperature=0.1,
+                    timeout=90,
+                )
+                raw = resp.choices[0].message.content or ""
+                match = re.search(r"\[.*\]", raw, flags=re.DOTALL)
+                if not match:
+                    continue
+                matches = []
+                for item in json.loads(match.group(0)):
+                    try:
+                        idx = int(item.get("question", 0))
+                    except (TypeError, ValueError):
+                        continue
+                    answer = str(item.get("answer", "")).strip()
+                    if 1 <= idx <= len(questions) and answer:
+                        matches.append({"question": questions[idx - 1], "answer": answer})
+                paper.qa_matches = matches or None
+            except Exception as exc:
+                logger.warning(f"Question matching failed for '{paper.title}': {exc}")
+
     def generate_reading_note_sections(self, paper: Paper) -> tuple[dict[str, str], list[str]]:
         """Uses LLM to generate deep reading note sections and tags for an ingested paper."""
         if not self.openai_client:
@@ -1098,6 +1172,9 @@ class Executor:
                     p.generate_venue(self.openai_client, self.config.llm)
                 else:
                     p.generate_venue()
+
+            logger.info("Matching papers against tracked questions...")
+            self.match_tracked_questions(reranked_papers)
 
             # Log formatted summary to console
             logger.info(f"=== Recommended Papers ({len(reranked_papers)} papers) ===")
