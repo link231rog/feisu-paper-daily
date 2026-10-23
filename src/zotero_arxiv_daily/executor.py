@@ -19,8 +19,10 @@ from .paper_store import PaperStore
 from .protocol import CorpusPaper, Paper, TrendingItem
 from .research import (
     ResearchState,
+    judge_ranking,
     pick_seeds,
     plan_queries,
+    question_weights,
     suggest_next_questions,
     synthesize_questions,
 )
@@ -202,8 +204,8 @@ class Executor:
         """Question matching uses the shared key pool."""
         return self.router, self.router.model if self.router.available else None
 
-    def match_tracked_questions(self, papers: list[Paper]) -> None:
-        """Annotates each paper with the tracked questions it can answer."""
+    def score_against_questions(self, papers: list[Paper]) -> None:
+        """Scores every candidate 0-10 per tracked question and records the answers."""
         questions = self.load_tracked_questions()
         if not questions:
             return
@@ -214,43 +216,131 @@ class Executor:
             return
 
         numbered = "\n".join(f"{i}. {q}" for i, q in enumerate(questions, 1))
+        workers = int(self.research_cfg.get("qa_workers", 8))
 
-        def match_one(paper: Paper) -> None:
+        def score_one(paper: Paper) -> None:
             prompt = (
-                "You match research papers against a reader's tracked questions.\n"
+                "You score how much a paper advances a reader's tracked research questions.\n"
                 f"Questions:\n{numbered}\n\n"
                 f"Paper title: {paper.title}\n"
-                f"Abstract: {(paper.abstract or '')[:1500]}\n\n"
-                "Return ONLY a JSON array. Include an object only for questions this paper "
-                "substantially addresses, with the question number and a one-sentence answer "
-                "grounded in the abstract. Use [] if none apply.\n"
-                'Format: [{"question": 1, "answer": "..."}]'
+                f"Abstract: {(paper.abstract or '')[:2000]}\n\n"
+                "Score each question 0-10:\n"
+                "10 = mechanism/result that directly answers it\n"
+                "7-9 = substantial progress or strong new evidence\n"
+                "4-6 = relevant method or partial evidence\n"
+                "1-3 = same topic, no answer\n"
+                "0 = irrelevant (omit)\n"
+                "Add a one-sentence Chinese answer for scores >= 4.\n"
+                'Return ONLY JSON: [{"question": 1, "score": 8, "answer": "..."}]'
             )
             try:
                 raw = client.chat(
                     [{"role": "user", "content": prompt}],
-                    max_tokens=900,
-                    timeout=60,
+                    max_tokens=1200,
+                    timeout=90,
                 )
                 match = re.search(r"\[.*\]", raw, flags=re.DOTALL)
                 if not match:
                     return
+                scores: dict[str, int] = {}
                 matches = []
                 for item in json.loads(match.group(0)):
                     try:
                         idx = int(item.get("question", 0))
+                        value = int(item.get("score", 0))
                     except (TypeError, ValueError):
                         continue
+                    if not 1 <= idx <= len(questions) or value <= 0:
+                        continue
+                    question = questions[idx - 1]
+                    scores[question] = max(scores.get(question, 0), min(10, value))
                     answer = str(item.get("answer", "")).strip()
-                    if 1 <= idx <= len(questions) and answer:
-                        matches.append({"question": questions[idx - 1], "answer": answer})
+                    if value >= 4 and answer:
+                        matches.append({"question": question, "answer": answer})
+                paper.qa_scores = scores or None
                 paper.qa_matches = matches or None
             except Exception as exc:
-                logger.warning(f"Question matching failed for '{paper.title}': {exc}")
+                logger.warning(f"Question scoring failed for '{paper.title}': {exc}")
 
-        # Bounded concurrency keeps the daily job inside its runtime budget.
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            list(pool.map(match_one, papers[:20]))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            list(pool.map(score_one, papers))
+        relevant = sum(1 for p in papers if p.qa_scores)
+        logger.info(f"Scored {len(papers)} papers against {len(questions)} questions ({relevant} relevant)")
+
+    @staticmethod
+    def _dominant_question(paper: Paper, weights: dict[str, float]) -> Optional[str]:
+        if not paper.qa_scores:
+            return None
+        return max(paper.qa_scores, key=lambda q: weights.get(q, 1.0) * paper.qa_scores[q])
+
+    def fuse_and_select(
+        self, papers: list[Paper], questions: list[str], quota: int
+    ) -> list[Paper]:
+        """Blends library taste with question fit, then applies judge, diversity and exploration."""
+        if not papers or quota <= 0:
+            return []
+
+        weights = question_weights(self.research_state, questions) if questions else {}
+        taste = [float(p.score or 0.0) for p in papers]
+        low, high = min(taste), max(taste)
+        span = (high - low) or 1.0
+        w_taste = float(self.research_cfg.get("weight_taste", 0.5))
+        w_fit = float(self.research_cfg.get("weight_fit", 0.5))
+
+        fused: dict[int, float] = {}
+        for paper in papers:
+            taste_norm = (float(paper.score or 0.0) - low) / span
+            fit = 0.0
+            if questions and paper.qa_scores:
+                fit = max(weights.get(q, 1.0) * s for q, s in paper.qa_scores.items()) / 10
+            fused[id(paper)] = w_taste * taste_norm + w_fit * min(fit, 1.0)
+
+        ordered = sorted(papers, key=lambda p: fused[id(p)], reverse=True)
+
+        judge_n = int(self.research_cfg.get("max_judge", 25))
+        if self.research_cfg.get("judge", True) and questions and self.router.available and len(ordered) > 2:
+            head = ordered[:judge_n]
+            order = judge_ranking(self.router, questions, head)
+            ordered = [head[i] for i in order] + ordered[judge_n:]
+            logger.info(f"Judge re-ranked the top {len(head)} candidates")
+
+        cap = int(self.research_cfg.get("per_question_cap", 6))
+        reserve = max(0, min(int(self.research_cfg.get("exploration_slots", 2)), quota - 1))
+        selected: list[Paper] = []
+        picked: set[int] = set()
+        counts: dict[str, int] = {}
+
+        def take(paper: Paper) -> None:
+            selected.append(paper)
+            picked.add(id(paper))
+            question = self._dominant_question(paper, weights)
+            if question:
+                counts[question] = counts.get(question, 0) + 1
+
+        # Main pass: best fused papers, capped per question so one topic cannot fill the list
+        for paper in ordered:
+            if len(selected) >= quota - reserve:
+                break
+            question = self._dominant_question(paper, weights)
+            if question and counts.get(question, 0) >= cap:
+                continue
+            take(paper)
+
+        # Exploration: strong library match that no question asked for
+        for paper in ordered:
+            if len(selected) >= quota:
+                break
+            if id(paper) in picked or paper.qa_scores:
+                continue
+            take(paper)
+
+        for paper in ordered:
+            if len(selected) >= quota:
+                break
+            if id(paper) not in picked:
+                take(paper)
+
+        return selected
 
     def generate_reading_note_sections(self, paper: Paper) -> tuple[dict[str, str], list[str]]:
         """Uses LLM to generate deep reading note sections and tags for an ingested paper."""
@@ -1219,8 +1309,15 @@ class Executor:
         reranked_papers: list[Paper] = []
         if len(quality_papers) > 0:
             logger.info("Reranking papers against interest corpus...")
-            reranked_papers = self.reranker.rerank(quality_papers, corpus)
-            reranked_papers = reranked_papers[:paper_quota]
+            ranked = self.reranker.rerank(quality_papers, corpus)
+
+            questions = console_settings.get("questions", [])
+            if questions:
+                logger.info(f"Scoring {len(ranked)} candidates against tracked questions...")
+                self.score_against_questions(ranked)
+
+            reranked_papers = self.fuse_and_select(ranked, questions, paper_quota)
+            logger.info(f"Selected {len(reranked_papers)} of {len(ranked)} candidates")
 
             logger.info("Generating TLDR, affiliations, and conference venue...")
             for p in tqdm(reranked_papers, desc="Summarizing papers"):
@@ -1239,11 +1336,7 @@ class Executor:
                     else:
                         p.generate_venue()
 
-            logger.info("Matching papers against tracked questions...")
-            self.match_tracked_questions(reranked_papers)
-
             # Per-question synthesis and next-round question proposals
-            questions = console_settings.get("questions", [])
             if self.research_cfg.get("synthesis", True) and questions:
                 self.question_briefs = synthesize_questions(self.router, questions, reranked_papers)
                 self.research_state.record(self.question_briefs)

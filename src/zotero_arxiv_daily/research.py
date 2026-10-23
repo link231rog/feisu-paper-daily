@@ -147,6 +147,50 @@ def suggest_next_questions(
     return proposed[:4]
 
 
+def question_weights(state: "ResearchState", questions: list[str]) -> dict[str, float]:
+    """Downweights questions whose evidence has gone stale so others get a turn."""
+    return {q: (0.6 if state.saturated(q) else 1.0) for q in questions}
+
+
+def judge_ranking(router: LLMRouter, questions: list[str], papers: list[Paper]) -> list[int]:
+    """Comparatively ranks candidates in one call; returns 0-based indices best first."""
+    if not router.available or len(papers) < 2:
+        return list(range(len(papers)))
+
+    listing = "\n".join(
+        f"{idx}. {p.title}\n   {(p.abstract or '').replace(chr(10), ' ')[:400]}"
+        for idx, p in enumerate(papers, 1)
+    )
+    prompt = (
+        "You are ranking today's candidate papers for a researcher. Judge how much each "
+        "paper would actually advance their tracked questions, not how popular it is.\n\n"
+        f"Tracked questions:\n" + "\n".join(f"- {q}" for q in questions) + "\n\n"
+        f"Candidates:\n{listing}\n\n"
+        "Order them best first. Prefer concrete mechanisms, results or benchmarks that "
+        "answer a question over papers that merely mention the topic. Drop papers that "
+        "add nothing new to an already-covered point.\n"
+        'Return ONLY JSON: {"ranking": [{"index": 3, "reason": "一句话中文理由"}], "dropped": [7]}'
+    )
+    data = _json_block(router.chat([{"role": "user", "content": prompt}], max_tokens=2500), {})
+    if not isinstance(data, dict):
+        return list(range(len(papers)))
+
+    dropped = {int(i) for i in data.get("dropped", []) if str(i).isdigit()}
+    order: list[int] = []
+    for item in data.get("ranking", []):
+        try:
+            idx = int(item.get("index"))
+        except (TypeError, ValueError, AttributeError):
+            continue
+        if 1 <= idx <= len(papers) and (idx - 1) not in order:
+            order.append(idx - 1)
+            papers[idx - 1].judge_reason = str(item.get("reason", "")).strip() or None
+    # Anything the judge omitted keeps its fused order behind the ranked block
+    order.extend(i for i in range(len(papers)) if i not in order and i not in dropped)
+    order.extend(i for i in range(len(papers)) if i in dropped and i not in order)
+    return order
+
+
 class ResearchState:
     """Tracks per-question evidence so saturated directions can pivot."""
 

@@ -370,5 +370,13 @@ research:
   synthesis: true # Write a per-question brief each run
   next_questions: true # Propose follow-up questions into the console
   state_path: "data/research_state.json"
+  # Ranking: library taste vs tracked-question fit
+  weight_taste: 0.5
+  weight_fit: 0.5
+  qa_workers: 8 # Concurrent LLM calls when scoring candidates
+  judge: true # One comparative LLM pass over the top candidates
+  max_judge: 25
+  per_question_cap: 6 # A single question may not dominate the daily list
+  exploration_slots: 2 # Reserve slots for strong library matches no question asked for
 
 

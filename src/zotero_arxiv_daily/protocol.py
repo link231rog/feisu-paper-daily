@@ -57,6 +57,8 @@ class Paper:
     venue: Optional[str] = None
     citation_count: Optional[int] = None
     qa_matches: Optional[list[dict]] = None  # [{"question": str, "answer": str}]
+    qa_scores: Optional[dict[str, int]] = None  # {question: 0-10 relevance}
+    judge_reason: Optional[str] = None  # why the final judge ranked it here
 
     @property
     def published_year(self) -> Optional[int]:
