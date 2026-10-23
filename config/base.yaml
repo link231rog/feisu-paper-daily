@@ -378,5 +378,9 @@ research:
   max_judge: 25
   per_question_cap: 6 # A single question may not dominate the daily list
   exploration_slots: 2 # Reserve slots for strong library matches no question asked for
+  # Baseline extraction, attribution, and bi-directional linking
+  baselines: true
+  baseline_workers: 4
+  auto_backlink: true
 
 

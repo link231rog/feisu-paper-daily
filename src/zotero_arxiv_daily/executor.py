@@ -12,6 +12,7 @@ from openai import OpenAI
 from pyzotero import zotero
 from tqdm import tqdm
 
+from .baseline import enrich_papers_with_baselines
 from .construct_email import render_email
 from .interest import get_interest_corpus
 from .llm import LLMRouter
@@ -1335,6 +1336,12 @@ class Executor:
                         p.generate_venue(self.openai_client, self.config.llm)
                     else:
                         p.generate_venue()
+
+            # Baseline extraction, attribution, and bi-directional library linking
+            if self.research_cfg.get("baselines", True):
+                workers = int(self.research_cfg.get("baseline_workers", 4))
+                logger.info("Extracting baseline comparisons and linking with library...")
+                enrich_papers_with_baselines(self.router, reranked_papers, corpus, max_workers=workers)
 
             # Per-question synthesis and next-round question proposals
             if self.research_cfg.get("synthesis", True) and questions:

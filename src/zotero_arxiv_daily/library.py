@@ -3,6 +3,7 @@
 from datetime import datetime
 from pathlib import Path
 import re
+from urllib.parse import quote
 
 import requests
 from loguru import logger
@@ -65,6 +66,7 @@ def load_obsidian_corpus(vault_path: str, include_folders: list[str] | None = No
                 abstract=f"Obsidian note: {summary}.{tag_note}",
                 added_date=datetime.fromtimestamp(note.stat().st_mtime),
                 paths=[f"obsidian/{rel}"] + [f"obsidian/tags/{t}" for t in tags],
+                url=f"obsidian://open?vault={quote(root.name)}&file={quote(rel)}",
             )
         )
 
@@ -120,6 +122,7 @@ def load_notion_corpus(token: str, database_id: str) -> list[CorpusPaper]:
                     abstract=f"Notion page: {title}.{tag_note}",
                     added_date=datetime.now(),
                     paths=[f"notion/{page.get('id', '')}"] + [f"notion/tags/{t}" for t in tags],
+                    url=page.get("url"),
                 )
             )
 

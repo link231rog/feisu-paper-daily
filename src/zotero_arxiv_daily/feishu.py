@@ -1408,6 +1408,69 @@ class FeishuClient:
                     }
                 })
 
+            # Baseline analysis and bi-directional linking
+            if getattr(p, "baselines", None):
+                bl_elements: list[dict[str, Any]] = [
+                    {"text_run": {"content": "🔬 核心对比基线 (Baselines):\n"}}
+                ]
+                for b in p.baselines:
+                    name = b.get("name", "")
+                    venue = b.get("venue", "")
+                    venue_part = f" [{venue}]" if venue else ""
+                    summary = b.get("method_summary", "")
+                    comp = b.get("comparison", "")
+                    in_lib = b.get("in_library", False)
+                    b_doc_url = b.get("doc_url")
+                    b_doc_title = b.get("doc_title")
+
+                    bl_elements.append({
+                        "text_run": {
+                            "content": f"• {name}{venue_part}: ",
+                            "text_element_style": {"bold": True}
+                        }
+                    })
+                    bl_elements.append({
+                        "text_run": {
+                            "content": f"{summary}\n  📊 对比: {comp}\n  "
+                        }
+                    })
+                    if in_lib and b_doc_url:
+                        bl_elements.append({"text_run": {"content": "🟢 [已入库笔记: "}})
+                        bl_elements.append({
+                            "text_run": {
+                                "content": f"{b_doc_title or name}",
+                                "text_element_style": {"link": {"url": b_doc_url}}
+                            }
+                        })
+                        bl_elements.append({"text_run": {"content": "]\n"}})
+                    elif b_doc_url:
+                        bl_elements.append({"text_run": {"content": "⚪ [未入库: "}})
+                        bl_elements.append({
+                            "text_run": {
+                                "content": "出处检索",
+                                "text_element_style": {"link": {"url": b_doc_url}}
+                            }
+                        })
+                        bl_elements.append({"text_run": {"content": "]\n"}})
+                    else:
+                        bl_elements.append({"text_run": {"content": "⚪ [未入库]\n"}})
+
+                    # Bi-directional backlink to the matched in-library document
+                    if in_lib and b.get("obj_token") and comp:
+                        self.append_baseline_backlink(
+                            b["obj_token"],
+                            referring_paper_title=p.title,
+                            referring_paper_url=p.url or "",
+                            comparison=comp,
+                        )
+
+                children.append({
+                    "block_type": 2,
+                    "text": {
+                        "elements": bl_elements
+                    }
+                })
+
         # 4b. Per-question research briefs (date-stamped so history stays readable)
         has_briefs = bool(question_briefs)
         if has_briefs:
@@ -1610,6 +1673,56 @@ class FeishuClient:
         )
         logger.info(f"Appended {len(fresh)} suggested questions to the console")
 
+    def append_baseline_backlink(
+        self,
+        obj_token: str,
+        referring_paper_title: str,
+        referring_paper_url: str,
+        comparison: str,
+    ) -> bool:
+        """Appends a backlink note to an existing library document when cited as a baseline."""
+        if self.dry_run or not obj_token:
+            return False
+
+        try:
+            blocks = self.get_document_blocks(obj_token)
+            clean_ref_title = referring_paper_title.strip()
+            # Avoid duplicate backlink insertions
+            for b in blocks:
+                for el in (b.get("text", {}) or {}).get("elements", []):
+                    c = el.get("text_run", {}).get("content", "")
+                    if clean_ref_title[:35] in c:
+                        logger.debug(f"Backlink already present in doc {obj_token} for '{clean_ref_title[:30]}'")
+                        return False
+
+            from datetime import date
+            today_str = date.today().isoformat()
+
+            children: list[dict[str, Any]] = [
+                {
+                    "block_type": 2,
+                    "text": {
+                        "elements": [
+                            {"text_run": {"content": f"📌 后续文献对比追踪 ({today_str}):\n", "text_element_style": {"bold": True}}},
+                            {"text_run": {"content": "新论文: "}},
+                            {"text_run": {"content": f"《{referring_paper_title}》", "text_element_style": {"link": {"url": referring_paper_url or ""}}}},
+                            {"text_run": {"content": f"\n对比评价: {comparison}\n"}},
+                        ]
+                    }
+                }
+            ]
+
+            self._call_api(
+                "POST",
+                f"/docx/v1/documents/{obj_token}/blocks/{obj_token}/children",
+                data={"children": children, "index": -1},
+            )
+            logger.info(f"Appended baseline backlink to doc {obj_token} from '{clean_ref_title[:30]}'")
+            return True
+        except Exception as exc:
+            logger.warning(f"Failed to append baseline backlink to {obj_token}: {exc}")
+            return False
+
     def fetch_reading_notes(self) -> list[CorpusPaper]:
         """Fetches reading notes from Wiki space or Drive folder to use as interest corpus."""
         if self.dry_run:
@@ -1631,12 +1744,18 @@ class FeishuClient:
                     for tag in tags:
                         self.reading_note_tags.setdefault(tag.strip(), []).append(clean_title)
                     tag_note = f" Tags: {', '.join(tags)}." if tags else ""
+                    node_tok = item.get("node_token")
+                    obj_tok = item.get("obj_token")
+                    wiki_url = item.get("url") or (f"https://feishu.cn/wiki/{node_tok}" if node_tok else None)
                     corpus.append(
                         CorpusPaper(
                             title=clean_title,
                             abstract=f"User curated deep reading note: {clean_title}.{tag_note}",
                             added_date=datetime.now(),
                             paths=[f"wiki/notes/{clean_title}"],
+                            url=wiki_url,
+                            node_token=node_tok,
+                            obj_token=obj_tok,
                         )
                     )
                 logger.info(f"Loaded {len(corpus)} reading notes from Feishu Wiki space")
@@ -1650,12 +1769,16 @@ class FeishuClient:
                 items = res.get("files", [])
                 for f in items:
                     name = f.get("name", "")
+                    f_tok = f.get("token")
+                    d_url = f.get("url") or (f"https://feishu.cn/docs/{f_tok}" if f_tok else None)
                     corpus.append(
                         CorpusPaper(
                             title=name,
                             abstract=f"User curated reading note: {name}",
                             added_date=datetime.now(),
                             paths=[f"drive/notes/{name}"],
+                            url=d_url,
+                            obj_token=f_tok,
                         )
                     )
                 logger.info(f"Loaded {len(corpus)} reading notes from Drive folder")

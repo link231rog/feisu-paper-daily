@@ -167,6 +167,8 @@ research:
   max_seeds: 4
   synthesis: ${oc.env:RESEARCH_SYNTHESIS,true}
   next_questions: ${oc.env:RESEARCH_NEXT_QUESTIONS,true}
+  baselines: ${oc.env:RESEARCH_BASELINES,true}
+  auto_backlink: ${oc.env:RESEARCH_AUTO_BACKLINK,true}
   state_path: "data/research_state.json"
 
 

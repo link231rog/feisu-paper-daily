@@ -59,6 +59,7 @@ class Paper:
     qa_matches: Optional[list[dict]] = None  # [{"question": str, "answer": str}]
     qa_scores: Optional[dict[str, int]] = None  # {question: 0-10 relevance}
     judge_reason: Optional[str] = None  # why the final judge ranked it here
+    baselines: Optional[list[dict]] = None  # [{"name": str, "method_summary": str, "venue": str, "comparison": str, ...}]
 
     @property
     def published_year(self) -> Optional[int]:
@@ -297,6 +298,9 @@ class CorpusPaper:
     abstract: str
     added_date: datetime
     paths: list[str]
+    url: Optional[str] = None
+    node_token: Optional[str] = None
+    obj_token: Optional[str] = None
 
 
 @dataclass
