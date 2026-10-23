@@ -38,6 +38,7 @@ email:
 llm:
   api:
     key: null # API Key of your LLM API. Example: sk-xxx
+    keys: null # Optional list of API keys, rotated when one is rate limited
     base_url: null # API URL of your LLM API. Example: https://api.openai.com/v1
   api_mode: chat_completion # The LLM API to use. Options: chat_completion or response.
   generation_kwargs:
@@ -361,5 +362,13 @@ filter:
     - "01.ai"
     - "minimax"
     - "stepfun"
+
+research:
+  enabled: true
+  multi_hop: true # Chase citations of promising candidates for a second retrieval hop
+  max_seeds: 4
+  synthesis: true # Write a per-question brief each run
+  next_questions: true # Propose follow-up questions into the console
+  state_path: "data/research_state.json"
 
 

@@ -1249,6 +1249,7 @@ class FeishuClient:
         trending_items: Optional[list[TrendingItem]] = None,
         folder_token: Optional[str] = None,
         reading_plan: Optional[list[Any]] = None,
+        question_briefs: Optional[list[dict]] = None,
     ) -> str:
         """Publishes candidate papers and trending items into the persistent '候选文档' in Feishu Docx."""
         if self.dry_run:
@@ -1407,6 +1408,39 @@ class FeishuClient:
                     }
                 })
 
+        # 4b. Per-question research briefs (date-stamped so history stays readable)
+        has_briefs = bool(question_briefs)
+        if has_briefs:
+            from datetime import date
+
+            children.append({
+                "block_type": 4,
+                "heading2": {
+                    "elements": [
+                        {"text_run": {"content": f"二、今日问题进展（{date.today().isoformat()}）"}}
+                    ]
+                }
+            })
+            for brief in question_briefs:
+                children.append({
+                    "block_type": 5,
+                    "heading3": {
+                        "elements": [{"text_run": {"content": brief.get("question", "")}}]
+                    }
+                })
+                body = brief.get("summary", "")
+                evidence = brief.get("evidence") or []
+                if evidence:
+                    body += "\n证据: " + "；".join(
+                        f"{e.get('title', '')} ({e.get('url', '')})" for e in evidence[:4]
+                    )
+                if brief.get("gap"):
+                    body += f"\n仍待解决: {brief['gap']}"
+                children.append({
+                    "block_type": 2,
+                    "text": {"elements": [{"text_run": {"content": body + "\n"}}]}
+                })
+
         # 5. Filter and sequentially append AI Dynamics & GitHub Trending items
         if trending_items:
             trends_to_add: list[TrendingItem] = []
@@ -1428,11 +1462,12 @@ class FeishuClient:
                     for b in existing_blocks if b.get("block_type") == 4
                 )
                 if not has_trending_header:
+                    trends_no = "三" if has_briefs else "二"
                     children.append({
                         "block_type": 4,
                         "heading2": {
                             "elements": [
-                                {"text_run": {"content": "二、AI 动态与 GitHub 热点"}}
+                                {"text_run": {"content": f"{trends_no}、AI 动态与 GitHub 热点"}}
                             ]
                         }
                     })
@@ -1521,6 +1556,59 @@ class FeishuClient:
         if not obj_token:
             return {"tags": [], "questions": []}
         return parse_console_text(feishu_blocks_to_text(self.get_document_blocks(obj_token)))
+
+    def append_suggested_questions(self, node_token: str, questions: list[str]) -> None:
+        """Appends LLM-proposed follow-up questions to the console for human approval."""
+        if self.dry_run or not questions:
+            return
+        obj_token, _ = self.get_obj_token_from_node_token(str(node_token))
+        if not obj_token:
+            return
+
+        blocks = self.get_document_blocks(obj_token)
+        known = set()
+        for block in blocks:
+            if block.get("block_type") == 12:
+                known.add(
+                    "".join(
+                        el.get("text_run", {}).get("content", "")
+                        for el in block.get("bullet", {}).get("elements", [])
+                    ).strip()
+                )
+
+        fresh = [q for q in questions if q.strip() and q.strip() not in known]
+        if not fresh:
+            return
+
+        has_heading = any(
+            "建议问题" in "".join(
+                el.get("text_run", {}).get("content", "")
+                for el in block.get("heading2", {}).get("elements", [])
+            )
+            for block in blocks
+            if block.get("block_type") == 4
+        )
+
+        children: list[dict[str, Any]] = []
+        if not has_heading:
+            children.append({
+                "block_type": 4,
+                "heading2": {
+                    "elements": [{"text_run": {"content": "建议问题（待确认）"}}]
+                }
+            })
+        for question in fresh:
+            children.append({
+                "block_type": 12,
+                "bullet": {"elements": [{"text_run": {"content": question}}]},
+            })
+
+        self._call_api(
+            "POST",
+            f"/docx/v1/documents/{obj_token}/blocks/{obj_token}/children",
+            data={"children": children, "index": -1},
+        )
+        logger.info(f"Appended {len(fresh)} suggested questions to the console")
 
     def fetch_reading_notes(self) -> list[CorpusPaper]:
         """Fetches reading notes from Wiki space or Drive folder to use as interest corpus."""

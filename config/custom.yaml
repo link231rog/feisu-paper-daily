@@ -37,10 +37,11 @@ email:
 llm:
   api:
     key: ${oc.env:OPENAI_API_KEY,null}
-    base_url: ${oc.env:OPENAI_API_BASE,https://api.openai.com/v1}
+    keys: ${oc.env:LLM_API_KEYS,null}
+    base_url: ${oc.env:OPENAI_API_BASE,${oc.env:TRANSLATION_API_BASE,https://integrate.api.nvidia.com/v1}}
   api_mode: chat_completion
   generation_kwargs:
-    model: ${oc.env:OPENAI_MODEL,gpt-4o-mini}
+    model: ${oc.env:OPENAI_MODEL,${oc.env:TRANSLATION_MODEL,z-ai/glm-5.3-flash}}
   language: Chinese
 
 translation:
@@ -159,5 +160,13 @@ news_and_trends:
 filter:
   enabled: ${oc.env:FILTER_ENABLED,true}
   min_citations: 5
+
+research:
+  enabled: ${oc.env:RESEARCH_ENABLED,true}
+  multi_hop: ${oc.env:RESEARCH_MULTI_HOP,true}
+  max_seeds: 4
+  synthesis: ${oc.env:RESEARCH_SYNTHESIS,true}
+  next_questions: ${oc.env:RESEARCH_NEXT_QUESTIONS,true}
+  state_path: "data/research_state.json"
 
 

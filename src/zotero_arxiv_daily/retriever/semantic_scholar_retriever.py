@@ -1,3 +1,4 @@
+import re
 import time
 from datetime import datetime
 from typing import Any
@@ -10,6 +11,7 @@ from ..protocol import Paper, extract_venue_from_text
 
 SEARCH_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
 RECOMMEND_URL = "https://api.semanticscholar.org/recommendations/v1/papers/forpaper"
+PAPER_URL = "https://api.semanticscholar.org/graph/v1/paper"
 FIELDS = "paperId,title,authors,abstract,url,venue,publicationDate,externalIds,citationCount,influentialCitationCount"
 TIMEOUT = (10, 30)
 
@@ -99,6 +101,34 @@ class SemanticScholarRetriever(BaseRetriever):
 
         logger.info(f"Retrieved {len(raw_papers)} raw papers from Semantic Scholar")
         return raw_papers
+
+    def retrieve_related(self, seed_urls: list[str], limit: int = 8) -> list[Paper]:
+        """Follows citations and references of seed papers for a second retrieval hop."""
+        if not seed_urls:
+            return []
+
+        raw_papers: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for url in seed_urls[:5]:
+            match = re.search(r"(?:arxiv\.org/abs/|huggingface\.co/papers/)([0-9.]+)", url or "")
+            if not match:
+                continue
+            paper_id = f"ARXIV:{match.group(1)}"
+            for relation in ("references", "citations"):
+                data = self._request_with_retry(
+                    f"{PAPER_URL}/{paper_id}/{relation}",
+                    {"fields": FIELDS, "limit": limit},
+                )
+                for item in (data or {}).get("data", []):
+                    paper = item.get("citedPaper") or item.get("citingPaper") or {}
+                    pid = paper.get("paperId")
+                    if pid and pid not in seen and paper.get("title"):
+                        seen.add(pid)
+                        raw_papers.append(paper)
+                time.sleep(1.0)
+
+        logger.info(f"Retrieved {len(raw_papers)} related papers from citation chasing")
+        return self.papers_from_raw(raw_papers)
 
     def convert_to_paper(self, raw_paper: dict[str, Any]) -> Paper | None:
         title = (raw_paper.get("title") or "").strip()

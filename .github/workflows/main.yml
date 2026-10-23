@@ -27,6 +27,7 @@ jobs:
       - name: Run Paper Daily pipeline
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          LLM_API_KEYS: ${{ secrets.LLM_API_KEYS }}
           OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
           FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
           FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}

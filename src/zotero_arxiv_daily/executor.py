@@ -14,8 +14,16 @@ from tqdm import tqdm
 
 from .construct_email import render_email
 from .interest import get_interest_corpus
+from .llm import LLMRouter
 from .paper_store import PaperStore
 from .protocol import CorpusPaper, Paper, TrendingItem
+from .research import (
+    ResearchState,
+    pick_seeds,
+    plan_queries,
+    suggest_next_questions,
+    synthesize_questions,
+)
 from .reranker import get_reranker_cls
 from .retriever import get_retriever_cls
 from .utils import glob_match, send_email, clean_paper_markdown
@@ -75,6 +83,16 @@ class Executor:
         store_path = config.get("paper_store", {}).get("path", "data/paper_store.json")
         self.paper_store = PaperStore(store_path)
         self._console_settings: Optional[dict[str, list[str]]] = None
+
+        # Deep-research loop: shared key pool, planner, synthesis and state
+        research_cfg = config.get("research") or {}
+        self.research_cfg = research_cfg
+        self.router = LLMRouter.from_config(config)
+        self.research_state = ResearchState(
+            str(research_cfg.get("state_path", "data/research_state.json"))
+        )
+        self.question_briefs: list[dict] = []
+        self.suggested_questions: list[str] = []
 
         # Academic translator for full text bilingual generation
         trans_cfg = config.get("translation")
@@ -180,14 +198,9 @@ class Executor:
         """Tracked QA list from the configured console provider."""
         return self.console().get("questions", [])
 
-    def _qa_llm(self) -> tuple[Optional[OpenAI], Optional[str]]:
-        """Prefers the main LLM, then the translation client, for question matching."""
-        if self.openai_client is not None:
-            model = self.config.llm.generation_kwargs.get("model")
-            return self.openai_client, str(model) if model else None
-        if self.translator is not None and getattr(self.translator, "client", None) is not None:
-            return self.translator.client, getattr(self.translator, "model", None)
-        return None, None
+    def _qa_llm(self) -> tuple[Any, Optional[str]]:
+        """Question matching uses the shared key pool."""
+        return self.router, self.router.model if self.router.available else None
 
     def match_tracked_questions(self, papers: list[Paper]) -> None:
         """Annotates each paper with the tracked questions it can answer."""
@@ -214,14 +227,11 @@ class Executor:
                 'Format: [{"question": 1, "answer": "..."}]'
             )
             try:
-                resp = client.chat.completions.create(
-                    model=model,
-                    messages=[{"role": "user", "content": prompt}],
-                    max_tokens=400,
-                    temperature=0.1,
-                    timeout=45,
+                raw = client.chat(
+                    [{"role": "user", "content": prompt}],
+                    max_tokens=900,
+                    timeout=60,
                 )
-                raw = resp.choices[0].message.content or ""
                 match = re.search(r"\[.*\]", raw, flags=re.DOTALL)
                 if not match:
                     return
@@ -1143,6 +1153,22 @@ class Executor:
             )
             return
 
+        # 2b. LLM query planning from the console's tags and questions
+        console_settings = self.console()
+        if self.research_cfg.get("enabled", True):
+            plan = plan_queries(
+                self.router,
+                console_settings.get("tags", []),
+                console_settings.get("questions", []),
+                [p.title for p in corpus[:10]],
+            )
+            if plan.get("s2_queries") and "semantic_scholar" in self.retrievers:
+                self.retrievers["semantic_scholar"].retriever_config.queries = plan["s2_queries"]
+                logger.info(f"Planned {len(plan['s2_queries'])} Semantic Scholar queries")
+            if plan.get("arxiv_categories") and "arxiv" in self.retrievers:
+                self.retrievers["arxiv"].retriever_config.category = plan["arxiv_categories"]
+                logger.info(f"Planned arXiv categories: {', '.join(plan['arxiv_categories'])}")
+
         all_papers: list[Paper] = []
         for source, retriever in self.retrievers.items():
             logger.info(f"Retrieving {source} papers...")
@@ -1166,6 +1192,18 @@ class Executor:
         # Academic Quality Gate (filter out obscure preprints without top affiliation or recognized venue)
         quality_papers = self.filter_quality_papers(new_papers)
         logger.info(f"{len(quality_papers)} / {len(new_papers)} papers passed academic quality gate")
+
+        # Multi-hop retrieval: chase citations of the most promising candidates
+        if self.research_cfg.get("enabled", True) and self.research_cfg.get("multi_hop", True):
+            seeds = pick_seeds(self.router, quality_papers[:20], int(self.research_cfg.get("max_seeds", 4)))
+            if seeds and "semantic_scholar" in self.retrievers:
+                related = self.retrievers["semantic_scholar"].retrieve_related(seeds)
+                if related:
+                    merged = self.paper_store.dedup(quality_papers + related)
+                    quality_papers = self.filter_quality_papers(
+                        self.paper_store.filter_already_pushed(merged)
+                    )
+                    logger.info(f"{len(quality_papers)} papers after citation chasing")
 
         # Quota allocation: balance papers and trending items to adhere to total_daily_quota (default 15)
         trends_cfg = self.config.get("news_and_trends") or {}
@@ -1203,6 +1241,21 @@ class Executor:
 
             logger.info("Matching papers against tracked questions...")
             self.match_tracked_questions(reranked_papers)
+
+            # Per-question synthesis and next-round question proposals
+            questions = console_settings.get("questions", [])
+            if self.research_cfg.get("synthesis", True) and questions:
+                self.question_briefs = synthesize_questions(self.router, questions, reranked_papers)
+                self.research_state.record(self.question_briefs)
+                logger.info(f"Wrote {len(self.question_briefs)} question briefs")
+
+                if self.research_cfg.get("next_questions", True):
+                    accepted = [p.title for p in reranked_papers if p.qa_matches]
+                    self.suggested_questions = suggest_next_questions(
+                        self.router, questions, self.question_briefs, accepted
+                    )
+                    if self.suggested_questions:
+                        logger.info(f"Proposed {len(self.suggested_questions)} next-round questions")
 
             # Log formatted summary to console
             logger.info(f"=== Recommended Papers ({len(reranked_papers)} papers) ===")
@@ -1287,7 +1340,18 @@ class Executor:
                 from .feishu import FeishuClient
                 client = FeishuClient(feishu_cfg)
 
-                doc_url = client.create_or_update_daily_report(reranked_papers, trending_items=trending_items)
+                doc_url = client.create_or_update_daily_report(
+                    reranked_papers,
+                    trending_items=trending_items,
+                    question_briefs=self.question_briefs,
+                )
+                if self.suggested_questions and self.config.get("console", {}).get("node_token"):
+                    try:
+                        client.append_suggested_questions(
+                            str(self.config.console.node_token), self.suggested_questions
+                        )
+                    except Exception as exc:
+                        logger.warning(f"Could not write suggested questions to console: {exc}")
                 logger.info(f"Feishu candidate document updated successfully: {doc_url}")
                 delivered = True
             except Exception as exc:

@@ -21,9 +21,7 @@ class BaseRetriever(ABC):
     def convert_to_paper(self, raw_paper:RawPaperItem) -> Paper | None:
         pass
 
-    def retrieve_papers(self) -> list[Paper]:
-        raw_papers = self._retrieve_raw_papers()
-        logger.info("Processing papers...")
+    def papers_from_raw(self, raw_papers: list[RawPaperItem]) -> list[Paper]:
         papers = []
         delay = float(self.retriever_config.get("conversion_delay", 0.0)) if hasattr(self, "retriever_config") and hasattr(self.retriever_config, "get") and self.retriever_config else 0.0
         for raw_paper in tqdm(raw_papers, total=len(raw_papers), desc="Converting papers"):
@@ -36,6 +34,11 @@ class BaseRetriever(ABC):
                 papers.append(paper)
             sleep(delay)
         return papers
+
+    def retrieve_papers(self) -> list[Paper]:
+        raw_papers = self._retrieve_raw_papers()
+        logger.info("Processing papers...")
+        return self.papers_from_raw(raw_papers)
 
 registered_retrievers = {}
 
