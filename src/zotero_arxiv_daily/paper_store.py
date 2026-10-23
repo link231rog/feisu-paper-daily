@@ -1,7 +1,7 @@
 import json
 import os
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Any
 
@@ -91,8 +91,15 @@ class PaperStore:
                 keep.tldr = drop.tldr
             if not getattr(keep, "venue", None) and getattr(drop, "venue", None):
                 keep.venue = drop.venue
-            # prefer earliest published_date
-            dates = [d for d in (keep.published_date, drop.published_date) if d is not None]
+            # prefer earliest published_date (normalize to naive UTC to avoid offset mismatch)
+            def _utc_naive(dt: Optional[datetime]) -> Optional[datetime]:
+                if dt is None:
+                    return None
+                if dt.tzinfo is not None:
+                    return dt.astimezone(timezone.utc).replace(tzinfo=None)
+                return dt
+
+            dates = [_utc_naive(d) for d in (keep.published_date, drop.published_date) if d is not None]
             keep.published_date = min(dates) if dates else None
             merged[key] = keep
         return list(merged.values())
