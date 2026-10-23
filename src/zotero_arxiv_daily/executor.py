@@ -1343,6 +1343,14 @@ class Executor:
                 logger.info("Extracting baseline comparisons and linking with library...")
                 enrich_papers_with_baselines(self.router, reranked_papers, corpus, max_workers=workers)
 
+            # In-line text annotation (direct paragraph highlights, baselines, claims, and critiques)
+            if self.research_cfg.get("inline_annotations", True):
+                from .annotator import enrich_papers_with_inline_annotations
+
+                workers = int(self.research_cfg.get("annotation_workers", 4))
+                logger.info("Generating in-line text annotations and review comments...")
+                enrich_papers_with_inline_annotations(self.router, reranked_papers, questions, max_workers=workers)
+
             # Per-question synthesis and next-round question proposals
             if self.research_cfg.get("synthesis", True) and questions:
                 self.question_briefs = synthesize_questions(self.router, questions, reranked_papers)
@@ -1444,6 +1452,7 @@ class Executor:
                     reranked_papers,
                     trending_items=trending_items,
                     question_briefs=self.question_briefs,
+                    corpus=corpus,
                 )
                 if self.suggested_questions and self.config.get("console", {}).get("node_token"):
                     try:

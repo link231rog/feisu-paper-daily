@@ -1250,6 +1250,7 @@ class FeishuClient:
         folder_token: Optional[str] = None,
         reading_plan: Optional[list[Any]] = None,
         question_briefs: Optional[list[dict]] = None,
+        corpus: Optional[list[CorpusPaper]] = None,
     ) -> str:
         """Publishes candidate papers and trending items into the persistent '候选文档' in Feishu Docx."""
         if self.dry_run:
@@ -1380,11 +1381,7 @@ class FeishuClient:
             else:
                 tldr_text = f"TL;DR: {en_summary}"
 
-            # English Abstract under TL;DR
-            if p.abstract and p.abstract.strip():
-                clean_abs = p.abstract.strip()
-                tldr_text += f"\n\n📄 英文摘要 (Abstract):\n{clean_abs}"
-
+            # 1. TL;DR text block
             children.append({
                 "block_type": 2,
                 "text": {
@@ -1394,82 +1391,104 @@ class FeishuClient:
                 }
             })
 
-            # Tracked-question matches (only when the console questions were answered)
-            if p.qa_matches:
-                qa_lines = ["🎯 关注问题匹配:"]
-                for match in p.qa_matches:
-                    qa_lines.append(f"Q: {match.get('question', '')}\nA: {match.get('answer', '')}")
+            # 2. In-line text annotation (direct paragraph highlights & comments)
+            if getattr(p, "inline_annotations", None):
+                from .annotator import build_annotated_text_elements
+
+                annotated_elements = build_annotated_text_elements(p, corpus=corpus, client=self)
                 children.append({
                     "block_type": 2,
                     "text": {
-                        "elements": [
-                            {"text_run": {"content": "\n".join(qa_lines) + "\n"}}
-                        ]
+                        "elements": annotated_elements
                     }
                 })
-
-            # Baseline analysis and bi-directional linking
-            if getattr(p, "baselines", None):
-                bl_elements: list[dict[str, Any]] = [
-                    {"text_run": {"content": "🔬 核心对比基线 (Baselines):\n"}}
-                ]
-                for b in p.baselines:
-                    name = b.get("name", "")
-                    venue = b.get("venue", "")
-                    venue_part = f" [{venue}]" if venue else ""
-                    summary = b.get("method_summary", "")
-                    comp = b.get("comparison", "")
-                    in_lib = b.get("in_library", False)
-                    b_doc_url = b.get("doc_url")
-                    b_doc_title = b.get("doc_title")
-
-                    bl_elements.append({
-                        "text_run": {
-                            "content": f"• {name}{venue_part}: ",
-                            "text_element_style": {"bold": True}
+            else:
+                # Fallback to plain English abstract and standalone cards
+                if p.abstract and p.abstract.strip():
+                    clean_abs = p.abstract.strip()
+                    children.append({
+                        "block_type": 2,
+                        "text": {
+                            "elements": [{"text_run": {"content": f"📄 英文摘要 (Abstract):\n{clean_abs}\n"}}]
                         }
                     })
-                    bl_elements.append({
-                        "text_run": {
-                            "content": f"{summary}\n  📊 对比: {comp}\n  "
+
+                # Tracked-question matches (only when the console questions were answered)
+                if p.qa_matches:
+                    qa_lines = ["🎯 关注问题匹配:"]
+                    for match in p.qa_matches:
+                        qa_lines.append(f"Q: {match.get('question', '')}\nA: {match.get('answer', '')}")
+                    children.append({
+                        "block_type": 2,
+                        "text": {
+                            "elements": [
+                                {"text_run": {"content": "\n".join(qa_lines) + "\n"}}
+                            ]
                         }
                     })
-                    if in_lib and b_doc_url:
-                        bl_elements.append({"text_run": {"content": "🟢 [已入库笔记: "}})
+
+                # Baseline analysis and bi-directional linking
+                if getattr(p, "baselines", None):
+                    bl_elements: list[dict[str, Any]] = [
+                        {"text_run": {"content": "🔬 核心对比基线 (Baselines):\n"}}
+                    ]
+                    for b in p.baselines:
+                        name = b.get("name", "")
+                        venue = b.get("venue", "")
+                        venue_part = f" [{venue}]" if venue else ""
+                        summary = b.get("method_summary", "")
+                        comp = b.get("comparison", "")
+                        in_lib = b.get("in_library", False)
+                        b_doc_url = b.get("doc_url")
+                        b_doc_title = b.get("doc_title")
+
                         bl_elements.append({
                             "text_run": {
-                                "content": f"{b_doc_title or name}",
-                                "text_element_style": {"link": {"url": b_doc_url}}
+                                "content": f"• {name}{venue_part}: ",
+                                "text_element_style": {"bold": True}
                             }
                         })
-                        bl_elements.append({"text_run": {"content": "]\n"}})
-                    elif b_doc_url:
-                        bl_elements.append({"text_run": {"content": "⚪ [未入库: "}})
                         bl_elements.append({
                             "text_run": {
-                                "content": "出处检索",
-                                "text_element_style": {"link": {"url": b_doc_url}}
+                                "content": f"{summary}\n  📊 对比: {comp}\n  "
                             }
                         })
-                        bl_elements.append({"text_run": {"content": "]\n"}})
-                    else:
-                        bl_elements.append({"text_run": {"content": "⚪ [未入库]\n"}})
+                        if in_lib and b_doc_url:
+                            bl_elements.append({"text_run": {"content": "🟢 [已入库笔记: "}})
+                            bl_elements.append({
+                                "text_run": {
+                                    "content": f"{b_doc_title or name}",
+                                    "text_element_style": {"link": {"url": b_doc_url}}
+                                }
+                            })
+                            bl_elements.append({"text_run": {"content": "]\n"}})
+                        elif b_doc_url:
+                            bl_elements.append({"text_run": {"content": "⚪ [未入库: "}})
+                            bl_elements.append({
+                                "text_run": {
+                                    "content": "出处检索",
+                                    "text_element_style": {"link": {"url": b_doc_url}}
+                                }
+                            })
+                            bl_elements.append({"text_run": {"content": "]\n"}})
+                        else:
+                            bl_elements.append({"text_run": {"content": "⚪ [未入库]\n"}})
 
-                    # Bi-directional backlink to the matched in-library document
-                    if in_lib and b.get("obj_token") and comp:
-                        self.append_baseline_backlink(
-                            b["obj_token"],
-                            referring_paper_title=p.title,
-                            referring_paper_url=p.url or "",
-                            comparison=comp,
-                        )
+                        # Bi-directional backlink to the matched in-library document
+                        if in_lib and b.get("obj_token") and comp:
+                            self.append_baseline_backlink(
+                                b["obj_token"],
+                                referring_paper_title=p.title,
+                                referring_paper_url=p.url or "",
+                                comparison=comp,
+                            )
 
-                children.append({
-                    "block_type": 2,
-                    "text": {
-                        "elements": bl_elements
-                    }
-                })
+                    children.append({
+                        "block_type": 2,
+                        "text": {
+                            "elements": bl_elements
+                        }
+                    })
 
         # 4b. Per-question research briefs (date-stamped so history stays readable)
         has_briefs = bool(question_briefs)

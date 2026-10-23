@@ -169,6 +169,7 @@ research:
   next_questions: ${oc.env:RESEARCH_NEXT_QUESTIONS,true}
   baselines: ${oc.env:RESEARCH_BASELINES,true}
   auto_backlink: ${oc.env:RESEARCH_AUTO_BACKLINK,true}
+  inline_annotations: ${oc.env:RESEARCH_INLINE_ANNOTATIONS,true}
   state_path: "data/research_state.json"
 
 

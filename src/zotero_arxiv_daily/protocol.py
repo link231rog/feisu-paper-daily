@@ -60,6 +60,7 @@ class Paper:
     qa_scores: Optional[dict[str, int]] = None  # {question: 0-10 relevance}
     judge_reason: Optional[str] = None  # why the final judge ranked it here
     baselines: Optional[list[dict]] = None  # [{"name": str, "method_summary": str, "venue": str, "comparison": str, ...}]
+    inline_annotations: Optional[list[dict]] = None  # [{"quote": str, "type": str, "comment": str, ...}]
 
     @property
     def published_year(self) -> Optional[int]:

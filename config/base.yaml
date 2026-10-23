@@ -382,5 +382,8 @@ research:
   baselines: true
   baseline_workers: 4
   auto_backlink: true
+  # In-line paragraph highlights, baseline tags, and review critiques
+  inline_annotations: true
+  annotation_workers: 4
 
 
