@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 from urllib.parse import quote
 
+import requests
 from loguru import logger
 
 from .baseline import match_baselines_with_corpus
@@ -13,12 +14,48 @@ from .llm import LLMRouter
 from .protocol import CorpusPaper, Paper
 
 
+def fetch_ar5iv_targeted_sections(arxiv_id: str) -> dict[str, str]:
+    """Fetches structured Method, Experiments & Limitations from ar5iv HTML without heavy PDF OCR."""
+    if not arxiv_id:
+        return {}
+
+    clean_id = re.sub(r"^arxiv:\s*", "", arxiv_id, flags=re.IGNORECASE).strip()
+    url = f"https://ar5iv.labs.arxiv.org/html/{clean_id}"
+    try:
+        resp = requests.get(url, timeout=12)
+        if resp.status_code != 200:
+            return {}
+        html = resp.text
+        sections = {"method": "", "experiments": "", "limitations": ""}
+        # Lightweight section regex parser
+        sec_pattern = re.compile(
+            r'<(?:section|div)[^>]*(?:class=["\'][^"\']*(?:ltx_section|ltx_subsection)[^"\']*)[^>]*>(.*?)</(?:section|div)>',
+            re.DOTALL | re.IGNORECASE,
+        )
+        for match in sec_pattern.finditer(html):
+            chunk = match.group(1)
+            # Find heading
+            h_match = re.search(r'<h[1-6][^>]*>(.*?)</h[1-6]>', chunk, re.DOTALL | re.IGNORECASE)
+            heading = re.sub(r'<[^>]+>', ' ', h_match.group(1)).strip().lower() if h_match else ""
+            body = re.sub(r'<[^>]+>', ' ', chunk).strip()[:5000]
+            if any(k in heading for k in ("method", "approach", "architecture", "framework")):
+                sections["method"] += body + "\n"
+            elif any(k in heading for k in ("experiment", "evaluation", "ablation", "result")):
+                sections["experiments"] += body + "\n"
+            elif any(k in heading for k in ("limitation", "discussion", "failure", "conclusion")):
+                sections["limitations"] += body + "\n"
+        return sections
+    except Exception as exc:
+        logger.debug(f"ar5iv section fetch skipped for {clean_id}: {exc}")
+        return {}
+
+
 def extract_inline_annotations(
     router: LLMRouter,
     paper: Paper,
     questions: list[str],
 ) -> list[dict[str, Any]]:
-    """Extracts exact quote spans and inline annotations (baseline, claim, critique) from paper abstract."""
+    """Extracts exact quote spans and inline annotations (baseline, claim, critique, counter) from paper abstract."""
     if not router.available or not paper.abstract:
         return []
 
@@ -29,15 +66,17 @@ def extract_inline_annotations(
         f"Title: {paper.title}\n"
         f"Abstract:\n{paper.abstract}\n\n"
         f"Tracked Questions:\n{q_list}\n\n"
-        "Identify 2 to 4 exact quotes from the abstract:\n"
+        "Identify 2 to 5 exact quotes from the abstract across 4 categories:\n"
         "1. baseline: exact phrase mentioning baseline methods (e.g. ReAct, MemGPT). Include canonical name, standard venue (e.g. ICLR 2023), and 1-sentence Chinese method mechanism.\n"
         "2. claim: exact sentence that provides empirical results or mechanisms answering a tracked question. Include 1-sentence Chinese answer.\n"
-        "3. critique: exact phrase of limitation, synthetic scope, or unverified assumption. Include 1-sentence Chinese critical review.\n\n"
+        "3. critique: exact phrase of limitation, synthetic scope, or unverified assumption. Include 1-sentence Chinese critical review.\n"
+        "4. counter: exact phrase presenting counter-evidence, negative results, or challenging a premise or baseline. Include 1-sentence Chinese counter analysis.\n\n"
         "Return JSON array ONLY:\n"
         "[\n"
         '  {"quote": "exact phrase from abstract", "type": "baseline", "name": "MemGPT", "venue": "arXiv 2023", "comment": "借鉴OS分页管理大模型记忆"},\n'
         '  {"quote": "exact phrase from abstract", "type": "claim", "comment": "选择性遗忘在多轮对话下降低漂移24%"},\n'
-        '  {"quote": "exact phrase from abstract", "type": "critique", "comment": "仅在合成环境测试，真实人机交互泛化性存疑"}\n'
+        '  {"quote": "exact phrase from abstract", "type": "critique", "comment": "仅在合成环境测试，真实人机交互泛化性存疑"},\n'
+        '  {"quote": "exact phrase from abstract", "type": "counter", "comment": "在长序列消融中观察到上下文重叠导致注意力坍塌"}\n'
         "]"
     )
 
@@ -180,8 +219,16 @@ def build_annotated_text_elements(
         ann_type = ann.get("type", "critique")
 
         # Visual highlights:
-        # baseline -> 5 (light green), claim -> 4 (light yellow), critique -> 3 (light orange)
-        bg_color = 5 if ann_type == "baseline" else (4 if ann_type == "claim" else 3)
+        # baseline -> 5 (light green), claim -> 4 (light yellow), counter -> 2 (light red), critique -> 3 (light orange)
+        if ann_type == "baseline":
+            bg_color = 5
+        elif ann_type == "claim":
+            bg_color = 4
+        elif ann_type == "counter":
+            bg_color = 2
+        else:
+            bg_color = 3
+
         elements.append({
             "text_run": {
                 "content": s["quote"],
@@ -203,9 +250,10 @@ def build_annotated_text_elements(
                 }
             })
             if ann.get("in_library") and ann.get("doc_url"):
+                badge_prefix = ann.get("library_badge", "").split(":")[0] + ":" if ":" in ann.get("library_badge", "") else "🟢 已入库:"
                 elements.append({
                     "text_run": {
-                        "content": f"🟢 已入库: {ann.get('doc_title') or ann.get('name')}",
+                        "content": f"{badge_prefix} {ann.get('doc_title') or ann.get('name')}",
                         "text_element_style": {
                             "text_color": 5,
                             "background_color": 1,
@@ -243,6 +291,18 @@ def build_annotated_text_elements(
             elements.append({
                 "text_run": {
                     "content": f" 🎯[核心发现: {comment}] ",
+                    "text_element_style": {
+                        "text_color": 2,  # red
+                        "background_color": 1,
+                        "bold": True,
+                    },
+                }
+            })
+
+        elif ann_type == "counter":
+            elements.append({
+                "text_run": {
+                    "content": f" ⚡[反例证据: {comment}] ",
                     "text_element_style": {
                         "text_color": 2,  # red
                         "background_color": 1,

@@ -133,6 +133,16 @@ uv run src/zotero_arxiv_daily/main.py
 
 3. 进入 **Actions** 页面，手动触发 **Feishu Paper Daily** 测试运行；流水线默认通过定时 Cron 每天自动执行推送。
 
+### 3. 交互式架构工作台 (Architecture Workbench)
+
+本项目附带一套完整的 React / Vite 架构诊断与重构沙盘看板（位于 `workbench/`），提供假设状态机 30 天推演、模块瓶颈 Diff 对照、四端数据映射与零污染工作流定制：
+
+```bash
+cd workbench
+bun install  # 或 npm install
+bun run dev  # 启动本地开发服务器预览看板 (http://localhost:3000)
+```
+
 ---
 
 ## ⚙️ 核心配置说明 (Configuration)

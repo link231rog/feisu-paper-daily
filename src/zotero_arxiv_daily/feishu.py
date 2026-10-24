@@ -1454,7 +1454,9 @@ class FeishuClient:
                             }
                         })
                         if in_lib and b_doc_url:
-                            bl_elements.append({"text_run": {"content": "🟢 [已入库笔记: "}})
+                            badge_lbl = b.get("library_badge", "🟢 [已入库笔记: ")
+                            prefix = (badge_lbl.split(":")[0] + ": ") if ":" in badge_lbl else "🟢 [已入库笔记: "
+                            bl_elements.append({"text_run": {"content": prefix}})
                             bl_elements.append({
                                 "text_run": {
                                     "content": f"{b_doc_title or name}",

@@ -1,5 +1,6 @@
 """Deep-research loop: query planning, seed chasing, per-question synthesis, next-round questions."""
 
+from enum import Enum
 import json
 import re
 from datetime import date, datetime, timedelta
@@ -10,6 +11,14 @@ from loguru import logger
 
 from .llm import LLMRouter
 from .protocol import Paper
+
+
+class HypothesisStatus(str, Enum):
+    """Lifecycle status of a research question/hypothesis."""
+    EXPLORING = "exploring"     # 🌱 探索期：双向搜集初步机制与基线
+    CONTESTED = "contested"     # ⚖️ 争议期：同时存在支持与反例证据，优先追踪
+    CONVERGED = "converged"     # ✅ 已收敛：证据链充分，降低频率并派生子问题
+    FALSIFIED = "falsified"     # ❌ 已证伪：核心假设被反例推翻，归档
 
 
 def _json_block(raw: str, default: Any) -> Any:
@@ -38,22 +47,34 @@ def plan_queries(
     questions: list[str],
     known_titles: list[str] | None = None,
 ) -> dict[str, list[str]]:
-    """Turns tracked tags and questions into this run's search plan."""
+    """Turns tracked tags and questions into affirmative and adversarial search queries."""
     if not router.available or not (tags or questions):
         return {"s2_queries": [], "arxiv_categories": []}
 
     prompt = (
-        "You plan literature search for a research assistant.\n"
+        "You plan literature search for an active scientific research assistant.\n"
         f"Tags: {', '.join(tags) or 'none'}\n"
         f"Questions:\n" + "\n".join(f"- {q}" for q in questions) + "\n"
         f"Already seen examples: {'; '.join((known_titles or [])[:10]) or 'none'}\n\n"
-        "Produce 4-6 specific English search queries that would surface papers answering "
-        "these questions, and 2-4 arXiv categories (e.g. cs.AI, cs.CL, cs.LG).\n"
-        "Return ONLY JSON: {\"s2_queries\": [...], \"arxiv_categories\": [...]}"
+        "Generate a dual search plan:\n"
+        "1. affirmative_s2: 3-4 queries targeting mechanisms, architectures, and positive SOTA benchmark results.\n"
+        "2. adversarial_s2: 2-3 counter-queries targeting failure modes, ablation degradation, scaling limits, or negative results that challenge assumptions.\n"
+        "3. arxiv_categories: 2-4 arXiv categories (e.g. cs.AI, cs.CL, cs.LG).\n\n"
+        "Return ONLY JSON:\n"
+        '{"affirmative_s2": [...], "adversarial_s2": [...], "arxiv_categories": [...]}'
     )
-    data = _json_block(router.chat([{"role": "user", "content": prompt}], max_tokens=1200), {})
+    data = _json_block(router.chat([{"role": "user", "content": prompt}], max_tokens=1400), {})
+    pos = [str(q) for q in data.get("affirmative_s2", []) if str(q).strip()][:4]
+    neg = [str(q) for q in data.get("adversarial_s2", []) if str(q).strip()][:3]
+    # Fallback if model returns legacy s2_queries key
+    if not pos and not neg and data.get("s2_queries"):
+        pos = [str(q) for q in data.get("s2_queries", []) if str(q).strip()][:6]
+
+    combined = pos + neg
     return {
-        "s2_queries": [str(q) for q in data.get("s2_queries", []) if str(q).strip()][:6],
+        "s2_queries": combined[:7],
+        "affirmative_s2": pos,
+        "adversarial_s2": neg,
         "arxiv_categories": [str(c) for c in data.get("arxiv_categories", []) if str(c).strip()][:4],
     }
 
@@ -81,7 +102,7 @@ def pick_seeds(router: LLMRouter, papers: list[Paper], limit: int = 4) -> list[s
 
 
 def synthesize_questions(router: LLMRouter, questions: list[str], papers: list[Paper]) -> list[dict]:
-    """Writes one evidence brief per tracked question, with citations and gaps."""
+    """Writes one evidence brief per tracked question, identifying both supporting and counter evidence."""
     if not router.available or not questions or not papers:
         return []
 
@@ -90,12 +111,15 @@ def synthesize_questions(router: LLMRouter, questions: list[str], papers: list[P
     for question in questions[:5]:
         prompt = (
             f"Research question: {question}\n\nToday's candidate papers:\n{digest}\n\n"
-            "Write a short Chinese brief (120-200 字) on what today's papers contribute to this "
-            "question: the main findings, which papers support them (cite titles), and what "
-            "remains unanswered. If nothing is relevant, say so plainly.\n"
-            'Return ONLY JSON: {"summary": "...", "evidence": [{"title": "...", "url": "..."}], "gap": "..."}'
+            "Write a concise Chinese brief (120-220 字) analyzing today's evidence for this question:\n"
+            "1. summary: Core progress and whether evidence is affirmative, disputed, or negative.\n"
+            "2. evidence: Supporting papers (title, url).\n"
+            "3. counter_evidence: Papers showing failure modes, limitations, or counter-results (title, url).\n"
+            "4. gap: What remains unanswered or debated.\n"
+            "5. status: One of 'exploring' (preliminary), 'contested' (debated/opposing views), 'converged' (strongly answered), 'falsified' (refuted).\n\n"
+            'Return ONLY JSON: {"summary": "...", "evidence": [{"title": "...", "url": "..."}], "counter_evidence": [{"title": "...", "url": "..."}], "gap": "...", "status": "..."}'
         )
-        data = _json_block(router.chat([{"role": "user", "content": prompt}], max_tokens=1500), {})
+        data = _json_block(router.chat([{"role": "user", "content": prompt}], max_tokens=1600), {})
         summary = str(data.get("summary", "")).strip()
         if not summary:
             continue
@@ -104,12 +128,19 @@ def synthesize_questions(router: LLMRouter, questions: list[str], papers: list[P
             for e in data.get("evidence", [])
             if isinstance(e, dict) and e.get("title")
         ]
+        counter = [
+            {"title": str(c.get("title", "")), "url": str(c.get("url", ""))}
+            for c in data.get("counter_evidence", [])
+            if isinstance(c, dict) and c.get("title")
+        ]
         briefs.append(
             {
                 "question": question,
                 "summary": summary,
                 "evidence": evidence,
+                "counter_evidence": counter,
                 "gap": str(data.get("gap", "")).strip(),
+                "status": str(data.get("status", "exploring")).strip().lower(),
             }
         )
     return briefs
@@ -148,8 +179,21 @@ def suggest_next_questions(
 
 
 def question_weights(state: "ResearchState", questions: list[str]) -> dict[str, float]:
-    """Downweights questions whose evidence has gone stale so others get a turn."""
-    return {q: (0.6 if state.saturated(q) else 1.0) for q in questions}
+    """Weights questions dynamically based on their hypothesis status and saturation."""
+    weights = {}
+    for q in questions:
+        status = state.get_status(q)
+        if status == HypothesisStatus.CONTESTED:
+            weights[q] = 1.35  # prioritize unresolved debate
+        elif status == HypothesisStatus.CONVERGED:
+            weights[q] = 0.35  # lower frequency for resolved problems
+        elif status == HypothesisStatus.FALSIFIED:
+            weights[q] = 0.1   # minimal for abandoned hypotheses
+        elif state.saturated(q):
+            weights[q] = 0.6   # decay stale exploring questions
+        else:
+            weights[q] = 1.0
+    return weights
 
 
 def judge_ranking(router: LLMRouter, questions: list[str], papers: list[Paper]) -> list[int]:
@@ -192,7 +236,7 @@ def judge_ranking(router: LLMRouter, questions: list[str], papers: list[Paper]) 
 
 
 class ResearchState:
-    """Tracks per-question evidence so saturated directions can pivot."""
+    """Tracks per-question evidence and hypothesis state machine across daily runs."""
 
     def __init__(self, path: str = "data/research_state.json"):
         self.path = Path(path)
@@ -203,17 +247,46 @@ class ResearchState:
             except (OSError, json.JSONDecodeError):
                 logger.warning(f"Could not read research state at {self.path}; starting fresh")
 
+    def get_status(self, question: str) -> HypothesisStatus:
+        raw = (self.data.get("questions", {}).get(question, {}).get("status") or "").lower()
+        for s in HypothesisStatus:
+            if s.value == raw:
+                return s
+        return HypothesisStatus.EXPLORING
+
     def record(self, briefs: list[dict]) -> None:
         today = date.today().isoformat()
         for brief in briefs:
             entry = self.data.setdefault("questions", {}).setdefault(
-                brief["question"], {"evidence_days": [], "last_count": 0, "gap": ""}
+                brief["question"], {
+                    "evidence_days": [],
+                    "last_count": 0,
+                    "gap": "",
+                    "status": HypothesisStatus.EXPLORING.value,
+                    "supporting_count": 0,
+                    "counter_count": 0,
+                }
             )
             count = len(brief.get("evidence", []))
+            counter_count = len(brief.get("counter_evidence", []))
             if count and (not entry["evidence_days"] or entry["evidence_days"][-1] != today):
                 entry["evidence_days"].append(today)
             entry["last_count"] = count
+            entry["supporting_count"] = entry.get("supporting_count", 0) + count
+            entry["counter_count"] = entry.get("counter_count", 0) + counter_count
             entry["gap"] = brief.get("gap", "")
+
+            # Dynamic Hypothesis Status Transition
+            suggested_status = brief.get("status")
+            if suggested_status in [s.value for s in HypothesisStatus]:
+                entry["status"] = suggested_status
+            elif entry["counter_count"] > 0 and entry["supporting_count"] > 0:
+                entry["status"] = HypothesisStatus.CONTESTED.value
+            elif entry["supporting_count"] >= 6 and not entry.get("gap"):
+                entry["status"] = HypothesisStatus.CONVERGED.value
+            else:
+                entry["status"] = entry.get("status", HypothesisStatus.EXPLORING.value)
+
             entry["updated"] = datetime.now().isoformat(timespec="seconds")
         self.save()
 

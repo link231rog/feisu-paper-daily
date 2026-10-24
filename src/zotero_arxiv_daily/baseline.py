@@ -72,6 +72,35 @@ def _normalize_title(text: str) -> str:
     return re.sub(r"[^a-zA-Z0-9\u4e00-\u9fff]", "", text).lower()
 
 
+def resolve_library_link(cp: CorpusPaper) -> dict[str, str]:
+    """Generates native deep-links, badges, and wikilinks across Feishu, Notion, Zotero, and Obsidian."""
+    path_str = "/".join(cp.paths or []).lower()
+    if "obsidian" in path_str:
+        return {
+            "badge": f"🟣 [Obsidian已入库: {cp.title}]",
+            "uri": cp.url or "",
+            "wikilink": f"[[{cp.title}]]",
+            "source": "obsidian",
+        }
+    if "notion" in path_str:
+        return {
+            "badge": f"⚫ [Notion已入库: {cp.title}]",
+            "uri": cp.url or "",
+            "source": "notion",
+        }
+    if "zotero" in path_str:
+        return {
+            "badge": f"🔴 [Zotero已入库: {cp.title}]",
+            "uri": cp.url or "",
+            "source": "zotero",
+        }
+    return {
+        "badge": f"🟢 [飞书已入库: {cp.title}]",
+        "uri": cp.url or (f"https://feishu.cn/wiki/{cp.node_token}" if cp.node_token else ""),
+        "source": "feishu",
+    }
+
+
 def match_baselines_with_corpus(
     baselines: list[dict[str, Any]],
     corpus: list[CorpusPaper],
@@ -109,13 +138,17 @@ def match_baselines_with_corpus(
 
         item = dict(b)
         if matched_cp is not None:
+            lib_info = resolve_library_link(matched_cp)
             item["in_library"] = True
             item["doc_title"] = matched_cp.title
-            item["doc_url"] = matched_cp.url or (
+            item["doc_url"] = lib_info["uri"] or (
                 f"https://feishu.cn/wiki/{matched_cp.node_token}"
                 if matched_cp.node_token
                 else None
             )
+            item["library_badge"] = lib_info["badge"]
+            item["library_source"] = lib_info.get("source", "feishu")
+            item["wikilink"] = lib_info.get("wikilink")
             item["node_token"] = getattr(matched_cp, "node_token", None)
             item["obj_token"] = getattr(matched_cp, "obj_token", None)
         else:
@@ -123,6 +156,9 @@ def match_baselines_with_corpus(
             item["doc_title"] = None
             search_query = quote(f"{name} {b.get('venue', '')}".strip())
             item["doc_url"] = f"https://www.semanticscholar.org/search?q={search_query}"
+            item["library_badge"] = "⚪ [未入库: 出处检索]"
+            item["library_source"] = None
+            item["wikilink"] = None
             item["node_token"] = None
             item["obj_token"] = None
 

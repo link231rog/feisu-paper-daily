@@ -385,5 +385,8 @@ research:
   # In-line paragraph highlights, baseline tags, and review critiques
   inline_annotations: true
   annotation_workers: 4
+  # Active hypothesis and adversarial querying
+  adversarial_queries: true
+  full_text_ar5iv: true
 
 

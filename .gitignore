@@ -33,4 +33,11 @@ data/
 .pytest_cache/
 htmlcov/
 *.log
-.hydra/
+# Node / Workbench
+node_modules/
+workbench/node_modules/
+workbench/dist/
+workbench/.env.local
+
+# Archives
+*.zip

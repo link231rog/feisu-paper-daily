@@ -1255,7 +1255,12 @@ class Executor:
             )
             if plan.get("s2_queries") and "semantic_scholar" in self.retrievers:
                 self.retrievers["semantic_scholar"].retriever_config.queries = plan["s2_queries"]
-                logger.info(f"Planned {len(plan['s2_queries'])} Semantic Scholar queries")
+                pos_cnt = len(plan.get("affirmative_s2", []))
+                neg_cnt = len(plan.get("adversarial_s2", []))
+                logger.info(
+                    f"Planned {len(plan['s2_queries'])} S2 queries "
+                    f"({pos_cnt} affirmative, {neg_cnt} adversarial counter-queries)"
+                )
             if plan.get("arxiv_categories") and "arxiv" in self.retrievers:
                 self.retrievers["arxiv"].retriever_config.category = plan["arxiv_categories"]
                 logger.info(f"Planned arXiv categories: {', '.join(plan['arxiv_categories'])}")
