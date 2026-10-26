@@ -51,6 +51,11 @@ class AcademicTranslator:
             self._disabled = True
             logger.error("Translation endpoint keeps failing; keeping source text for the rest of this run")
 
+    @staticmethod
+    def _is_rate_limit(exc: Exception) -> bool:
+        low = str(exc).lower()
+        return any(m in low for m in ("429", "concurrency limit", "rate limit", "too many requests"))
+
     def translate_batch(self, paragraphs: list[str]) -> list[str]:
         """Translates a batch of English paragraphs into academic Chinese using GLM-5.3."""
         if not paragraphs or not self.client or self._disabled:
@@ -90,8 +95,12 @@ class AcademicTranslator:
                     return translations
             except Exception as exc:
                 logger.warning(f"Translation batch attempt {attempt + 1} failed: {exc}")
+                # Overload is transient: back off instead of disabling translation for the run.
+                if self._is_rate_limit(exc):
+                    time.sleep(2 + attempt * 3)
+                    continue
                 self._record_failure()
-                if "403" in str(exc) or "429" in str(exc):
+                if "403" in str(exc):
                     if self._switch_to_backup_key():
                         continue
                 time.sleep(2)
@@ -137,8 +146,11 @@ class AcademicTranslator:
                 return raw
             except Exception as exc:
                 logger.warning(f"Single translation failed: {exc}")
+                if self._is_rate_limit(exc):
+                    time.sleep(2 + attempt * 3)
+                    continue
                 self._record_failure()
-                if "403" in str(exc) or "429" in str(exc):
+                if "403" in str(exc):
                     if self._switch_to_backup_key():
                         continue
                 time.sleep(2)

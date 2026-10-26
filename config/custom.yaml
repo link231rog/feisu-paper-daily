@@ -49,6 +49,7 @@ llm:
     key: ${oc.env:OPENAI_API_KEY,null}
     keys: ${oc.env:LLM_API_KEYS,null}
     base_url: ${oc.env:OPENAI_API_BASE,${oc.env:TRANSLATION_API_BASE,https://hkg.toklens.ai/v1}}
+    max_concurrency: ${oc.env:LLM_MAX_CONCURRENCY,8}
   api_mode: chat_completion
   generation_kwargs:
     model: ${oc.env:OPENAI_MODEL,${oc.env:TRANSLATION_MODEL,deepseek-v4.1-flash}}

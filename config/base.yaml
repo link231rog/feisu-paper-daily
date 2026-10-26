@@ -50,6 +50,7 @@ llm:
     key: null # API Key of your LLM API. Example: sk-xxx
     keys: null # Optional list of API keys, rotated when one is rate limited
     base_url: null # API URL of your LLM API. Example: https://api.openai.com/v1
+    max_concurrency: 8 # In-flight requests per run; higher trips the provider's per-key limit
   api_mode: chat_completion # The LLM API to use. Options: chat_completion or response.
   generation_kwargs:
     max_tokens: 16384

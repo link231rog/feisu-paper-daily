@@ -1,6 +1,8 @@
 """Shared LLM access with key rotation across the free API pool."""
 
+import random
 import threading
+import time
 from typing import Any
 
 from loguru import logger
@@ -8,6 +10,16 @@ from openai import OpenAI
 
 DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1"
 DEFAULT_MODEL = "z-ai/glm-5.3-flash"
+DEFAULT_MAX_CONCURRENCY = 8
+_MAX_RATE_LIMIT_RETRIES = 6
+_RATE_LIMIT_BACKOFF_CAP = 12.0
+
+_RATE_LIMIT_MARKERS = ("429", "concurrency limit", "rate limit", "too many requests")
+
+
+def _is_rate_limit(detail: str) -> bool:
+    low = detail.lower()
+    return any(marker in low for marker in _RATE_LIMIT_MARKERS)
 
 
 def _as_list(value: Any) -> list[str]:
@@ -21,12 +33,19 @@ def _as_list(value: Any) -> list[str]:
 class LLMRouter:
     """Rotates through API keys so one exhausted key does not stop the run."""
 
-    def __init__(self, keys: list[str], base_url: str = DEFAULT_BASE_URL, model: str = DEFAULT_MODEL):
+    def __init__(
+        self,
+        keys: list[str],
+        base_url: str = DEFAULT_BASE_URL,
+        model: str = DEFAULT_MODEL,
+        max_concurrency: int = DEFAULT_MAX_CONCURRENCY,
+    ):
         self.keys = [k for k in keys if k]
         self.base_url = base_url or DEFAULT_BASE_URL
         self.model = model or DEFAULT_MODEL
         self._index = 0
         self._lock = threading.Lock()
+        self._sem = threading.BoundedSemaphore(max(1, int(max_concurrency)))
         self._clients: dict[str, OpenAI] = {}
         # Circuit breaker: a dead endpoint must not make every later call wait for its timeout
         self._failures = 0
@@ -45,6 +64,7 @@ class LLMRouter:
             keys,
             base_url=str(api_cfg.get("base_url") or trans_cfg.get("api_base") or DEFAULT_BASE_URL),
             model=str((llm_cfg.get("generation_kwargs") or {}).get("model") or trans_cfg.get("model") or DEFAULT_MODEL),
+            max_concurrency=int(api_cfg.get("max_concurrency") or DEFAULT_MAX_CONCURRENCY),
         )
 
     @property
@@ -53,7 +73,7 @@ class LLMRouter:
 
     def _record_failure(self) -> None:
         self._failures += 1
-        if self._failures >= max(2, len(self.keys)) and not self._dead:
+        if self._failures >= max(3, len(self.keys) * 2) and not self._dead:
             self._dead = True
             logger.error(
                 "LLM endpoint failed repeatedly; skipping remaining LLM work for this run "
@@ -77,6 +97,7 @@ class LLMRouter:
             return ""
 
         attempts = 0
+        rate_limit_hits = 0
         while attempts < max(len(self.keys), 1):
             with self._lock:
                 if not self.keys:
@@ -85,18 +106,30 @@ class LLMRouter:
             attempts += 1
             for boost in (1, 2):
                 try:
-                    resp = self._client(key).chat.completions.create(
-                        model=self.model,
-                        messages=messages,
-                        max_tokens=max_tokens * boost,
-                        temperature=temperature,
-                        timeout=timeout,
-                    )
+                    # The provider rejects bursts over its per-key concurrency cap,
+                    # so in-flight calls are gated here rather than by thread count.
+                    with self._sem:
+                        resp = self._client(key).chat.completions.create(
+                            model=self.model,
+                            messages=messages,
+                            max_tokens=max_tokens * boost,
+                            temperature=temperature,
+                            timeout=timeout,
+                        )
                 except Exception as exc:
+                    detail = str(exc)
+                    if _is_rate_limit(detail) and rate_limit_hits < _MAX_RATE_LIMIT_RETRIES:
+                        # Transient overload: back off and retry without blaming the endpoint.
+                        rate_limit_hits += 1
+                        attempts -= 1
+                        delay = min(_RATE_LIMIT_BACKOFF_CAP, 0.6 * (2 ** rate_limit_hits))
+                        time.sleep(delay + random.uniform(0, 0.4))
+                        logger.debug(f"LLM concurrency limit hit; backing off {delay:.1f}s then retrying")
+                        continue
                     logger.warning(f"LLM call failed with a pooled key: {exc}")
                     self._record_failure()
                     with self._lock:
-                        if "401" in str(exc) or "403" in str(exc):
+                        if "401" in detail or "403" in detail:
                             if key in self.keys:
                                 self.keys.remove(key)
                             self._index = 0
