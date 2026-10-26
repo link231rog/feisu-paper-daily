@@ -67,10 +67,10 @@ jobs:
           FORCE_RERUN_TODAY: ${{ inputs.force_today && 'true' || 'false' }}
           SEMANTIC_SCHOLAR_API_KEY: ${{ secrets.SEMANTIC_SCHOLAR_API_KEY }}
           TRANSLATION_ENABLED: ${{ vars.TRANSLATION_ENABLED || 'true' }}
-          TRANSLATION_API_BASE: ${{ vars.TRANSLATION_API_BASE || 'https://hkg.toklens.ai/v1' }}
+          TRANSLATION_API_BASE: ${{ vars.TRANSLATION_API_BASE || 'https://openrouter.ai/api/v1' }}
           TRANSLATION_API_KEY: ${{ secrets.TRANSLATION_API_KEY }}
           TRANSLATION_BACKUP_API_KEY: ${{ secrets.TRANSLATION_BACKUP_API_KEY }}
-          TRANSLATION_MODEL: ${{ vars.TRANSLATION_MODEL || 'deepseek-v4.1-flash' }}
+          TRANSLATION_MODEL: ${{ vars.TRANSLATION_MODEL || 'deepseek/deepseek-chat' }}
           CUSTOM_CONFIG: ${{ secrets.CUSTOM_CONFIG }}
           EMAIL_ENABLED: ${{ vars.EMAIL_ENABLED || 'true' }}
           SENDER: ${{ secrets.SENDER }}
