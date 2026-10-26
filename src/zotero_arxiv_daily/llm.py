@@ -23,11 +23,13 @@ def _is_rate_limit(detail: str) -> bool:
 
 
 def _as_list(value: Any) -> list[str]:
-    if not value:
+    if not value or str(value).strip().lower() in ("none", "null", ""):
         return []
     if isinstance(value, str):
-        return [part.strip() for part in value.split(",") if part.strip()]
-    return [str(part).strip() for part in value if str(part).strip()]
+        items = [part.strip() for part in value.split(",") if part.strip()]
+    else:
+        items = [str(part).strip() for part in value if str(part).strip()]
+    return [i for i in items if i and i.lower() not in ("none", "null")]
 
 
 class LLMRouter:
@@ -38,11 +40,13 @@ class LLMRouter:
         keys: list[str],
         base_url: str = DEFAULT_BASE_URL,
         model: str = DEFAULT_MODEL,
+        models: list[str] | None = None,
         max_concurrency: int = DEFAULT_MAX_CONCURRENCY,
     ):
         self.keys = [k for k in keys if k]
         self.base_url = base_url or DEFAULT_BASE_URL
         self.model = model or DEFAULT_MODEL
+        self.models = [m for m in (models or [self.model]) if m]
         self._index = 0
         self._lock = threading.Lock()
         self._sem = threading.BoundedSemaphore(max(1, int(max_concurrency)))
@@ -60,10 +64,18 @@ class LLMRouter:
         for extra in (trans_cfg.get("api_key"), trans_cfg.get("backup_api_key")):
             if extra and str(extra) not in keys:
                 keys.append(str(extra))
+
+        primary_model = str((llm_cfg.get("generation_kwargs") or {}).get("model") or trans_cfg.get("model") or DEFAULT_MODEL)
+        backup_model = str(llm_cfg.get("backup_model") or trans_cfg.get("backup_model") or "")
+        models = [primary_model]
+        if backup_model and backup_model not in models:
+            models.append(backup_model)
+
         return cls(
             keys,
             base_url=str(api_cfg.get("base_url") or trans_cfg.get("api_base") or DEFAULT_BASE_URL),
-            model=str((llm_cfg.get("generation_kwargs") or {}).get("model") or trans_cfg.get("model") or DEFAULT_MODEL),
+            model=primary_model,
+            models=models,
             max_concurrency=int(api_cfg.get("max_concurrency") or DEFAULT_MAX_CONCURRENCY),
         )
 
@@ -106,16 +118,26 @@ class LLMRouter:
             attempts += 1
             for boost in (1, 2):
                 try:
+                    # Allocate enough tokens so reasoning models don't exhaust budget before outputting content
+                    call_max_tokens = max(max_tokens, 3000) * boost
+                    extra_body = {}
+                    if self.models and len(self.models) > 1:
+                        extra_body["models"] = self.models
+
+                    call_kwargs: dict[str, Any] = {
+                        "model": self.model,
+                        "messages": messages,
+                        "max_tokens": call_max_tokens,
+                        "temperature": temperature,
+                        "timeout": max(timeout, 90),
+                    }
+                    if extra_body:
+                        call_kwargs["extra_body"] = extra_body
+
                     # The provider rejects bursts over its per-key concurrency cap,
                     # so in-flight calls are gated here rather than by thread count.
                     with self._sem:
-                        resp = self._client(key).chat.completions.create(
-                            model=self.model,
-                            messages=messages,
-                            max_tokens=max_tokens * boost,
-                            temperature=temperature,
-                            timeout=timeout,
-                        )
+                        resp = self._client(key).chat.completions.create(**call_kwargs)
                 except Exception as exc:
                     detail = str(exc)
                     if _is_rate_limit(detail) and rate_limit_hits < _MAX_RATE_LIMIT_RETRIES:

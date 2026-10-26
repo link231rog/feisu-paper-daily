@@ -22,6 +22,10 @@ class AcademicTranslator:
         self.api_key = cfg.get("api_key") or os.getenv("TRANSLATION_API_KEY", "")
         self.backup_api_key = cfg.get("backup_api_key") or os.getenv("TRANSLATION_BACKUP_API_KEY", "")
         self.model = cfg.get("model") or os.getenv("TRANSLATION_MODEL", "z-ai/glm-5.3-flash")
+        self.backup_model = cfg.get("backup_model") or os.getenv("TRANSLATION_BACKUP_MODEL", "")
+        self.models = [self.model]
+        if self.backup_model and self.backup_model != self.model:
+            self.models.append(self.backup_model)
         self.layout = cfg.get("layout") or os.getenv("TRANSLATION_LAYOUT", "quote")
         self.batch_size = int(cfg.get("batch_size") or os.getenv("TRANSLATION_BATCH_SIZE", 3))
 
@@ -78,16 +82,23 @@ class AcademicTranslator:
 
         for attempt in range(2):
             try:
-                resp = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[
+                extra_body = {}
+                if len(self.models) > 1:
+                    extra_body["models"] = self.models
+                create_kwargs: dict[str, Any] = {
+                    "model": self.model,
+                    "messages": [
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_content},
                     ],
-                    max_tokens=4096,
-                    temperature=0.1,
-                    timeout=60,
-                )
+                    "max_tokens": 4096,
+                    "temperature": 0.1,
+                    "timeout": 90,
+                }
+                if extra_body:
+                    create_kwargs["extra_body"] = extra_body
+
+                resp = self.client.chat.completions.create(**create_kwargs)
                 self._failures = 0
                 raw_out = resp.choices[0].message.content or ""
                 translations = self._parse_batch_response(raw_out, len(paragraphs))
@@ -128,21 +139,32 @@ class AcademicTranslator:
 
         for attempt in range(2):
             try:
-                resp = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[
+                extra_body = {}
+                if len(self.models) > 1:
+                    extra_body["models"] = self.models
+                create_kwargs: dict[str, Any] = {
+                    "model": self.model,
+                    "messages": [
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": text},
                     ],
-                    max_tokens=4096,
-                    temperature=0.1,
-                    timeout=45,
-                )
+                    "max_tokens": 4096,
+                    "temperature": 0.1,
+                    "timeout": 90,
+                }
+                if extra_body:
+                    create_kwargs["extra_body"] = extra_body
+
+                resp = self.client.chat.completions.create(**create_kwargs)
                 self._failures = 0
                 raw = (resp.choices[0].message.content or "").strip()
                 raw = re.sub(r"^\*{0,2}译文[：:]\*{0,2}\s*", "", raw)
                 if "\n\n**术语说明" in raw or "\n\n术语说明" in raw:
                     raw = re.split(r"\n\n\*{0,2}术语说明", raw)[0].strip()
+                if "\n\n---" in raw:
+                    raw = raw.split("\n\n---")[0].strip()
+                # If wrapped in **bold**, clean it up
+                raw = re.sub(r"^\*\*(.*?)\*\*$", r"\1", raw).strip()
                 return raw
             except Exception as exc:
                 logger.warning(f"Single translation failed: {exc}")

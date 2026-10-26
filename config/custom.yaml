@@ -49,10 +49,11 @@ llm:
     key: ${oc.env:OPENAI_API_KEY,null}
     keys: ${oc.env:LLM_API_KEYS,null}
     base_url: ${oc.env:OPENAI_API_BASE,${oc.env:TRANSLATION_API_BASE,https://openrouter.ai/api/v1}}
-    max_concurrency: ${oc.env:LLM_MAX_CONCURRENCY,12}
+    max_concurrency: ${oc.env:LLM_MAX_CONCURRENCY,8}
   api_mode: chat_completion
   generation_kwargs:
-    model: ${oc.env:OPENAI_MODEL,${oc.env:TRANSLATION_MODEL,deepseek/deepseek-chat}}
+    model: ${oc.env:OPENAI_MODEL,${oc.env:TRANSLATION_MODEL,nvidia/nemotron-3-ultra-550b-a55b:free}}
+  backup_model: ${oc.env:OPENAI_BACKUP_MODEL,${oc.env:TRANSLATION_BACKUP_MODEL,xingchen-agi/xing4.0-29b-a4b:free}}
   language: Chinese
 
 translation:
@@ -60,7 +61,8 @@ translation:
   api_base: ${oc.env:TRANSLATION_API_BASE,https://openrouter.ai/api/v1}
   api_key: ${oc.env:TRANSLATION_API_KEY,null}
   backup_api_key: ${oc.env:TRANSLATION_BACKUP_API_KEY,null}
-  model: ${oc.env:TRANSLATION_MODEL,deepseek/deepseek-chat}
+  model: ${oc.env:TRANSLATION_MODEL,nvidia/nemotron-3-ultra-550b-a55b:free}
+  backup_model: ${oc.env:TRANSLATION_BACKUP_MODEL,xingchen-agi/xing4.0-29b-a4b:free}
   layout: ${oc.env:TRANSLATION_LAYOUT,quote}
   batch_size: ${oc.env:TRANSLATION_BATCH_SIZE,5}
 

@@ -70,7 +70,8 @@ jobs:
           TRANSLATION_API_BASE: ${{ vars.TRANSLATION_API_BASE || 'https://openrouter.ai/api/v1' }}
           TRANSLATION_API_KEY: ${{ secrets.TRANSLATION_API_KEY }}
           TRANSLATION_BACKUP_API_KEY: ${{ secrets.TRANSLATION_BACKUP_API_KEY }}
-          TRANSLATION_MODEL: ${{ vars.TRANSLATION_MODEL || 'deepseek/deepseek-chat' }}
+          TRANSLATION_MODEL: ${{ vars.TRANSLATION_MODEL || 'nvidia/nemotron-3-ultra-550b-a55b:free' }}
+          TRANSLATION_BACKUP_MODEL: ${{ vars.TRANSLATION_BACKUP_MODEL || 'xingchen-agi/xing4.0-29b-a4b:free' }}
           CUSTOM_CONFIG: ${{ secrets.CUSTOM_CONFIG }}
           EMAIL_ENABLED: ${{ vars.EMAIL_ENABLED || 'true' }}
           SENDER: ${{ secrets.SENDER }}
