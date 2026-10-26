@@ -42,33 +42,24 @@ jobs:
               for i, p in enumerate(parts):
                   print(f"  {name}#{i+1}", hashlib.sha256(p.encode()).hexdigest()[:12], "len", len(p))
           PY
-          for U in \
-            https://integrate.api.nvidia.com/v1/models \
-            https://api.deepseek.com/v1/models \
-            https://openrouter.ai/api/v1/models \
-            https://api.siliconflow.cn/v1/models \
-            https://dashscope.aliyuncs.com/compatible-mode/v1/models \
-            https://api.openai.com/v1/models \
-            https://api.moonshot.cn/v1/models ; do
-            printf '%-60s ' "$U"
-            curl -sS -o /dev/null -w 'http=%{http_code} dns=%{time_namelookup}s connect=%{time_connect}s tls=%{time_appconnect}s total=%{time_total}s\n' \
-              --max-time 12 "$U" || echo "curl exit=$?"
-          done
           FIRST=$(printf '%s' "$LLM_API_KEYS" | tr ',' '\n' | head -1)
           AUTH="Authorization: Bearer $FIRST"
-          printf 'POST /models (expect 405): '
-          curl -sS -o /dev/null -w 'http=%{http_code} time=%{time_total}s\n' --max-time 15 -X POST -H "$AUTH" "$BASE/models" || echo "curl exit=$?"
-          printf 'POST llama-3.1-8b (30s):    '
-          curl -sS -o /tmp/llama.txt -w 'http=%{http_code} time=%{time_total}s\n' --max-time 30 \
-            -H "$AUTH" -H 'Content-Type: application/json' \
-            -d '{"model":"meta/llama-3.1-8b-instruct","messages":[{"role":"user","content":"ok"}],"max_tokens":4}' \
-            "$BASE/chat/completions" || echo "curl exit=$?"
-          printf 'POST glm-5.3-flash (60s):  '
-          curl -sS -o /tmp/glm.txt -w 'http=%{http_code} time=%{time_total}s\n' --max-time 60 \
-            -H "$AUTH" -H 'Content-Type: application/json' \
-            -d '{"model":"z-ai/glm-5.3-flash","messages":[{"role":"user","content":"ok"}],"max_tokens":4}' \
-            "$BASE/chat/completions" || echo "curl exit=$?"
-          head -c 200 /tmp/llama.txt 2>/dev/null; echo; head -c 200 /tmp/glm.txt 2>/dev/null
+          curl -sS --max-time 20 -H "$AUTH" "$BASE/models" -o /tmp/models.json || echo "models fetch failed"
+          python3 - <<'PY'
+          import json
+          ids = [m.get("id") for m in json.load(open("/tmp/models.json")).get("data", [])]
+          print("models available:", len(ids))
+          print("sample:", ids[:12])
+          open("/tmp/ids.txt", "w").write("\n".join(i for i in ids if i))
+          PY
+          for M in $(grep -Ei 'deepseek|qwen|llama-3.3|mistral' /tmp/ids.txt | head -4); do
+            printf '%-46s ' "$M"
+            curl -sS -o /tmp/m.txt -w 'http=%{http_code} time=%{time_total}s\n' --max-time 25 \
+              -H "$AUTH" -H 'Content-Type: application/json' \
+              -d "{\"model\":\"$M\",\"messages\":[{\"role\":\"user\",\"content\":\"ok\"}],\"max_tokens\":4}" \
+              "$BASE/chat/completions" || echo "curl exit=$?"
+          done
+
 
       - name: Setup uv
         uses: astral-sh/setup-uv@v5
