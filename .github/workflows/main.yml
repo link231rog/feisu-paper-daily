@@ -6,6 +6,10 @@ on:
         description: 'Only ingest checked papers (skip new retrieval)'
         type: boolean
         default: false
+      diagnose:
+        description: 'Only probe the LLM endpoint and key fingerprints'
+        type: boolean
+        default: false
   schedule:
     - cron: '0 1,7,11 * * *' # 09:00, 15:00, 19:00 Beijing Time (01:00, 07:00, 11:00 UTC)
 
@@ -15,11 +19,36 @@ permissions:
 jobs:
   paper-daily:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           persist-credentials: false
+
+      - name: Diagnose LLM endpoint
+        if: inputs.diagnose
+        env:
+          LLM_API_KEYS: ${{ secrets.LLM_API_KEYS }}
+          TRANSLATION_API_KEY: ${{ secrets.TRANSLATION_API_KEY }}
+          BASE: ${{ vars.TRANSLATION_API_BASE || 'https://integrate.api.nvidia.com/v1' }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, os
+          for name in ("LLM_API_KEYS", "TRANSLATION_API_KEY"):
+              raw = os.environ.get(name, "")
+              parts = [p.strip() for p in raw.replace("\n", ",").split(",") if p.strip()]
+              print(name, "count:", len(parts))
+              for i, p in enumerate(parts):
+                  print(f"  {name}#{i+1}", hashlib.sha256(p.encode()).hexdigest()[:12], "len", len(p))
+          PY
+          getent hosts integrate.api.nvidia.com || echo "dns lookup failed"
+          FIRST=$(printf '%s' "$LLM_API_KEYS" | tr ',' '\n' | head -1)
+          curl -sS -o /tmp/chat.txt -w 'chat http=%{http_code} time=%{time_total}s\n' --max-time 20 \
+            -H "Authorization: Bearer $FIRST" -H 'Content-Type: application/json' \
+            -d '{"model":"z-ai/glm-5.3-flash","messages":[{"role":"user","content":"reply with ok"}],"max_tokens":8}' \
+            "$BASE/chat/completions" || echo "curl exit=$?"
+          head -c 300 /tmp/chat.txt 2>/dev/null || true
 
       - name: Setup uv
         uses: astral-sh/setup-uv@v5
@@ -27,6 +56,7 @@ jobs:
       # data/ holds paper_store.json (pushed/discarded dedup) and research_state.json.
       # Runners are ephemeral, so restore the newest snapshot and save a new one every run.
       - name: Restore pipeline state
+        if: ${{ !inputs.diagnose }}
         uses: actions/cache/restore@v4
         with:
           path: data
@@ -35,6 +65,7 @@ jobs:
             paper-daily-state-
 
       - name: Run Paper Daily pipeline
+        if: ${{ !inputs.diagnose }}
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           LLM_API_KEYS: ${{ secrets.LLM_API_KEYS }}
@@ -100,7 +131,7 @@ jobs:
           uv run src/zotero_arxiv_daily/main.py
 
       - name: Save pipeline state
-        if: always()
+        if: always() && !inputs.diagnose
         uses: actions/cache/save@v4
         with:
           path: data
