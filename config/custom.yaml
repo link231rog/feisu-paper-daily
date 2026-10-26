@@ -200,5 +200,7 @@ research:
   deep_read_min_qa: ${oc.env:RESEARCH_DEEP_READ_MIN_QA,7}
   deep_read_quota: ${oc.env:RESEARCH_DEEP_READ_QUOTA,3}
   quick_radar_quota: ${oc.env:RESEARCH_QUICK_RADAR_QUOTA,4}
+  qa_workers: ${oc.env:RESEARCH_QA_WORKERS,20}
+  enrich_workers: ${oc.env:RESEARCH_ENRICH_WORKERS,6}
 
 

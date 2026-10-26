@@ -387,7 +387,8 @@ research:
   # Ranking: library taste vs tracked-question fit
   weight_taste: 0.5
   weight_fit: 0.5
-  qa_workers: 8 # Concurrent LLM calls when scoring candidates
+  qa_workers: 20 # Concurrent LLM calls when scoring candidates
+  enrich_workers: 6 # Parallel per-paper baseline + annotation pass
   judge: true # One comparative LLM pass over the top candidates
   max_judge: 25
   judge_weight: 0.6 # 0 = keep fused order, 1 = trust the judge fully

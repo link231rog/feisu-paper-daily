@@ -1480,14 +1480,20 @@ class Executor:
                 logger.info(f"Planned arXiv categories: {', '.join(plan['arxiv_categories'])}")
 
         all_papers: list[Paper] = []
-        for source, retriever in self.retrievers.items():
+
+        def retrieve_one(item: tuple[str, Any]) -> tuple[str, list[Paper]]:
+            source, retriever = item
             logger.info(f"Retrieving {source} papers...")
-            papers = retriever.retrieve_papers()
-            if len(papers) == 0:
-                logger.info(f"No {source} papers found")
-                continue
-            logger.info(f"Retrieved {len(papers)} {source} papers")
-            all_papers.extend(papers)
+            return source, retriever.retrieve_papers() or []
+
+        # Sources are independent HTTP fetches, so run them at the same time.
+        with ThreadPoolExecutor(max_workers=max(1, len(self.retrievers))) as pool:
+            for source, papers in pool.map(retrieve_one, list(self.retrievers.items())):
+                if not papers:
+                    logger.info(f"No {source} papers found")
+                    continue
+                logger.info(f"Retrieved {len(papers)} {source} papers")
+                all_papers.extend(papers)
 
         logger.info(f"Total {len(all_papers)} papers retrieved from all sources")
 
@@ -1616,22 +1622,38 @@ class Executor:
             with ThreadPoolExecutor(max_workers=tldr_workers) as pool:
                 list(tqdm(pool.map(summarize_one, reranked_papers), total=len(reranked_papers), desc="Summarizing papers"))
 
-            # Baseline extraction, attribution, and bi-directional library linking (only for deep_read tier)
-            if self.research_cfg.get("baselines", True) and deep_read_papers:
-                workers = int(self.research_cfg.get("baseline_workers", 4))
-                logger.info(f"Extracting baseline comparisons for {len(deep_read_papers)} deep-read papers...")
-                enrich_papers_with_baselines(self.router, deep_read_papers, corpus, max_workers=workers)
+            # Baselines and inline annotations are independent per paper, so run both
+            # stages in a single pool: total time is one paper's work, not two stages' sum.
+            if deep_read_papers:
+                do_baselines = bool(self.research_cfg.get("baselines", True))
+                do_annotations = bool(self.research_cfg.get("inline_annotations", True))
+                if do_baselines or do_annotations:
+                    from .annotator import enrich_papers_with_inline_annotations
 
-            # In-line text annotation (only for deep_read tier so quick_radar stays lightweight)
-            if self.research_cfg.get("inline_annotations", True) and deep_read_papers:
-                from .annotator import enrich_papers_with_inline_annotations
+                    use_ar5iv = bool(self.research_cfg.get("full_text_ar5iv", True))
+                    workers = int(
+                        self.research_cfg.get(
+                            "enrich_workers",
+                            max(
+                                int(self.research_cfg.get("baseline_workers", 4)),
+                                int(self.research_cfg.get("annotation_workers", 4)),
+                            ),
+                        )
+                    )
+                    logger.info(
+                        f"Extracting baselines and inline annotations for {len(deep_read_papers)} deep-read papers..."
+                    )
 
-                workers = int(self.research_cfg.get("annotation_workers", 4))
-                use_ar5iv = bool(self.research_cfg.get("full_text_ar5iv", True))
-                logger.info(f"Generating in-line text annotations for {len(deep_read_papers)} deep-read papers...")
-                enrich_papers_with_inline_annotations(
-                    self.router, deep_read_papers, questions, max_workers=workers, use_ar5iv=use_ar5iv
-                )
+                    def enrich_one(paper: Paper) -> None:
+                        if do_baselines:
+                            enrich_papers_with_baselines(self.router, [paper], corpus, max_workers=1)
+                        if do_annotations:
+                            enrich_papers_with_inline_annotations(
+                                self.router, [paper], questions, max_workers=1, use_ar5iv=use_ar5iv
+                            )
+
+                    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+                        list(pool.map(enrich_one, deep_read_papers))
 
             # Per-question synthesis and next-round question proposals
             if self.research_cfg.get("synthesis", True) and questions:

@@ -4,6 +4,7 @@ from enum import Enum
 import json
 import random
 import re
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -166,7 +167,8 @@ def synthesize_questions(
         )
 
     briefs: list[dict] = []
-    for question in questions[:max_questions]:
+
+    def brief_for(question: str) -> dict | None:
         previous = ""
         if state is not None:
             ctx = state.question_context(question)
@@ -192,10 +194,10 @@ def synthesize_questions(
         )
         data = _json_block(router.chat([{"role": "user", "content": prompt}], max_tokens=1600), {})
         if not isinstance(data, dict):
-            continue
+            return None
         summary = str(data.get("summary", "")).strip()
         if not summary:
-            continue
+            return None
 
         def cited_papers(items: Any) -> list[dict]:
             cited = []
@@ -212,18 +214,20 @@ def synthesize_questions(
                 cited.append({"title": paper.title, "url": paper.url})
             return cited
 
-        evidence = cited_papers(data.get("evidence"))
-        counter = cited_papers(data.get("counter_evidence"))
-        briefs.append(
-            {
-                "question": question,
-                "summary": summary,
-                "evidence": evidence,
-                "counter_evidence": counter,
-                "gap": str(data.get("gap", "")).strip(),
-                "status": str(data.get("status", "exploring")).strip().lower(),
-            }
-        )
+        return {
+            "question": question,
+            "summary": summary,
+            "evidence": cited_papers(data.get("evidence")),
+            "counter_evidence": cited_papers(data.get("counter_evidence")),
+            "gap": str(data.get("gap", "")).strip(),
+            "status": str(data.get("status", "exploring")).strip().lower(),
+        }
+
+    # One independent LLM call per question, so issue them together and keep the console order.
+    with ThreadPoolExecutor(max_workers=min(8, len(questions))) as pool:
+        for result in pool.map(brief_for, questions[:max_questions]):
+            if result:
+                briefs.append(result)
     return briefs
 
 
