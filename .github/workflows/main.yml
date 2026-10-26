@@ -6,6 +6,10 @@ on:
         description: 'Only ingest checked papers (skip new retrieval)'
         type: boolean
         default: false
+      diagnose:
+        description: 'Only probe Feishu credentials'
+        type: boolean
+        default: false
   schedule:
     - cron: '0 1,7,11 * * *' # 09:00, 15:00, 19:00 Beijing Time (01:00, 07:00, 11:00 UTC)
 
@@ -25,9 +29,45 @@ jobs:
       - name: Setup uv
         uses: astral-sh/setup-uv@v5
 
+      - name: Diagnose Feishu
+        if: inputs.diagnose
+        env:
+          FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
+          FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
+          FEISHU_DAILY_FOLDER_TOKEN: ${{ secrets.FEISHU_DAILY_FOLDER_TOKEN }}
+          FEISHU_DAILY_PARENT_NODE_TOKEN: ${{ secrets.FEISHU_DAILY_PARENT_NODE_TOKEN }}
+          FEISHU_WIKI_SPACE_ID: ${{ secrets.FEISHU_WIKI_SPACE_ID }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, urllib.parse, urllib.request, urllib.error
+          for n in ("FEISHU_APP_ID","FEISHU_APP_SECRET","FEISHU_DAILY_FOLDER_TOKEN","FEISHU_DAILY_PARENT_NODE_TOKEN","FEISHU_WIKI_SPACE_ID"):
+              v = os.environ.get(n, "")
+              print(n, "len", len(v), "sha", hashlib.sha256(v.encode()).hexdigest()[:12] if v else "-", "stripped" if v == v.strip() else "HAS-WHITESPACE")
+          body = json.dumps({"app_id": os.environ.get("FEISHU_APP_ID",""), "app_secret": os.environ.get("FEISHU_APP_SECRET","")}).encode()
+          req = urllib.request.Request("https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal", data=body, headers={"Content-Type": "application/json"})
+          tok = json.load(urllib.request.urlopen(req, timeout=15)).get("tenant_access_token")
+          print("token ok:", bool(tok))
+          ft = os.environ.get("FEISHU_DAILY_FOLDER_TOKEN", "")
+          url = "https://open.feishu.cn/open-apis/drive/v1/files?" + urllib.parse.urlencode({"folder_token": ft, "page_size": 200})
+          try:
+              resp = json.load(urllib.request.urlopen(urllib.request.Request(url, headers={"Authorization": "Bearer " + tok}), timeout=15))
+              print("files code:", resp.get("code"), "count:", len(resp.get("data", {}).get("files", [])))
+          except urllib.error.HTTPError as e:
+              print("files http", e.code, e.read()[:300].decode("utf-8", "replace"))
+          sp = os.environ.get("FEISHU_WIKI_SPACE_ID", "")
+          try:
+              resp = json.load(urllib.request.urlopen(urllib.request.Request(f"https://open.feishu.cn/open-apis/wiki/v2/spaces/{sp}/nodes?page_size=20", headers={"Authorization": "Bearer " + tok}), timeout=15))
+              print("wiki code:", resp.get("code"), "count:", len(resp.get("data", {}).get("items", [])))
+              for it in resp.get("data", {}).get("items", [])[:5]:
+                  print("  wiki:", it.get("title"), it.get("node_token"))
+          except urllib.error.HTTPError as e:
+              print("wiki http", e.code, e.read()[:300].decode("utf-8", "replace"))
+          PY
+
       # data/ holds paper_store.json (pushed/discarded dedup) and research_state.json.
       # Runners are ephemeral, so restore the newest snapshot and save a new one every run.
       - name: Restore pipeline state
+        if: ${{ !inputs.diagnose }}
         uses: actions/cache/restore@v4
         with:
           path: data
@@ -36,6 +76,7 @@ jobs:
             paper-daily-state-
 
       - name: Run Paper Daily pipeline
+        if: ${{ !inputs.diagnose }}
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           LLM_API_KEYS: ${{ secrets.LLM_API_KEYS }}
@@ -101,7 +142,7 @@ jobs:
           uv run src/zotero_arxiv_daily/main.py
 
       - name: Save pipeline state
-        if: always()
+        if: always() && !inputs.diagnose
         uses: actions/cache/save@v4
         with:
           path: data
