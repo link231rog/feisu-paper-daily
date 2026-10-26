@@ -67,7 +67,7 @@ def normalize_path_patterns(patterns: list[str] | ListConfig | None, config_key:
 class Executor:
     def __init__(self, config: DictConfig):
         self.config = config
-        
+
         # Zotero path filtering patterns (optional)
         zotero_cfg = config.get("zotero")
         if zotero_cfg:
@@ -81,7 +81,7 @@ class Executor:
             source: get_retriever_cls(source)(config) for source in config.executor.source
         }
         self.reranker = get_reranker_cls(config.executor.reranker)(config)
-        
+
         # LLM client (optional for offline testing or dry-run)
         api_key = config.get("llm", {}).get("api", {}).get("key")
         if api_key and api_key != "???":
@@ -124,17 +124,17 @@ class Executor:
         collections = {c['key']: c for c in collections}
         corpus = zot.everything(zot.items(itemType='conferencePaper || journalArticle || preprint'))
         corpus = [c for c in corpus if c['data']['abstractNote'] != '']
-        
+
         def get_collection_path(col_key: str) -> str:
             if p := collections[col_key]['data']['parentCollection']:
                 return get_collection_path(p) + '/' + collections[col_key]['data']['name']
             else:
                 return collections[col_key]['data']['name']
-                
+
         for c in corpus:
             paths = [get_collection_path(col) for col in c['data']['collections']]
             c['paths'] = paths
-            
+
         logger.info(f"Fetched {len(corpus)} zotero papers")
         return [
             CorpusPaper(
@@ -1056,7 +1056,7 @@ class Executor:
                                 affiliations = ["NEC Laboratories Europe", "GWDG"]
                 except Exception as exc:
                     logger.warning(f"Failed to query arXiv API for {arxiv_id}: {exc}")
-            
+
             if not title:
                 title = f"Paper ({arxiv_id or clean_url})"
 
@@ -1291,12 +1291,36 @@ class Executor:
             r"[\(\[\{]\s*(?:demo|short|demonstration|extended abstract)\s*[\)\]\}]",
         ]
 
+        # 0. Reject robotics/hardware-heavy papers unless explicitly requested
+        robot_patterns = [
+            r"\brobot\b", r"\brobots\b", r"\brobotic\b", r"\brobotics\b",
+            r"\bhumanoid\b", r"\bhumanoids\b", r"\bbipedal\b", r"\bquadruped\b",
+            r"\bquadrotor\b", r"\buav\b", r"\buavs\b", r"\bdriverless\b",
+            r"\bmanipulator\b", r"\bmanipulation\b", r"\bgripper\b",
+            r"\bend-effector\b", r"\btactile\s+sensor\b", r"\bteleoperation\b",
+            r"\bexoskeleton\b", r"\bmobile\s+robot\b", r"\bautonomous\s+vehicle\b"
+        ]
+        exclude_robotics = filter_cfg.get("exclude_robotics", True)
+
         kept: list[Paper] = []
         for p in papers:
             v_str = (p.venue or "").lower()
             t_str = (p.title or "").lower()
+            abs_str = (p.abstract or "").lower()
 
-            # 0. Reject workshops, short papers, demo papers, extended abstracts
+            # 0a. Reject robotics-heavy papers (check title & abstract)
+            if exclude_robotics:
+                # If title contains explicit robot keywords, reject
+                if any(re.search(pat, t_str) for pat in robot_patterns):
+                    logger.debug(f"Filtered out robotics paper by title: '{p.title}'")
+                    continue
+                # If abstract has multiple robotics cues, reject
+                robot_matches = sum(1 for pat in robot_patterns if re.search(pat, abs_str))
+                if robot_matches >= 2:
+                    logger.debug(f"Filtered out robotics paper by abstract cues: '{p.title}'")
+                    continue
+
+            # 0b. Reject workshops, short papers, demo papers, extended abstracts
             if exclude_non_main:
                 combined_check = f"{v_str} {t_str}"
                 if any(re.search(pat, combined_check) for pat in non_main_patterns):
@@ -1411,11 +1435,13 @@ class Executor:
             "quality": len(quality_papers),
         }
 
+        priority_institutions = console_settings.get("institutions", [])
+
         # Multi-hop retrieval: chase citations of the most promising candidates
         if self.research_cfg.get("enabled", True) and self.research_cfg.get("multi_hop", True):
             # Seeds come from the taste-ordered head, not retrieval order, and are chosen for the questions
             seed_pool = (
-                self.reranker.rerank(list(quality_papers), taste_corpus(corpus))
+                self.reranker.rerank(list(quality_papers), taste_corpus(corpus), priority_institutions=priority_institutions)
                 if quality_papers
                 else []
             )
@@ -1448,7 +1474,7 @@ class Executor:
         reranked_papers: list[Paper] = []
         if len(quality_papers) > 0:
             logger.info("Reranking papers against interest corpus...")
-            ranked = self.reranker.rerank(quality_papers, taste_corpus(corpus))
+            ranked = self.reranker.rerank(quality_papers, taste_corpus(corpus), priority_institutions=priority_institutions)
 
             questions = console_settings.get("questions", [])
             if questions:

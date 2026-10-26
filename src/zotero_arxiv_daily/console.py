@@ -21,8 +21,8 @@ _ITEM_RE = re.compile(r"^(?:[-*+]|\d+[.)])\s+(.*)$")
 
 
 def parse_console_text(text: str) -> dict[str, list[str]]:
-    """Parses markdown-ish console text into tags and questions."""
-    settings: dict[str, list[str]] = {"tags": [], "questions": []}
+    """Parses markdown-ish console text into tags, questions, and priority institutions."""
+    settings: dict[str, list[str]] = {"tags": [], "questions": [], "institutions": []}
     section = None
 
     for raw in (text or "").splitlines():
@@ -35,6 +35,8 @@ def parse_console_text(text: str) -> dict[str, list[str]]:
                 section = "tags"
             elif "问题" in heading or "QA" in heading.upper():
                 section = "questions"
+            elif any(k in heading for k in ["机构", "实验室", "单位", "institution", "lab"]):
+                section = "institutions"
             else:
                 section = None
             continue

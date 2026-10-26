@@ -16,7 +16,12 @@ class BaseReranker(ABC):
         value = cfg.get(key, default)
         return default if value is None else value
 
-    def rerank(self, candidates: list[Paper], corpus: list[CorpusPaper]) -> list[Paper]:
+    def rerank(
+        self,
+        candidates: list[Paper],
+        corpus: list[CorpusPaper],
+        priority_institutions: list[str] | None = None,
+    ) -> list[Paper]:
         if not candidates or not corpus:
             return candidates
 
@@ -30,6 +35,7 @@ class BaseReranker(ABC):
         recency_boost = float(self._setting("recency_boost", 0.5))
         venue_boost = float(self._setting("venue_boost", 0.5))
         citation_boost_max = float(self._setting("citation_boost_max", 1.0))
+        institution_boost = float(self._setting("institution_boost", 1.5))
         recency_years = self._setting("recency_years", None)
         if recency_years:
             recency_years = {int(y) for y in recency_years}
@@ -39,6 +45,12 @@ class BaseReranker(ABC):
         top_venues = self._setting("top_venues", None) or (
             "emnlp", "acl", "neurips", "iclr", "icml", "kdd", "aaai", "sigir", "cvpr", "iccv"
         )
+
+        # Priority institutions: combining config with console-defined institutions
+        config_insts = self._setting("priority_institutions", ["anthropic", "openai", "google", "deepmind"])
+        all_priority_insts = set(i.lower().strip() for i in (config_insts or []))
+        if priority_institutions:
+            all_priority_insts.update(i.lower().strip() for i in priority_institutions if i.strip())
 
         for idx, c in enumerate(candidates):
             score = float(sim_scores[idx])
@@ -59,11 +71,19 @@ class BaseReranker(ABC):
                 citation_boost = min(citation_boost_max, float(np.log1p(c.citation_count) * 0.4))
                 score += citation_boost
 
+            # 4. Priority Institution Boost (e.g. Anthropic, OpenAI, Google)
+            c_text = " ".join((c.affiliations or []) + (c.authors or [])).lower()
+            if not c_text and c.abstract:
+                c_text = c.abstract[:400].lower()
+            if any(inst in c_text for inst in all_priority_insts):
+                score += institution_boost
+                c.is_priority_institution = True
+
             c.score = round(score, 2)
 
         candidates = sorted(candidates, key=lambda x: (x.score or 0.0), reverse=True)
         return candidates
-    
+
     @abstractmethod
     def get_similarity_score(self, s1:list[str], s2:list[str]) -> np.ndarray:
         raise NotImplementedError

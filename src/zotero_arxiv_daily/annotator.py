@@ -84,8 +84,8 @@ def extract_inline_annotations(
         f"{UNTRUSTED_NOTICE}\n\n"
         f"Title: {paper.title}\n{source_text}\n\n"
         f"Tracked Questions:\n{q_list}\n\n"
-        "Return 0 to 8 useful annotations across the supplied sections. Do not fill a quota.\n"
-        "For each annotation, 'source' is the section ID and 'quote' is a contiguous, case-insensitive substring of THAT section, copied verbatim, ideally one sentence or a phrase of at most about 40 words (never a whole paragraph). Never attach a comment to a different sentence.\n"
+        "Return 0 to 5 high-value annotations across the supplied sections (ideally 2 to 3 for abstract). Do not annotate trivial background sentences; select ONLY key claims, surprising counter-findings, or pivotal baselines.\n"
+        "For each annotation, 'source' is the section ID and 'quote' is a contiguous, case-insensitive substring of THAT section, copied verbatim, ideally one sentence or a phrase of at most about 35 words (never a whole paragraph). Never attach a comment to a different sentence.\n"
         "Categories:\n"
         "- baseline: a method actually named in the source as a comparison or foundation. Do not add baselines from memory.\n"
         "- claim: a mechanism or empirical result that directly answers a tracked question. Include its question number.\n"
@@ -254,7 +254,7 @@ def build_annotated_text_elements(
         return [{"text_run": {"content": f"📄 英文摘要 (Abstract):\n{paper.abstract or ''}\n"}}]
 
     elements: list[dict[str, Any]] = [
-        {"text_run": {"content": "📄 原文与 AI 行内批注：\n", "text_element_style": {"bold": True}}}
+        {"text_run": {"content": "📄 原文与核心洞察批注：\n", "text_element_style": {"bold": True}}}
     ]
     for section in sections:
         located = located_by_source[section["id"]]
@@ -262,88 +262,93 @@ def build_annotated_text_elements(
             continue
         text = section["text"]
         elements.append({"text_run": {"content": f"\n【{section['title']}】\n", "text_element_style": {"bold": True}}})
+
+        # 1. First, render the continuous clean source text with light highlight on quotes
         curr = 0
         for s in located:
             if s["start"] > curr:
                 elements.append({"text_run": {"content": text[curr:s["start"]]}})
-            elements.extend(_inline_annotation_elements(s))
+            ann_type = s["data"].get("type", "critique")
+            # 5: Green/teal (baseline), 4: Yellow/gold (claim), 2: Coral/red (counter), 3: Light orange (critique)
+            bg_color = {"baseline": 5, "claim": 4, "counter": 2}.get(ann_type, 3)
+            elements.append({
+                "text_run": {
+                    "content": s["quote"],
+                    "text_element_style": {"background_color": bg_color, "bold": True},
+                }
+            })
             curr = s["end"]
         if curr < len(text):
             elements.append({"text_run": {"content": text[curr:]}})
+        elements.append({"text_run": {"content": "\n\n"}})
+
+        # 2. Then, render structured, readable notes grouped neatly below the section
+        elements.append({
+            "text_run": {
+                "content": "💡 AI 审阅与证据解读：\n",
+                "text_element_style": {"bold": True, "text_color": 1},
+            }
+        })
+        for s in located:
+            elements.extend(_render_note_bullet_elements(s))
         elements.append({"text_run": {"content": "\n"}})
+
     return elements
 
 
-def _inline_annotation_elements(s: dict[str, Any]) -> list[dict[str, Any]]:
-    """Renders one source span followed immediately by its own comment."""
+def _render_note_bullet_elements(s: dict[str, Any]) -> list[dict[str, Any]]:
+    """Renders one clean, bullet-styled note with quote anchor and commentary."""
     elements: list[dict[str, Any]] = []
-
     ann = s["data"]
     ann_type = ann.get("type", "critique")
-    bg_color = {"baseline": 5, "claim": 4, "counter": 2}.get(ann_type, 3)
-    elements.append({
-        "text_run": {
-            "content": s["quote"],
-            "text_element_style": {"bold": True, "background_color": bg_color},
-        }
-    })
 
-    comment = ann.get("comment", "")
+    badge_info = {
+        "claim": ("🎯", "核心发现", 4),
+        "counter": ("⚡", "反例/局限证据", 2),
+        "critique": ("⚠️", "AI 审阅", 3),
+        "baseline": ("💬", "对比基线", 5),
+    }.get(ann_type, ("💡", "分析批注", 1))
+
+    icon, type_label, tag_color = badge_info
+    comment = ann.get("comment", "").strip()
     if ann.get("inference") and "推断" not in comment:
         comment = f"推断：{comment}"
+
+    # Bullet point line: • 🎯 [核心发现] Quote: "..." -> Comment
+    elements.append({"text_run": {"content": f"  • {icon} [{type_label}] ", "text_element_style": {"bold": True, "text_color": tag_color}}})
+
+    # Short quote anchor (truncated if long)
+    quote_display = s["quote"].strip()
+    if len(quote_display) > 60:
+        quote_display = quote_display[:57] + "..."
+    elements.append({
+        "text_run": {
+            "content": f'"{quote_display}"',
+            "text_element_style": {"italic": True, "background_color": tag_color},
+        }
+    })
+    elements.append({"text_run": {"content": " ➔ ", "text_element_style": {"bold": True}}})
+    elements.append({"text_run": {"content": f"{comment}"}})
+
+    # Baselines specific linking
     if ann_type == "baseline":
         venue = f" [{ann['venue']}]" if ann.get("venue") else ""
-        elements.append({
-            "text_run": {
-                "content": f" 💬[基线: {comment}{venue} | ",
-                "text_element_style": {"text_color": 5, "background_color": 1, "italic": True},
-            }
-        })
         if ann.get("in_library") and ann.get("doc_url"):
             badge_prefix = ann.get("library_badge", "").split(":")[0] + ":" if ":" in ann.get("library_badge", "") else "🟢 已入库:"
             elements.append({
                 "text_run": {
-                    "content": f"{badge_prefix} {ann.get('doc_title') or ann.get('name')}",
-                    "text_element_style": {
-                        "text_color": 5, "background_color": 1, "bold": True,
-                        "link": {"url": ann["doc_url"]},
-                    },
+                    "content": f" ({badge_prefix} {ann.get('doc_title') or ann.get('name')}{venue})",
+                    "text_element_style": {"bold": True, "link": {"url": ann["doc_url"]}},
                 }
             })
         elif ann.get("doc_url"):
             elements.append({
                 "text_run": {
-                    "content": "⚪ 出处检索",
-                    "text_element_style": {"text_color": 5, "background_color": 1, "link": {"url": ann["doc_url"]}},
+                    "content": f" (⚪ 出处检索{venue})",
+                    "text_element_style": {"link": {"url": ann["doc_url"]}},
                 }
             })
-        else:
-            elements.append({"text_run": {"content": "⚪ 未入库", "text_element_style": {"text_color": 5, "background_color": 1}}})
-        elements.append({
-            "text_run": {"content": "] ", "text_element_style": {"text_color": 5, "background_color": 1, "italic": True}}
-        })
-    elif ann_type == "claim":
-        elements.append({
-            "text_run": {
-                "content": f" 🎯[核心发现: {comment}] ",
-                "text_element_style": {"text_color": 2, "background_color": 1, "bold": True},
-            }
-        })
-    elif ann_type == "counter":
-        elements.append({
-            "text_run": {
-                "content": f" ⚡[反例证据: {comment}] ",
-                "text_element_style": {"text_color": 2, "background_color": 1, "bold": True},
-            }
-        })
-    elif ann_type == "critique":
-        elements.append({
-            "text_run": {
-                "content": f" ⚠️[AI审阅: {comment}] ",
-                "text_element_style": {"text_color": 3, "background_color": 1, "italic": True},
-            }
-        })
-
+    elements.append({"text_run": {"content": "\n"}})
     return elements
 
 

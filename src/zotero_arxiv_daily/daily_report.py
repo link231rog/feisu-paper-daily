@@ -21,31 +21,53 @@ def _text(value: object, limit: int = 1200) -> str:
 
 
 def _inline_annotated_html(paper: Paper) -> str:
-    """Render source sentences with their comments immediately after the matching span."""
+    """Render continuous source text followed by structured insight bullets."""
     sections = paper.annotation_sections or [{"id": "S1", "title": "摘要", "text": paper.abstract or ""}]
     rendered = []
-    labels = {"baseline": "基线", "claim": "核心发现", "counter": "反例证据", "critique": "AI 审阅"}
+    labels = {"baseline": "基线", "claim": "核心发现", "counter": "反例/局限", "critique": "AI 审阅"}
     colors = {"baseline": "#e8f5e9", "claim": "#fff9c4", "counter": "#ffebee", "critique": "#fff3e0"}
+    icons = {"baseline": "💬", "claim": "🎯", "counter": "⚡", "critique": "⚠️"}
+
     for section in sections:
         annotations = [a for a in (paper.inline_annotations or []) if a.get("source", "S1") == section["id"]]
         spans = locate_spans(section["text"], annotations)
         if not spans:
             continue
-        parts = [f"<h3>原文 · {escape(section['title'])}</h3><p>"]
+
+        # 1. Clean original text with highlighted spans
+        parts = [f"<h3>原文 · {escape(section['title'])}</h3><p style='line-height:1.75;color:#333;'>"]
         curr = 0
         for span in spans:
             parts.append(escape(section["text"][curr:span["start"]]))
-            ann = span["data"]
-            comment = _text(ann["comment"])
-            if ann.get("inference") and "推断" not in comment:
-                comment = f"推断：{comment}"
+            ann_type = span["data"].get("type", "critique")
             parts.append(
-                f'<mark style="background:{colors.get(ann["type"], "#fff3e0")}">{escape(span["quote"])}</mark>'
-                f"<strong>［{labels.get(ann['type'], 'AI 批注')}：{escape(comment)}］</strong>"
+                f'<mark style="background:{colors.get(ann_type, "#fff3e0")};font-weight:600;">{escape(span["quote"])}</mark>'
             )
             curr = span["end"]
         parts.append(escape(section["text"][curr:]))
         parts.append("</p>")
+
+        # 2. Structured note bullets below the section
+        parts.append("<div style='background:#fafafa;border-left:3px solid #0052cc;padding:8px 12px;margin:10px 0;border-radius:4px;'>")
+        parts.append("<strong style='color:#0052cc;'>💡 AI 审阅与证据解读：</strong><ul style='margin:4px 0 0 0;padding-left:18px;'>")
+        for span in spans:
+            ann = span["data"]
+            ann_type = ann.get("type", "critique")
+            comment = _text(ann.get("comment", ""))
+            if ann.get("inference") and "推断" not in comment:
+                comment = f"推断：{comment}"
+            quote_sub = span["quote"].strip()
+            if len(quote_sub) > 50:
+                quote_sub = quote_sub[:47] + "..."
+
+            icon = icons.get(ann_type, "💡")
+            label = labels.get(ann_type, "AI 批注")
+            parts.append(
+                f"<li style='margin-bottom:4px;'><span>{icon} <strong>[{label}]</strong> </span>"
+                f"<span style='background:{colors.get(ann_type, '#fff3e0')};font-style:italic;'>\"{escape(quote_sub)}\"</span>"
+                f" ➔ {escape(comment)}</li>"
+            )
+        parts.append("</ul></div>")
         rendered.append("".join(parts))
     return "".join(rendered)
 
