@@ -42,13 +42,23 @@ jobs:
               for i, p in enumerate(parts):
                   print(f"  {name}#{i+1}", hashlib.sha256(p.encode()).hexdigest()[:12], "len", len(p))
           PY
-          getent hosts integrate.api.nvidia.com || echo "dns lookup failed"
+          for U in \
+            https://integrate.api.nvidia.com/v1/models \
+            https://api.deepseek.com/v1/models \
+            https://openrouter.ai/api/v1/models \
+            https://api.siliconflow.cn/v1/models \
+            https://dashscope.aliyuncs.com/compatible-mode/v1/models \
+            https://api.openai.com/v1/models \
+            https://api.moonshot.cn/v1/models ; do
+            printf '%-60s ' "$U"
+            curl -sS -o /dev/null -w 'http=%{http_code} dns=%{time_namelookup}s connect=%{time_connect}s tls=%{time_appconnect}s total=%{time_total}s\n' \
+              --max-time 12 "$U" || echo "curl exit=$?"
+          done
           FIRST=$(printf '%s' "$LLM_API_KEYS" | tr ',' '\n' | head -1)
-          curl -sS -o /tmp/chat.txt -w 'chat http=%{http_code} time=%{time_total}s\n' --max-time 20 \
+          curl -sS -o /tmp/chat.txt -w 'nvidia chat http=%{http_code} time=%{time_total}s\n' --max-time 20 \
             -H "Authorization: Bearer $FIRST" -H 'Content-Type: application/json' \
             -d '{"model":"z-ai/glm-5.3-flash","messages":[{"role":"user","content":"reply with ok"}],"max_tokens":8}' \
             "$BASE/chat/completions" || echo "curl exit=$?"
-          head -c 300 /tmp/chat.txt 2>/dev/null || true
 
       - name: Setup uv
         uses: astral-sh/setup-uv@v5
