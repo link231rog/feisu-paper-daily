@@ -339,9 +339,18 @@ def judge_ranking(router: LLMRouter, questions: list[str], papers: list[Paper]) 
     if not isinstance(data, dict):
         return list(range(len(papers)))
 
-    def real_index(displayed: Any) -> int | None:
+    def displayed_index(item: Any) -> Any:
+        # The model sometimes returns bare indices instead of {"index": n} objects.
+        if isinstance(item, dict):
+            for field in ("index", "paper", "id", "no", "position"):
+                if field in item:
+                    return item.get(field)
+            return None
+        return item
+
+    def real_index(item: Any) -> int | None:
         try:
-            pos = int(displayed)
+            pos = int(displayed_index(item))
         except (TypeError, ValueError):
             return None
         return shown[pos - 1] if 1 <= pos <= len(papers) else None
@@ -354,11 +363,19 @@ def judge_ranking(router: LLMRouter, questions: list[str], papers: list[Paper]) 
 
     order: list[int] = []
     for item in data.get("ranking", []) if isinstance(data.get("ranking"), list) else []:
-        mapped = real_index(item.get("index")) if isinstance(item, dict) else None
+        mapped = real_index(item)
         if mapped is not None and mapped not in order and mapped not in dropped:
             order.append(mapped)
-            papers[mapped].judge_reason = str(item.get("reason", "")).strip() or None
+            if isinstance(item, dict):
+                papers[mapped].judge_reason = (
+                    str(item.get("reason") or item.get("why") or item.get("rationale") or "").strip() or None
+                )
+    ranked_before = len(order)
     order.extend(i for i in range(len(papers)) if i not in order and i not in dropped)
+    if not ranked_before:
+        logger.warning("Judge returned no usable ranking indices; keeping the fused order")
+    else:
+        logger.debug(f"Judge ranked {ranked_before}/{len(papers)} candidates, dropped {len(dropped)}")
     return order
 
 
