@@ -69,6 +69,11 @@ class LocalReranker(BaseReranker):
 
     def _encode(self, encoder, texts: list[str], encode_kwargs: dict) -> np.ndarray:
         model_name = self.config.reranker.local.model
+        # jina-v5 pads to its full context window, and an 8k-token batch needs a ~9 GiB
+        # attention buffer, which made a CI run encode 96 texts in 453s. 2000 chars is
+        # still well past every abstract, and keeps the work bounded.
+        max_chars = int(self.config.reranker.local.get("max_chars", 2000) or 2000)
+        texts = [(t or "")[:max_chars] for t in texts]
         key = _cache_key(model_name, texts)
         cached = _EMBED_CACHE.get(key)
         if cached is not None:
@@ -78,7 +83,7 @@ class LocalReranker(BaseReranker):
         features = encoder.encode(
             texts,
             **encode_kwargs,
-            batch_size=int(self.config.reranker.local.get("batch_size", 64) or 64),
+            batch_size=int(self.config.reranker.local.get("batch_size", 32) or 32),
             show_progress_bar=False,
         )
         features = np.asarray(features)
