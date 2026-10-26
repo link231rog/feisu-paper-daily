@@ -27,6 +27,9 @@ class AcademicTranslator:
 
         self.current_key = self.api_key
         self._init_client()
+        # Same breaker as the LLM router: stop paying timeouts once the endpoint is clearly down
+        self._failures = 0
+        self._disabled = False
 
     def _init_client(self) -> None:
         if self.current_key:
@@ -42,9 +45,15 @@ class AcademicTranslator:
             return True
         return False
 
+    def _record_failure(self) -> None:
+        self._failures += 1
+        if self._failures >= 3 and not self._disabled:
+            self._disabled = True
+            logger.error("Translation endpoint keeps failing; keeping source text for the rest of this run")
+
     def translate_batch(self, paragraphs: list[str]) -> list[str]:
         """Translates a batch of English paragraphs into academic Chinese using GLM-5.3."""
-        if not paragraphs or not self.client:
+        if not paragraphs or not self.client or self._disabled:
             return [""] * len(paragraphs)
 
         batch_prompts = []
@@ -72,14 +81,16 @@ class AcademicTranslator:
                     ],
                     max_tokens=4096,
                     temperature=0.1,
-                    timeout=180,
+                    timeout=60,
                 )
+                self._failures = 0
                 raw_out = resp.choices[0].message.content or ""
                 translations = self._parse_batch_response(raw_out, len(paragraphs))
                 if any(t for t in translations):
                     return translations
             except Exception as exc:
                 logger.warning(f"Translation batch attempt {attempt + 1} failed: {exc}")
+                self._record_failure()
                 if "403" in str(exc) or "429" in str(exc):
                     if self._switch_to_backup_key():
                         continue
@@ -94,7 +105,7 @@ class AcademicTranslator:
 
     def translate_single(self, text: str) -> str:
         """Translates a single English paragraph into Chinese."""
-        if not text.strip() or not self.client:
+        if not text.strip() or not self.client or self._disabled:
             return ""
 
         system_prompt = (
@@ -116,8 +127,9 @@ class AcademicTranslator:
                     ],
                     max_tokens=4096,
                     temperature=0.1,
-                    timeout=120,
+                    timeout=45,
                 )
+                self._failures = 0
                 raw = (resp.choices[0].message.content or "").strip()
                 raw = re.sub(r"^\*{0,2}译文[：:]\*{0,2}\s*", "", raw)
                 if "\n\n**术语说明" in raw or "\n\n术语说明" in raw:
@@ -125,6 +137,7 @@ class AcademicTranslator:
                 return raw
             except Exception as exc:
                 logger.warning(f"Single translation failed: {exc}")
+                self._record_failure()
                 if "403" in str(exc) or "429" in str(exc):
                     if self._switch_to_backup_key():
                         continue
@@ -148,7 +161,7 @@ class AcademicTranslator:
 
     def make_bilingual_markdown(self, markdown_text: str) -> str:
         """Transforms paper full text into bilingual English + Chinese layout."""
-        if not self.enabled or not markdown_text or not self.client:
+        if not self.enabled or not markdown_text or not self.client or self._disabled:
             return markdown_text
 
         blocks = self.split_into_semantic_blocks(markdown_text)

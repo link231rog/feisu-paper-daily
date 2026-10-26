@@ -1468,7 +1468,8 @@ class Executor:
             self.write_trace(ranked, reranked_papers, funnel)
 
             logger.info("Generating TLDR, affiliations, and conference venue...")
-            for p in tqdm(reranked_papers, desc="Summarizing papers"):
+
+            def summarize_one(p: Paper) -> None:
                 if self.openai_client is None and self.translator is not None:
                     # Use the configured translator instead of the slow free endpoints.
                     first = (p.abstract or p.title).split(". ")[0].strip().rstrip(".") + "."
@@ -1483,6 +1484,11 @@ class Executor:
                         p.generate_venue(self.openai_client, self.config.llm)
                     else:
                         p.generate_venue()
+
+            # Per-paper HTTP calls, so run them concurrently instead of one timeout per paper
+            tldr_workers = max(1, int(self.config.executor.get("tldr_workers", 4)))
+            with ThreadPoolExecutor(max_workers=tldr_workers) as pool:
+                list(tqdm(pool.map(summarize_one, reranked_papers), total=len(reranked_papers), desc="Summarizing papers"))
 
             # Baseline extraction, attribution, and bi-directional library linking
             if self.research_cfg.get("baselines", True):

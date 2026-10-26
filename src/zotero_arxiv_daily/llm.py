@@ -28,6 +28,9 @@ class LLMRouter:
         self._index = 0
         self._lock = threading.Lock()
         self._clients: dict[str, OpenAI] = {}
+        # Circuit breaker: a dead endpoint must not make every later call wait for its timeout
+        self._failures = 0
+        self._dead = False
 
     @classmethod
     def from_config(cls, config: Any) -> "LLMRouter":
@@ -46,7 +49,16 @@ class LLMRouter:
 
     @property
     def available(self) -> bool:
-        return bool(self.keys)
+        return bool(self.keys) and not self._dead
+
+    def _record_failure(self) -> None:
+        self._failures += 1
+        if self._failures >= max(2, len(self.keys)) and not self._dead:
+            self._dead = True
+            logger.error(
+                "LLM endpoint failed repeatedly; skipping remaining LLM work for this run "
+                "(set a reachable OPENAI_API_BASE or run again when the provider recovers)"
+            )
 
     def _client(self, key: str) -> OpenAI:
         if key not in self._clients:
@@ -61,7 +73,7 @@ class LLMRouter:
         timeout: float = 60,
     ) -> str:
         """Returns the reply text, or an empty string when every key fails."""
-        if not self.keys:
+        if not self.keys or self._dead:
             return ""
 
         attempts = 0
@@ -82,6 +94,7 @@ class LLMRouter:
                     )
                 except Exception as exc:
                     logger.warning(f"LLM call failed with a pooled key: {exc}")
+                    self._record_failure()
                     with self._lock:
                         if "401" in str(exc) or "403" in str(exc):
                             if key in self.keys:
@@ -91,6 +104,7 @@ class LLMRouter:
                             self._index += 1
                     break
 
+                self._failures = 0
                 choice = resp.choices[0]
                 text = (choice.message.content or "").strip()
                 if text:
