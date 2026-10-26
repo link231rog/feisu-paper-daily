@@ -64,6 +64,7 @@ reranker:
   recency_years: null # Defaults to [current year, current year - 1]
   local:
     model: jinaai/jina-embeddings-v5-text-nano-retrieval
+    method: tfidf # tfidf (instant, keyword-based) or embedding (semantic, ~6 min on CI CPU)
     encode_kwargs:
       task: retrieval
       prompt_name: document
