@@ -1,0 +1,44 @@
+name: Diagnose LLM
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe endpoint and key fingerprints
+        env:
+          LLM_API_KEYS: ${{ secrets.LLM_API_KEYS }}
+          TRANSLATION_API_KEY: ${{ secrets.TRANSLATION_API_KEY }}
+          TRANSLATION_API_BASE: ${{ vars.TRANSLATION_API_BASE || 'https://integrate.api.nvidia.com/v1' }}
+        run: |
+          set -u
+          echo "base=${TRANSLATION_API_BASE}"
+          echo "--- dns ---"
+          getent hosts integrate.api.nvidia.com || echo "dns lookup failed"
+          echo "--- fingerprints (sha256 first 12) ---"
+          python3 - <<'PY'
+          import hashlib, os
+          for name in ("LLM_API_KEYS", "TRANSLATION_API_KEY"):
+              raw = os.environ.get(name, "")
+              parts = [p.strip() for p in raw.replace("\n", ",").split(",") if p.strip()]
+              print(name, "count:", len(parts))
+              for i, p in enumerate(parts):
+                  print(f"  {name}#{i+1}", hashlib.sha256(p.encode()).hexdigest()[:12], "len", len(p))
+          PY
+          echo "--- auth probe (first key, 20s) ---"
+          FIRST=$(printf '%s' "$LLM_API_KEYS" | tr ',' '\n' | head -1)
+          curl -sS -o /tmp/body.txt -w 'http=%{http_code} time=%{time_total}s\n' --max-time 20 \
+            -H "Authorization: Bearer $FIRST" "$TRANSLATION_API_BASE/models" || echo "curl exit=$?"
+          head -c 300 /tmp/body.txt 2>/dev/null || true
+          echo
+          echo "--- chat probe (20s) ---"
+          curl -sS -o /tmp/chat.txt -w 'http=%{http_code} time=%{time_total}s\n' --max-time 20 \
+            -H "Authorization: Bearer $FIRST" -H 'Content-Type: application/json' \
+            -d '{"model":"z-ai/glm-5.3-flash","messages":[{"role":"user","content":"reply with ok"}],"max_tokens":8}' \
+            "$TRANSLATION_API_BASE/chat/completions" || echo "curl exit=$?"
+          head -c 300 /tmp/chat.txt 2>/dev/null || true
