@@ -1396,8 +1396,9 @@ class Executor:
         deduped_papers = self.paper_store.dedup(all_papers)
         logger.info(f"{len(deduped_papers)} unique papers after cross-source deduplication")
 
-        # Filter out papers already pushed
-        new_papers = self.paper_store.filter_already_pushed(deduped_papers)
+        # Filter out papers already pushed (allow same-day rerun if force_today is enabled)
+        force_today = as_bool(os.environ.get("FORCE_RERUN_TODAY", False)) or as_bool(self.config.executor.get("force_today", False))
+        new_papers = self.paper_store.filter_already_pushed(deduped_papers, allow_same_day=force_today)
         logger.info(f"{len(new_papers)} new unpushed papers ready for quality filtering")
 
         # Academic Quality Gate (filter out obscure preprints without top affiliation or recognized venue)
@@ -1429,7 +1430,7 @@ class Executor:
                 if related:
                     merged = self.paper_store.dedup(quality_papers + related)
                     quality_papers = self.filter_quality_papers(
-                        self.paper_store.filter_already_pushed(merged)
+                        self.paper_store.filter_already_pushed(merged, allow_same_day=force_today)
                     )
                     logger.info(f"{len(quality_papers)} papers after citation chasing")
 
@@ -1599,6 +1600,7 @@ class Executor:
         # Delivery dispatch
         delivered = False
         attempted_channels = 0
+        today_str = datetime.now().date().isoformat()
 
         # 1. Feishu Delivery (if configured)
         feishu_cfg = self.config.get("feishu")
@@ -1626,6 +1628,7 @@ class Executor:
                     except Exception as exc:
                         logger.warning(f"Could not write suggested questions to console: {exc}")
                 logger.info(f"Feishu daily report updated successfully: {doc_url}")
+                self.paper_store.mark_channel_delivered("feishu", today_str)
                 delivered = True
             except Exception as exc:
                 logger.error(f"Failed to publish Feishu daily report: {exc}")
@@ -1643,9 +1646,14 @@ class Executor:
         ):
             attempted_channels += 1
             try:
-                report = build_daily_report(reranked_papers, self.question_briefs, trending_items=trending_items)
-                send_email(self.config, report.html, report.title)
-                delivered = True
+                if self.paper_store.is_channel_delivered("email", today_str) and not force_today and not reranked_papers:
+                    logger.info(f"Daily report email already sent today ({today_str}); skipping.")
+                    delivered = True
+                else:
+                    report = build_daily_report(reranked_papers, self.question_briefs, trending_items=trending_items)
+                    send_email(self.config, report.html, report.title)
+                    self.paper_store.mark_channel_delivered("email", today_str)
+                    delivered = True
             except Exception as exc:
                 logger.error(f"Failed to send email daily report: {exc}")
 
@@ -1660,14 +1668,19 @@ class Executor:
         ):
             attempted_channels += 1
             try:
-                from .wechat import create_draft
+                if self.paper_store.is_channel_delivered("wechat", today_str) and not force_today and not reranked_papers:
+                    logger.info(f"WeChat daily report draft already created today ({today_str}); skipping.")
+                    delivered = True
+                else:
+                    from .wechat import create_draft
 
-                report = build_daily_report(
-                    reranked_papers, self.question_briefs, max_chars=19000, trending_items=trending_items
-                )
-                create_draft(wechat_cfg, report)
-                logger.info("WeChat daily report draft created successfully")
-                delivered = True
+                    report = build_daily_report(
+                        reranked_papers, self.question_briefs, max_chars=19000, trending_items=trending_items
+                    )
+                    create_draft(wechat_cfg, report)
+                    logger.info("WeChat daily report draft created successfully")
+                    self.paper_store.mark_channel_delivered("wechat", today_str)
+                    delivered = True
             except Exception as exc:
                 logger.error(f"Failed to create WeChat daily report draft: {exc}")
 

@@ -124,16 +124,36 @@ class PaperStore:
             merged[key] = existing
         return list(merged.values())
 
-    def filter_already_pushed(self, items: list[Any]) -> list[Any]:
-        pushed = self.data["pushed"]
+    def filter_already_pushed(self, items: list[Any], allow_same_day: bool = False) -> list[Any]:
+        pushed = self.data.get("pushed", {})
         discarded = self.data.get("discarded", {})
         ingested = self.data.get("ingested", {})
-        return [
-            p for p in items
-            if p.dedup_key() not in pushed
-            and p.dedup_key() not in discarded
-            and p.dedup_key() not in ingested
-        ]
+        today_prefix = datetime.now().date().isoformat()
+        result = []
+        for p in items:
+            k = p.dedup_key()
+            if k in discarded or k in ingested:
+                continue
+            if k in pushed:
+                if allow_same_day and str(pushed[k]).startswith(today_prefix):
+                    result.append(p)
+                    continue
+                continue
+            result.append(p)
+        return result
+
+    def is_channel_delivered(self, channel: str, date_str: str) -> bool:
+        """True if the report channel was already delivered on date_str (YYYY-MM-DD)."""
+        deliveries = self.data.get("daily_deliveries", {})
+        return channel in deliveries.get(date_str, [])
+
+    def mark_channel_delivered(self, channel: str, date_str: str) -> None:
+        """Records that a report channel was successfully delivered today."""
+        deliveries = self.data.setdefault("daily_deliveries", {})
+        day_channels = deliveries.setdefault(date_str, [])
+        if channel not in day_channels:
+            day_channels.append(channel)
+        self.save()
 
     def mark_pushed(self, items: list[Any], pushed_at: Optional[datetime] = None) -> None:
         ts = (pushed_at or datetime.now()).isoformat()

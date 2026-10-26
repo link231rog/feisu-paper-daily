@@ -48,18 +48,18 @@ llm:
   api:
     key: ${oc.env:OPENAI_API_KEY,null}
     keys: ${oc.env:LLM_API_KEYS,null}
-    base_url: ${oc.env:OPENAI_API_BASE,${oc.env:TRANSLATION_API_BASE,https://integrate.api.nvidia.com/v1}}
+    base_url: ${oc.env:OPENAI_API_BASE,${oc.env:TRANSLATION_API_BASE,https://hkg.toklens.ai/v1}}
   api_mode: chat_completion
   generation_kwargs:
-    model: ${oc.env:OPENAI_MODEL,${oc.env:TRANSLATION_MODEL,z-ai/glm-5.3-flash}}
+    model: ${oc.env:OPENAI_MODEL,${oc.env:TRANSLATION_MODEL,deepseek-v4.1-flash}}
   language: Chinese
 
 translation:
   enabled: ${oc.env:TRANSLATION_ENABLED,true}
-  api_base: ${oc.env:TRANSLATION_API_BASE,https://integrate.api.nvidia.com/v1}
+  api_base: ${oc.env:TRANSLATION_API_BASE,https://hkg.toklens.ai/v1}
   api_key: ${oc.env:TRANSLATION_API_KEY,null}
   backup_api_key: ${oc.env:TRANSLATION_BACKUP_API_KEY,null}
-  model: ${oc.env:TRANSLATION_MODEL,z-ai/glm-5.3-flash}
+  model: ${oc.env:TRANSLATION_MODEL,deepseek-v4.1-flash}
   layout: ${oc.env:TRANSLATION_LAYOUT,quote}
   batch_size: ${oc.env:TRANSLATION_BATCH_SIZE,5}
 
@@ -135,8 +135,8 @@ paper_store:
 
 executor:
   debug: false
-  max_paper_num: 35
-  total_daily_quota: 40
+  max_paper_num: ${oc.env:MAX_PAPER_NUM,15}
+  total_daily_quota: ${oc.env:TOTAL_DAILY_QUOTA,15}
   source: ['arxiv', 'huggingface', 'semantic_scholar']
   reranker: local
 

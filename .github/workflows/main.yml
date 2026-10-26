@@ -6,6 +6,10 @@ on:
         description: 'Only ingest checked papers (skip new retrieval)'
         type: boolean
         default: false
+      force_today:
+        description: 'Re-run today: re-evaluate papers pushed earlier today'
+        type: boolean
+        default: false
   schedule:
     - cron: '0 1,7,11 * * *' # 09:00, 15:00, 19:00 Beijing Time (01:00, 07:00, 11:00 UTC)
 
@@ -60,12 +64,13 @@ jobs:
           NOTION_CONSOLE_PAGE_ID: ${{ vars.NOTION_CONSOLE_PAGE_ID }}
           CONSOLE_PROVIDER: ${{ vars.CONSOLE_PROVIDER || 'auto' }}
           FEISHU_DRY_RUN: "false"
+          FORCE_RERUN_TODAY: ${{ inputs.force_today && 'true' || 'false' }}
           SEMANTIC_SCHOLAR_API_KEY: ${{ secrets.SEMANTIC_SCHOLAR_API_KEY }}
           TRANSLATION_ENABLED: ${{ vars.TRANSLATION_ENABLED || 'true' }}
-          TRANSLATION_API_BASE: ${{ vars.TRANSLATION_API_BASE || 'https://integrate.api.nvidia.com/v1' }}
+          TRANSLATION_API_BASE: ${{ vars.TRANSLATION_API_BASE || 'https://hkg.toklens.ai/v1' }}
           TRANSLATION_API_KEY: ${{ secrets.TRANSLATION_API_KEY }}
           TRANSLATION_BACKUP_API_KEY: ${{ secrets.TRANSLATION_BACKUP_API_KEY }}
-          TRANSLATION_MODEL: ${{ vars.TRANSLATION_MODEL || 'z-ai/glm-5.3-flash' }}
+          TRANSLATION_MODEL: ${{ vars.TRANSLATION_MODEL || 'deepseek-v4.1-flash' }}
           CUSTOM_CONFIG: ${{ secrets.CUSTOM_CONFIG }}
           EMAIL_ENABLED: ${{ vars.EMAIL_ENABLED || 'true' }}
           SENDER: ${{ secrets.SENDER }}

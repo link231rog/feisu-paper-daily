@@ -1290,6 +1290,11 @@ class FeishuClient:
         doc_id = doc_res.get("document", {}).get("document_id")
         return doc_id, f"https://feishu.cn/docx/{doc_id}"
 
+    def _get_root_children(self, document_id: str) -> list[str]:
+        """Returns the current ordered list of child block IDs for the document root."""
+        root_res = self._call_api("GET", f"/docx/v1/documents/{document_id}/blocks/{document_id}")
+        return root_res.get("block", {}).get("children", [])
+
     def create_or_update_daily_report(
         self,
         papers: list[Paper],
@@ -1312,31 +1317,90 @@ class FeishuClient:
         # Ensure document edit permissions so checkboxes are clickable
         self._ensure_doc_permissions(doc_id)
 
-        # 2. Inspect existing blocks in the document to prevent duplicates and determine next sequential index
+        # 2. Inspect existing blocks in the document to prevent duplicates and detect sections
+        root_children = self._get_root_children(doc_id)
         existing_blocks = self.get_document_blocks(doc_id)
         existing_urls: set[str] = set()
         existing_titles: set[str] = set()
         existing_card_count = 0
 
+        SECTION_PAPER = "今日推荐论文"
+        SECTION_BRIEFS = "今日问题进展"
+        SECTION_TRENDING = "AI 动态与 GitHub 热点"
+
+        paper_header_id: Optional[str] = None
+        briefs_header_id: Optional[str] = None
+        trending_header_id: Optional[str] = None
+
         for b in existing_blocks:
+            b_id = b.get("block_id")
             b_type = b.get("block_type")
             if b_type in (4, 5):  # heading2 or heading3
                 h_key = "heading2" if b_type == 4 else "heading3"
                 txt = "".join(el.get("text_run", {}).get("content", "") for el in b.get(h_key, {}).get("elements", [])).strip()
-                if re.match(r"^\d+\.", txt):
-                    existing_card_count += 1
+
+                if SECTION_PAPER in txt:
+                    paper_header_id = b_id
+                elif SECTION_BRIEFS in txt:
+                    briefs_header_id = b_id
+                elif SECTION_TRENDING in txt:
+                    trending_header_id = b_id
+                else:
+                    # Title block for a paper or trending item
+                    existing_titles.add(txt.lower())
                     clean = re.sub(r"^\d+\.\s*", "", txt).strip().lower()
                     existing_titles.add(clean)
+                    # Strip venue/parentheses e.g. "Title (ACL 2026)" -> "Title"
+                    no_venue = re.sub(r"\s*[\(\[].*?[\)\]]\s*$", "", clean).strip()
+                    if no_venue:
+                        existing_titles.add(no_venue)
+                    if b_type == 4:
+                        existing_card_count += 1
             elif b_type == 2:  # text
-                txt = "".join(el.get("text_run", {}).get("content", "") for el in b.get("text", {}).get("elements", []))
-                for u in re.findall(r"https?://\S+", txt):
-                    existing_urls.add(u.rstrip(" \n\r"))
+                for el in b.get("text", {}).get("elements", []):
+                    link_url = el.get("text_element_style", {}).get("link", {}).get("url")
+                    if link_url:
+                        existing_urls.add(link_url.strip())
+                    txt = el.get("text_run", {}).get("content", "")
+                    for u in re.findall(r"https?://\S+", txt):
+                        existing_urls.add(u.rstrip(" \n\r"))
 
-        children: list[dict[str, Any]] = []
+        # Collect existing brief block IDs to cleanly replace them if updating briefs today
+        old_brief_block_ids: list[str] = []
+        if briefs_header_id and briefs_header_id in root_children:
+            start_i = root_children.index(briefs_header_id)
+            end_i = root_children.index(trending_header_id) if trending_header_id and trending_header_id in root_children else len(root_children)
+            old_brief_block_ids = root_children[start_i:end_i]
 
-        # 3. If document is fresh (only page root block), initialize section header
-        if len(existing_blocks) <= 1:
-            children.append({
+        def insert_blocks(blocks_to_insert: list[dict[str, Any]], target_index: int = -1) -> None:
+            if not blocks_to_insert:
+                return
+            batch_size = 50
+            curr_idx = target_index
+            for i in range(0, len(blocks_to_insert), batch_size):
+                chunk = blocks_to_insert[i : i + batch_size]
+                self._call_api(
+                    "POST",
+                    f"/docx/v1/documents/{doc_id}/blocks/{doc_id}/children",
+                    data={"children": chunk, "index": curr_idx}
+                )
+                if curr_idx != -1:
+                    curr_idx += len(chunk)
+
+        # 3. Filter and append academic papers
+        papers_to_add: list[Paper] = []
+        for p in papers:
+            p_clean = p.clean_title.lower() if hasattr(p, "clean_title") else p.title.strip().lower()
+            p_raw = p.title.strip().lower()
+            if p.url and p.url in existing_urls:
+                continue
+            if p_clean in existing_titles or p_raw in existing_titles:
+                continue
+            papers_to_add.append(p)
+
+        paper_blocks: list[dict[str, Any]] = []
+        if (not paper_header_id or len(existing_blocks) <= 1) and (papers_to_add or not existing_blocks):
+            paper_blocks.append({
                 "block_type": 4,
                 "heading2": {
                     "elements": [
@@ -1344,16 +1408,7 @@ class FeishuClient:
                     ]
                 }
             })
-
-        # 4. Filter and sequentially append academic papers
-        papers_to_add: list[Paper] = []
-        for p in papers:
-            p_clean = p.clean_title.lower() if hasattr(p, "clean_title") else p.title.strip().lower()
-            if p.url and p.url in existing_urls:
-                continue
-            if p_clean in existing_titles or p.title.strip().lower() in existing_titles:
-                continue
-            papers_to_add.append(p)
+            paper_header_id = "pending"
 
         for p in papers_to_add:
             existing_card_count += 1
@@ -1361,7 +1416,7 @@ class FeishuClient:
             title_display = p.title_with_venue()
 
             # Heading 2: Paper Title (Conference) (no sequential numbering)
-            children.append({
+            paper_blocks.append({
                 "block_type": 4,
                 "heading2": {
                     "elements": [
@@ -1375,7 +1430,7 @@ class FeishuClient:
             })
 
             # Todo block 1: [ ] 确认精读入库
-            children.append({
+            paper_blocks.append({
                 "block_type": 17,
                 "todo": {
                     "style": {"done": False},
@@ -1383,7 +1438,7 @@ class FeishuClient:
                 }
             })
             # Todo block 2: [ ] 移出待选
-            children.append({
+            paper_blocks.append({
                 "block_type": 17,
                 "todo": {
                     "style": {"done": False},
@@ -1403,7 +1458,7 @@ class FeishuClient:
                 f"发表单位/实验室: {affil_str}\n"
                 f"原文链接: "
             )
-            children.append({
+            paper_blocks.append({
                 "block_type": 2,
                 "text": {
                     "elements": [
@@ -1429,7 +1484,7 @@ class FeishuClient:
                 tldr_text = f"TL;DR: {en_summary}"
 
             # 1. TL;DR text block
-            children.append({
+            paper_blocks.append({
                 "block_type": 2,
                 "text": {
                     "elements": [
@@ -1443,7 +1498,7 @@ class FeishuClient:
                 from .annotator import build_annotated_text_elements
 
                 annotated_elements = build_annotated_text_elements(p, corpus=corpus, client=self)
-                children.append({
+                paper_blocks.append({
                     "block_type": 2,
                     "text": {
                         "elements": annotated_elements
@@ -1453,7 +1508,7 @@ class FeishuClient:
                 # Fallback to plain English abstract and standalone cards
                 if p.abstract and p.abstract.strip():
                     clean_abs = p.abstract.strip()
-                    children.append({
+                    paper_blocks.append({
                         "block_type": 2,
                         "text": {
                             "elements": [{"text_run": {"content": f"📄 英文摘要 (Abstract):\n{clean_abs}\n"}}]
@@ -1465,7 +1520,7 @@ class FeishuClient:
                     qa_lines = ["🎯 关注问题匹配:"]
                     for match in p.qa_matches:
                         qa_lines.append(f"Q: {match.get('question', '')}\nA: {match.get('answer', '')}")
-                    children.append({
+                    paper_blocks.append({
                         "block_type": 2,
                         "text": {
                             "elements": [
@@ -1485,9 +1540,9 @@ class FeishuClient:
                         venue_part = f" [{venue}]" if venue else ""
                         summary = b.get("method_summary", "")
                         comp = b.get("comparison", "")
+                        b_doc_url = b.get("library_url", "")
+                        b_doc_title = b.get("library_title", "")
                         in_lib = b.get("in_library", False)
-                        b_doc_url = b.get("doc_url")
-                        b_doc_title = b.get("doc_title")
 
                         bl_elements.append({
                             "text_run": {
@@ -1532,26 +1587,42 @@ class FeishuClient:
                                 comparison=comp,
                             )
 
-                    children.append({
+                    paper_blocks.append({
                         "block_type": 2,
                         "text": {
                             "elements": bl_elements
                         }
                     })
 
-        # 4b. Per-question research briefs (date-stamped so history stays readable)
+        if paper_blocks:
+            if briefs_header_id and briefs_header_id in root_children:
+                ins_idx = root_children.index(briefs_header_id)
+            elif trending_header_id and trending_header_id in root_children:
+                ins_idx = root_children.index(trending_header_id)
+            else:
+                ins_idx = -1
+            logger.info(f"Writing {len(paper_blocks)} paper blocks to document {doc_id} at index {ins_idx}...")
+            insert_blocks(paper_blocks, ins_idx)
+            root_children = self._get_root_children(doc_id)
+
+        # 4. Research question briefs (cleanly replace existing briefs if updated)
         has_briefs = bool(question_briefs)
         if has_briefs:
             from datetime import date
 
-            children.append({
+            if old_brief_block_ids:
+                logger.info(f"Replacing {len(old_brief_block_ids)} existing question brief blocks in document {doc_id}...")
+                self.delete_document_blocks(doc_id, old_brief_block_ids)
+                root_children = self._get_root_children(doc_id)
+
+            brief_blocks: list[dict[str, Any]] = [{
                 "block_type": 4,
                 "heading2": {
                     "elements": [
                         {"text_run": {"content": f"二、今日问题进展（{date.today().isoformat()}）"}}
                     ]
                 }
-            })
+            }]
             for brief in question_briefs:
                 status_raw = (brief.get("status") or "exploring").lower()
                 status_badge = {
@@ -1561,7 +1632,7 @@ class FeishuClient:
                     "falsified": "❌ [假设证伪]",
                 }.get(status_raw, "🌱 [探索期]")
                 q_title = f"{status_badge} {brief.get('question', '')}".strip()
-                children.append({
+                brief_blocks.append({
                     "block_type": 5,
                     "heading3": {
                         "elements": [{"text_run": {"content": q_title}}]
@@ -1580,12 +1651,20 @@ class FeishuClient:
                     )
                 if brief.get("gap"):
                     body += f"\n🔍 仍待解决: {brief['gap']}"
-                children.append({
+                brief_blocks.append({
                     "block_type": 2,
                     "text": {"elements": [{"text_run": {"content": body + "\n"}}]}
                 })
 
-        # 5. Filter and sequentially append AI Dynamics & GitHub Trending items
+            if trending_header_id and trending_header_id in root_children:
+                b_ins_idx = root_children.index(trending_header_id)
+            else:
+                b_ins_idx = -1
+            logger.info(f"Writing {len(brief_blocks)} question brief blocks to document {doc_id} at index {b_ins_idx}...")
+            insert_blocks(brief_blocks, b_ins_idx)
+            root_children = self._get_root_children(doc_id)
+
+        # 5. Filter and append AI Dynamics & GitHub Trending items
         if trending_items:
             trends_to_add: list[TrendingItem] = []
             for item in trending_items:
@@ -1597,17 +1676,10 @@ class FeishuClient:
                 trends_to_add.append(item)
 
             if trends_to_add:
-                # Add section heading if this is the first batch or fresh document
-                has_trending_header = any(
-                    "AI 动态与 GitHub 热点" in "".join(
-                        el.get("text_run", {}).get("content", "")
-                        for el in b.get("heading2", {}).get("elements", [])
-                    )
-                    for b in existing_blocks if b.get("block_type") == 4
-                )
-                if not has_trending_header:
-                    trends_no = "三" if has_briefs else "二"
-                    children.append({
+                trend_blocks: list[dict[str, Any]] = []
+                if not trending_header_id:
+                    trends_no = "三" if (has_briefs or briefs_header_id) else "二"
+                    trend_blocks.append({
                         "block_type": 4,
                         "heading2": {
                             "elements": [
@@ -1618,12 +1690,11 @@ class FeishuClient:
 
                 for item in trends_to_add:
                     existing_card_count += 1
-                    idx = existing_card_count
                     tags_str = " ".join(f"[#{t}]" for t in (item.tags or ["Hot"]))
                     stars_str = f" (⭐ {item.stars:,})" if item.stars else ""
 
                     # Heading 3: [#Agent] vllm-project/vllm (⭐ 28,400)
-                    children.append({
+                    trend_blocks.append({
                         "block_type": 5,
                         "heading3": {
                             "elements": [
@@ -1633,7 +1704,7 @@ class FeishuClient:
                     })
 
                     # Todo 1: Confirm ingest
-                    children.append({
+                    trend_blocks.append({
                         "block_type": 17,
                         "todo": {
                             "style": {"done": False},
@@ -1641,7 +1712,7 @@ class FeishuClient:
                         }
                     })
                     # Todo 2: Discard
-                    children.append({
+                    trend_blocks.append({
                         "block_type": 17,
                         "todo": {
                             "style": {"done": False},
@@ -1650,7 +1721,7 @@ class FeishuClient:
                     })
 
                     # Meta: 来源: ... | 原文链接: ...
-                    children.append({
+                    trend_blocks.append({
                         "block_type": 2,
                         "text": {
                             "elements": [
@@ -1667,7 +1738,7 @@ class FeishuClient:
                     if summary_zh and summary_zh != summary_en:
                         tldr_text += f"\n{summary_zh}"
 
-                    children.append({
+                    trend_blocks.append({
                         "block_type": 2,
                         "text": {
                             "elements": [
@@ -1676,21 +1747,13 @@ class FeishuClient:
                         }
                     })
 
-        # 6. Append blocks in batches of 50 if there are new blocks
-        if children:
-            logger.info(f"Writing {len(children)} daily report blocks to document {doc_id} in batches of 50...")
-            batch_size = 50
-            for i in range(0, len(children), batch_size):
-                chunk = children[i : i + batch_size]
-                self._call_api(
-                    "POST",
-                    f"/docx/v1/documents/{doc_id}/blocks/{doc_id}/children",
-                    data={"children": chunk, "index": -1}
-                )
+                logger.info(f"Writing {len(trend_blocks)} trending blocks to document {doc_id}...")
+                insert_blocks(trend_blocks, -1)
 
         doc_url = doc_url or f"https://feishu.cn/docx/{doc_id}"
         logger.info(f"Feishu daily report updated successfully: {doc_url}")
         return doc_url
+
 
     def fetch_console_settings(self, node_token: str) -> dict[str, list[str]]:
         """Reads tracked tags and questions from the Feishu recommendation console document."""
