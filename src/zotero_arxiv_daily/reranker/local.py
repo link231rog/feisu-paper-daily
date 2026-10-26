@@ -2,10 +2,13 @@ from .base import BaseReranker, register_reranker
 import hashlib
 import logging
 import pickle
+import time
 import warnings
 from pathlib import Path
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 # Model load + corpus re-encode dominated the run time (~10 min for two rerank calls),
 # so both are cached: the encoder in-process, embeddings on disk across runs.
@@ -69,7 +72,9 @@ class LocalReranker(BaseReranker):
         key = _cache_key(model_name, texts)
         cached = _EMBED_CACHE.get(key)
         if cached is not None:
+            logger.debug(f"Embedding cache hit for {len(texts)} texts")
             return cached
+        started = time.time()
         features = encoder.encode(
             texts,
             **encode_kwargs,
@@ -79,6 +84,7 @@ class LocalReranker(BaseReranker):
         features = np.asarray(features)
         _EMBED_CACHE[key] = features
         _save_cache()
+        logger.info(f"Encoded {len(texts)} texts in {time.time() - started:.1f}s (cache miss)")
         return features
 
     def get_similarity_score(self, s1: list[str], s2: list[str]) -> np.ndarray:

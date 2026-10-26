@@ -1,4 +1,5 @@
 import os
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 import json
@@ -1527,6 +1528,7 @@ class Executor:
         # Multi-hop retrieval: chase citations of the most promising candidates
         if self.research_cfg.get("enabled", True) and self.research_cfg.get("multi_hop", True):
             # Seeds come from the taste-ordered head, not retrieval order, and are chosen for the questions
+            _t0 = time.time()
             seed_pool = (
                 self.reranker.rerank(
                     list(quality_papers),
@@ -1537,14 +1539,17 @@ class Executor:
                 if quality_papers
                 else []
             )
+            logger.info(f"Seed rerank finished in {time.time() - _t0:.1f}s")
             seeds = pick_seeds(
                 self.router,
                 seed_pool[:20],
                 int(self.research_cfg.get("max_seeds", 4)),
                 questions=console_settings.get("questions", []),
             )
+            logger.info(f"pick_seeds finished at {time.time() - _t0:.1f}s ({len(seeds)} seeds)")
             if seeds and "semantic_scholar" in self.retrievers:
                 related = self.retrievers["semantic_scholar"].retrieve_related(seeds)
+                logger.info(f"Citation chasing finished at {time.time() - _t0:.1f}s ({len(related or [])} related)")
                 if related:
                     merged = self.paper_store.dedup(quality_papers + related)
                     quality_papers = self.filter_quality_papers(
