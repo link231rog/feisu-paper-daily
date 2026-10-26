@@ -336,6 +336,13 @@ def judge_ranking(router: LLMRouter, questions: list[str], papers: list[Paper]) 
         'Return ONLY JSON: {"ranking": [{"index": 3, "reason": "一句话中文理由"}], "dropped": [7]}'
     )
     data = _json_block(router.chat([{"role": "user", "content": prompt}], max_tokens=2500), {})
+    if isinstance(data, dict) and "ranking" not in data:
+        # Some replies wrap the payload one level deeper.
+        nested = next(
+            (v for v in data.values() if isinstance(v, dict) and "ranking" in v), None
+        )
+        if nested is not None:
+            data = nested
     if not isinstance(data, dict):
         return list(range(len(papers)))
 
