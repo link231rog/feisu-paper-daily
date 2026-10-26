@@ -4,6 +4,7 @@ from datetime import datetime
 import json
 import random
 import re
+from pathlib import Path
 from typing import Any, Optional
 import requests
 from loguru import logger
@@ -13,8 +14,8 @@ from pyzotero import zotero
 from tqdm import tqdm
 
 from .baseline import enrich_papers_with_baselines
-from .construct_email import render_email
-from .interest import get_interest_corpus
+from .daily_report import build_daily_report
+from .interest import get_interest_corpus, taste_corpus
 from .llm import LLMRouter
 from .paper_store import PaperStore
 from .protocol import CorpusPaper, Paper, TrendingItem
@@ -29,6 +30,7 @@ from .research import (
 )
 from .reranker import get_reranker_cls
 from .retriever import get_retriever_cls
+from .textutil import UNTRUSTED_NOTICE, contains_quote, extract_json
 from .utils import glob_match, send_email, clean_paper_markdown
 
 
@@ -36,6 +38,14 @@ def as_bool(value: Any) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in ("true", "1", "yes")
     return bool(value)
+
+
+def _title_words(text: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9\u4e00-\u9fff]+", (text or "").lower()))
+
+
+def _jaccard(a: set[str], b: set[str]) -> float:
+    return len(a & b) / len(a | b) if a and b else 0.0
 
 
 def normalize_path_patterns(patterns: list[str] | ListConfig | None, config_key: str) -> list[str] | None:
@@ -92,7 +102,9 @@ class Executor:
         self.research_cfg = research_cfg
         self.router = LLMRouter.from_config(config)
         self.research_state = ResearchState(
-            str(research_cfg.get("state_path", "data/research_state.json"))
+            str(research_cfg.get("state_path", "data/research_state.json")),
+            converge_min_support=int(research_cfg.get("converge_min_support", 6)),
+            falsify_min_counter=int(research_cfg.get("falsify_min_counter", 3)),
         )
         self.question_briefs: list[dict] = []
         self.suggested_questions: list[str] = []
@@ -129,7 +141,8 @@ class Executor:
                 title=c['data']['title'],
                 abstract=c['data']['abstractNote'],
                 added_date=datetime.strptime(c['data']['dateAdded'], '%Y-%m-%dT%H:%M:%SZ'),
-                paths=c['paths']
+                paths=[f"zotero/{path}" for path in c['paths']],
+                url=f"zotero://select/library/items/{c.get('key', '')}",
             ) for c in corpus
         ]
 
@@ -221,18 +234,26 @@ class Executor:
 
         def score_one(paper: Paper) -> None:
             prompt = (
-                "You score how much a paper advances a reader's tracked research questions.\n"
+                "You are a strict reviewer scoring how much one paper advances a reader's tracked research questions.\n"
                 f"Questions:\n{numbered}\n\n"
+                f"{UNTRUSTED_NOTICE}\n"
                 f"Paper title: {paper.title}\n"
-                f"Abstract: {(paper.abstract or '')[:2000]}\n\n"
-                "Score each question 0-10:\n"
-                "10 = mechanism/result that directly answers it\n"
-                "7-9 = substantial progress or strong new evidence\n"
-                "4-6 = relevant method or partial evidence\n"
-                "1-3 = same topic, no answer\n"
-                "0 = irrelevant (omit)\n"
-                "Add a one-sentence Chinese answer for scores >= 4.\n"
-                'Return ONLY JSON: [{"question": 1, "score": 8, "answer": "..."}]'
+                f"<untrusted_source>\n{(paper.abstract or '')[:2000]}\n</untrusted_source>\n\n"
+                "Use only the supplied title and abstract; do not use prior knowledge, reputation or invented results.\n"
+                "Score each question 0-10. Most papers answer few or none of the questions, so most scores should be 0-3.\n"
+                "10 = the abstract states a mechanism or measured result that directly answers the question\n"
+                "7-9 = substantial, explicit evidence on the question's core, short of a full answer\n"
+                "4-6 = a relevant method, setting or partial result that bears on the question\n"
+                "1-3 = same topic, but the abstract says nothing that helps answer it\n"
+                "0 = unrelated (omit it)\n"
+                "Do not raise a score because the topic is fashionable, the method is new or the claims are broad. "
+                "A method that merely could be applied to the question is at most 4.\n"
+                "For scores >= 4 also give: 'answer' (one Chinese sentence stating what the paper shows about the question), "
+                "'evidence_quote' (a contiguous quote copied from the abstract that supports both the score and the answer), and "
+                "'stance': 'supports' if the quoted result favours the question's underlying hypothesis or goal, "
+                "'against' if it reports a failure, limit or contradicting result, 'neutral' otherwise. "
+                "If the abstract offers no such quote, score at most 3.\n"
+                'Return ONLY JSON: [{"question": 1, "score": 8, "answer": "...", "evidence_quote": "exact abstract substring", "stance": "supports"}]'
             )
             try:
                 raw = client.chat(
@@ -240,12 +261,16 @@ class Executor:
                     max_tokens=1200,
                     timeout=90,
                 )
-                match = re.search(r"\[.*\]", raw, flags=re.DOTALL)
-                if not match:
+                data = extract_json(raw, None)
+                if isinstance(data, dict):
+                    data = next((v for v in data.values() if isinstance(v, list)), None)
+                if not isinstance(data, list):
                     return
                 scores: dict[str, int] = {}
                 matches = []
-                for item in json.loads(match.group(0)):
+                for item in data:
+                    if not isinstance(item, dict):
+                        continue
                     try:
                         idx = int(item.get("question", 0))
                         value = int(item.get("score", 0))
@@ -254,10 +279,23 @@ class Executor:
                     if not 1 <= idx <= len(questions) or value <= 0:
                         continue
                     question = questions[idx - 1]
-                    scores[question] = max(scores.get(question, 0), min(10, value))
                     answer = str(item.get("answer", "")).strip()
+                    evidence_quote = str(item.get("evidence_quote", "")).strip()
+                    if value >= 4:
+                        if not contains_quote(paper.abstract or "", evidence_quote):
+                            value = 3
+                            answer = ""
+                    scores[question] = max(scores.get(question, 0), min(10, value))
                     if value >= 4 and answer:
-                        matches.append({"question": question, "answer": answer})
+                        stance = str(item.get("stance", "neutral")).strip().lower()
+                        matches.append(
+                            {
+                                "question": question,
+                                "answer": answer,
+                                "evidence_quote": evidence_quote,
+                                "stance": stance if stance in {"supports", "against", "neutral"} else "neutral",
+                            }
+                        )
                 paper.qa_scores = scores or None
                 paper.qa_matches = matches or None
             except Exception as exc:
@@ -273,6 +311,63 @@ class Executor:
         if not paper.qa_scores:
             return None
         return max(paper.qa_scores, key=lambda q: weights.get(q, 1.0) * paper.qa_scores[q])
+
+    def apply_negative_feedback(self, papers: list[Paper]) -> None:
+        """Penalizes candidates whose titles closely resemble papers the user discarded."""
+        penalty = float(self.research_cfg.get("negative_penalty", 1.0))
+        if not papers or penalty <= 0:
+            return
+        threshold = float(self.research_cfg.get("negative_similarity", 0.6))
+        discarded = [
+            _title_words(item.get("title", ""))
+            for item in self.paper_store.recent_discarded(200)
+        ]
+        discarded = [words for words in discarded if words]
+        if not discarded:
+            return
+
+        affected = 0
+        for paper in papers:
+            words = _title_words(paper.title)
+            if words and any(_jaccard(words, other) >= threshold for other in discarded):
+                paper.score = round(float(paper.score or 0.0) - penalty, 2)
+                affected += 1
+        logger.info(
+            f"Negative feedback penalized {affected}/{len(papers)} candidates "
+            f"against {len(discarded)} discarded titles"
+        )
+
+    def write_trace(self, candidates: list[Paper], selected: list[Paper], funnel: dict[str, int]) -> None:
+        """Saves why papers were picked so ranking weights can be tuned against real outcomes."""
+        if not as_bool(self.research_cfg.get("trace", True)):
+            return
+        try:
+            chosen = {id(p) for p in selected}
+            trace = {
+                "date": datetime.now().date().isoformat(),
+                "funnel": funnel,
+                "weights": {
+                    "taste": self.research_cfg.get("weight_taste", 0.5),
+                    "fit": self.research_cfg.get("weight_fit", 0.5),
+                    "judge": self.research_cfg.get("judge_weight", 0.6),
+                },
+                "candidates": [
+                    {
+                        "title": p.title,
+                        "url": p.url,
+                        "taste_score": p.score,
+                        "qa_scores": p.qa_scores or {},
+                        "judge_reason": p.judge_reason,
+                        "selected": id(p) in chosen,
+                    }
+                    for p in candidates[:60]
+                ],
+            }
+            path = Path(self.research_cfg.get("trace_path", "data/last_run_trace.json"))
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(trace, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception as exc:  # tracing must never break the run
+            logger.warning(f"Could not write run trace: {exc}")
 
     def fuse_and_select(
         self, papers: list[Paper], questions: list[str], quota: int
@@ -294,7 +389,8 @@ class Executor:
             fit = 0.0
             if questions and paper.qa_scores:
                 fit = max(weights.get(q, 1.0) * s for q, s in paper.qa_scores.items()) / 10
-            fused[id(paper)] = w_taste * taste_norm + w_fit * min(fit, 1.0)
+            # No clamp: contested questions (weight > 1) must still separate strong candidates
+            fused[id(paper)] = w_taste * taste_norm + w_fit * fit
 
         ordered = sorted(papers, key=lambda p: fused[id(p)], reverse=True)
 
@@ -302,8 +398,18 @@ class Executor:
         if self.research_cfg.get("judge", True) and questions and self.router.available and len(ordered) > 2:
             head = ordered[:judge_n]
             order = judge_ranking(self.router, questions, head)
-            ordered = [head[i] for i in order] + ordered[judge_n:]
-            logger.info(f"Judge re-ranked the top {len(head)} candidates")
+            # Blend ranks instead of letting one LLM pass overrule the fused score outright
+            judge_w = min(1.0, max(0.0, float(self.research_cfg.get("judge_weight", 0.6))))
+            judge_pos = {idx: pos for pos, idx in enumerate(order)}
+            kept = sorted(
+                judge_pos,
+                key=lambda i: ((1 - judge_w) * i + judge_w * judge_pos[i], i),
+            )
+            ordered = [head[i] for i in kept] + ordered[judge_n:]
+            logger.info(
+                f"Judge re-ranked the top {len(head)} candidates "
+                f"(weight {judge_w:.2f}, dropped {len(head) - len(kept)})"
+            )
 
         cap = int(self.research_cfg.get("per_question_cap", 6))
         reserve = max(0, min(int(self.research_cfg.get("exploration_slots", 2)), quota - 1))
@@ -761,6 +867,14 @@ class Executor:
             from .feishu import FeishuClient
             client = FeishuClient(feishu_cfg)
 
+            # First resolve any inline @AI follow-up questions in candidate doc or reading notes
+            try:
+                answered = client.resolve_wiki_ai_queries(self.router)
+                if answered:
+                    logger.info(f"Resolved {answered} inline @AI follow-up queries in Feishu Wiki.")
+            except Exception as ai_exc:
+                logger.debug(f"Notice resolving @AI queries: {ai_exc}")
+
             checked_items = client.fetch_checked_papers_from_wiki()
             if not checked_items:
                 logger.info("No checked papers found in Feishu daily reports for ingestion.")
@@ -778,7 +892,7 @@ class Executor:
                     logger.info(f"User marked '{title}' for removal/deletion. Deleting card from document {doc_id} and permanently blacklisting...")
                     if doc_id and card_block_ids:
                         client.delete_document_blocks(doc_id, card_block_ids)
-                    self.paper_store.mark_discarded(title, metadata={"url": url})
+                    self.paper_store.mark_discarded(title, metadata={"url": url, "title": title})
                     if url:
                         self.paper_store.mark_discarded(url)
                     continue
@@ -1251,7 +1365,8 @@ class Executor:
                 self.router,
                 console_settings.get("tags", []),
                 console_settings.get("questions", []),
-                [p.title for p in corpus[:10]],
+                [p.title for p in taste_corpus(corpus)[:10]],
+                state=self.research_state,
             )
             if plan.get("s2_queries") and "semantic_scholar" in self.retrievers:
                 self.retrievers["semantic_scholar"].retriever_config.queries = plan["s2_queries"]
@@ -1288,10 +1403,27 @@ class Executor:
         # Academic Quality Gate (filter out obscure preprints without top affiliation or recognized venue)
         quality_papers = self.filter_quality_papers(new_papers)
         logger.info(f"{len(quality_papers)} / {len(new_papers)} papers passed academic quality gate")
+        funnel = {
+            "retrieved": len(all_papers),
+            "unique": len(deduped_papers),
+            "unpushed": len(new_papers),
+            "quality": len(quality_papers),
+        }
 
         # Multi-hop retrieval: chase citations of the most promising candidates
         if self.research_cfg.get("enabled", True) and self.research_cfg.get("multi_hop", True):
-            seeds = pick_seeds(self.router, quality_papers[:20], int(self.research_cfg.get("max_seeds", 4)))
+            # Seeds come from the taste-ordered head, not retrieval order, and are chosen for the questions
+            seed_pool = (
+                self.reranker.rerank(list(quality_papers), taste_corpus(corpus))
+                if quality_papers
+                else []
+            )
+            seeds = pick_seeds(
+                self.router,
+                seed_pool[:20],
+                int(self.research_cfg.get("max_seeds", 4)),
+                questions=console_settings.get("questions", []),
+            )
             if seeds and "semantic_scholar" in self.retrievers:
                 related = self.retrievers["semantic_scholar"].retrieve_related(seeds)
                 if related:
@@ -1315,15 +1447,25 @@ class Executor:
         reranked_papers: list[Paper] = []
         if len(quality_papers) > 0:
             logger.info("Reranking papers against interest corpus...")
-            ranked = self.reranker.rerank(quality_papers, corpus)
+            ranked = self.reranker.rerank(quality_papers, taste_corpus(corpus))
 
             questions = console_settings.get("questions", [])
             if questions:
                 logger.info(f"Scoring {len(ranked)} candidates against tracked questions...")
                 self.score_against_questions(ranked)
 
+            self.apply_negative_feedback(ranked)
             reranked_papers = self.fuse_and_select(ranked, questions, paper_quota)
             logger.info(f"Selected {len(reranked_papers)} of {len(ranked)} candidates")
+            funnel.update(
+                {
+                    "after_citation_chasing": len(quality_papers),
+                    "question_relevant": sum(1 for p in ranked if p.qa_scores),
+                    "selected": len(reranked_papers),
+                }
+            )
+            logger.info("Funnel: " + " -> ".join(f"{k} {v}" for k, v in funnel.items()))
+            self.write_trace(ranked, reranked_papers, funnel)
 
             logger.info("Generating TLDR, affiliations, and conference venue...")
             for p in tqdm(reranked_papers, desc="Summarizing papers"):
@@ -1353,19 +1495,28 @@ class Executor:
                 from .annotator import enrich_papers_with_inline_annotations
 
                 workers = int(self.research_cfg.get("annotation_workers", 4))
+                use_ar5iv = bool(self.research_cfg.get("full_text_ar5iv", True))
                 logger.info("Generating in-line text annotations and review comments...")
-                enrich_papers_with_inline_annotations(self.router, reranked_papers, questions, max_workers=workers)
+                enrich_papers_with_inline_annotations(
+                    self.router, reranked_papers, questions, max_workers=workers, use_ar5iv=use_ar5iv
+                )
 
             # Per-question synthesis and next-round question proposals
             if self.research_cfg.get("synthesis", True) and questions:
-                self.question_briefs = synthesize_questions(self.router, questions, reranked_papers)
+                self.question_briefs = synthesize_questions(
+                    self.router,
+                    questions,
+                    reranked_papers,
+                    state=self.research_state,
+                    max_questions=int(self.research_cfg.get("max_brief_questions", 8)),
+                )
                 self.research_state.record(self.question_briefs)
                 logger.info(f"Wrote {len(self.question_briefs)} question briefs")
 
                 if self.research_cfg.get("next_questions", True):
                     accepted = [p.title for p in reranked_papers if p.qa_matches]
                     self.suggested_questions = suggest_next_questions(
-                        self.router, questions, self.question_briefs, accepted
+                        self.router, questions, self.question_briefs, accepted, state=self.research_state
                     )
                     if self.suggested_questions:
                         logger.info(f"Proposed {len(self.suggested_questions)} next-round questions")
@@ -1441,6 +1592,7 @@ class Executor:
 
         # Delivery dispatch
         delivered = False
+        attempted_channels = 0
 
         # 1. Feishu Delivery (if configured)
         feishu_cfg = self.config.get("feishu")
@@ -1449,6 +1601,7 @@ class Executor:
             is_feishu_dry_run = is_feishu_dry_run.strip().lower() in ("true", "1", "yes")
 
         if feishu_cfg and feishu_cfg.get("app_id") and not is_feishu_dry_run:
+            attempted_channels += 1
             try:
                 from .feishu import FeishuClient
                 client = FeishuClient(feishu_cfg)
@@ -1466,29 +1619,61 @@ class Executor:
                         )
                     except Exception as exc:
                         logger.warning(f"Could not write suggested questions to console: {exc}")
-                logger.info(f"Feishu candidate document updated successfully: {doc_url}")
+                logger.info(f"Feishu daily report updated successfully: {doc_url}")
                 delivered = True
             except Exception as exc:
                 logger.error(f"Failed to publish Feishu daily report: {exc}")
-                raise
 
-        # 2. Email Delivery (fallback / legacy)
+        # 2. Independent email delivery (not a Feishu fallback)
         email_cfg = self.config.get("email")
+        email_enabled = str(email_cfg.get("enabled", True)).strip().lower() in ("true", "1", "yes") if email_cfg else False
         if (
             email_cfg
+            and email_enabled
             and email_cfg.get("sender")
             and email_cfg.get("receiver")
+            and email_cfg.get("sender_password")
             and email_cfg.sender != "???"
-            and not delivered
         ):
-            logger.info("Sending email...")
-            email_content = render_email(reranked_papers)
-            send_email(self.config, email_content)
-            logger.info("Email sent successfully")
-            delivered = True
+            attempted_channels += 1
+            try:
+                report = build_daily_report(reranked_papers, self.question_briefs, trending_items=trending_items)
+                send_email(self.config, report.html, report.title)
+                delivered = True
+            except Exception as exc:
+                logger.error(f"Failed to send email daily report: {exc}")
 
-        # Mark as pushed once successfully delivered or in local dry-run
-        if delivered or is_feishu_dry_run or not email_cfg or email_cfg.get("sender") is None:
+        # 3. Independent WeChat draft delivery; review and publish in the MP console
+        wechat_cfg = self.config.get("wechat")
+        wechat_enabled = str(wechat_cfg.get("enabled", False)).strip().lower() in ("true", "1", "yes") if wechat_cfg else False
+        if (
+            wechat_cfg
+            and wechat_enabled
+            and wechat_cfg.get("app_id")
+            and wechat_cfg.get("app_secret")
+        ):
+            attempted_channels += 1
+            try:
+                from .wechat import create_draft
+
+                report = build_daily_report(
+                    reranked_papers, self.question_briefs, max_chars=19000, trending_items=trending_items
+                )
+                create_draft(wechat_cfg, report)
+                logger.info("WeChat daily report draft created successfully")
+                delivered = True
+            except Exception as exc:
+                logger.error(f"Failed to create WeChat daily report draft: {exc}")
+
+        if attempted_channels and not delivered:
+            # Let the scheduled run turn red instead of silently losing the report
+            raise RuntimeError(
+                f"All {attempted_channels} configured delivery channel(s) failed; "
+                "papers were not marked as pushed"
+            )
+
+        # Mark as pushed only after a channel actually delivered (or in local dry-run)
+        if delivered or is_feishu_dry_run:
             if not self.config.get("executor", {}).get("debug", False):
                 if reranked_papers:
                     self.paper_store.mark_pushed(reranked_papers)

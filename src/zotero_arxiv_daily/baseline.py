@@ -10,18 +10,10 @@ from loguru import logger
 
 from .llm import LLMRouter
 from .protocol import CorpusPaper, Paper
+from .textutil import UNTRUSTED_NOTICE, extract_json
 
 
-def _json_block(raw: str, default: Any) -> Any:
-    if not raw:
-        return default
-    match = re.search(r"(\[.*\]|\{.*\})", raw, flags=re.DOTALL)
-    if not match:
-        return default
-    try:
-        return json.loads(match.group(1))
-    except json.JSONDecodeError:
-        return default
+_json_block = extract_json
 
 
 def extract_baselines(router: LLMRouter, paper: Paper) -> list[dict[str, Any]]:
@@ -30,19 +22,20 @@ def extract_baselines(router: LLMRouter, paper: Paper) -> list[dict[str, Any]]:
         return []
 
     prompt = (
-        "You are an expert academic reviewer. Analyze this research paper and extract the 2-4 "
-        "key baseline methods/systems it directly compares against, builds upon, or adopts as its primary reference.\n\n"
+        "Extract baseline methods explicitly named in this abstract. Return at most 4, but fewer or zero is expected when none are named.\n"
+        "Use only the supplied text: do not add familiar methods, publication venues, results, mechanisms or comparisons from prior knowledge.\n\n"
+        f"{UNTRUSTED_NOTICE}\n"
         f"Paper title: {paper.title}\n"
-        f"Abstract: {paper.abstract[:2000]}\n\n"
-        "For each baseline, identify:\n"
-        "1. name: canonical method name (e.g. 'ReAct', 'MemGPT', 'DPO', 'Reflexion', 'Llama-3')\n"
-        "2. method_summary: crisp Chinese summary (1 sentence) of how this baseline works\n"
-        "3. venue: conference/journal and publication year if standard (e.g. 'NeurIPS 2024', 'ICLR 2023', 'arXiv 2023')\n"
-        "4. comparison: crisp Chinese explanation (1 sentence) of how this paper compares with it or uses it "
-        "(e.g. '作为长期记忆核心基线，本文消融证明在多轮召回中漂移率降低 14%')\n\n"
+        f"<untrusted_source>\n{paper.abstract[:2000]}\n</untrusted_source>\n\n"
+        "For each baseline:\n"
+        "1. name: method name exactly as written in the abstract.\n"
+        "2. method_summary: Chinese summary supported by the abstract; use '摘要未说明具体机制' when absent.\n"
+        "3. venue: empty string unless explicitly stated in the abstract.\n"
+        "4. comparison: Chinese explanation supported by the abstract; use '摘要仅提及该方法，未给出比较结果' when absent.\n"
+        "Do not treat the proposed method itself as its own baseline.\n"
         "Return ONLY a JSON array:\n"
-        '[{"name": "...", "method_summary": "...", "venue": "...", "comparison": "..."}]\n'
-        "If no specific baselines are discussed, return []."
+        '[{"name": "...", "method_summary": "...", "venue": "", "comparison": "..."}]\n'
+        "If no specific baseline is explicitly named, return []."
     )
 
     try:
@@ -74,21 +67,23 @@ def _normalize_title(text: str) -> str:
 
 def resolve_library_link(cp: CorpusPaper) -> dict[str, str]:
     """Generates native deep-links, badges, and wikilinks across Feishu, Notion, Zotero, and Obsidian."""
-    path_str = "/".join(cp.paths or []).lower()
-    if "obsidian" in path_str:
+    # Every loader prefixes paths with its ecosystem ("zotero/", "notion/", ...); match the
+    # first segment only so a note titled "Notion ..." cannot be mislabelled.
+    prefixes = {(p or "").split("/", 1)[0].lower() for p in (cp.paths or [])}
+    if "obsidian" in prefixes:
         return {
             "badge": f"🟣 [Obsidian已入库: {cp.title}]",
             "uri": cp.url or "",
             "wikilink": f"[[{cp.title}]]",
             "source": "obsidian",
         }
-    if "notion" in path_str:
+    if "notion" in prefixes:
         return {
             "badge": f"⚫ [Notion已入库: {cp.title}]",
             "uri": cp.url or "",
             "source": "notion",
         }
-    if "zotero" in path_str:
+    if "zotero" in prefixes:
         return {
             "badge": f"🔴 [Zotero已入库: {cp.title}]",
             "uri": cp.url or "",

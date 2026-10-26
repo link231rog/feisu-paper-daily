@@ -1243,6 +1243,53 @@ class FeishuClient:
         doc_url = f"https://feishu.cn/docx/{doc_id}"
         return doc_id, doc_url
 
+    def get_or_create_daily_document(self, folder_token: Optional[str] = None) -> tuple[str, str]:
+        """Gets or creates today's standalone report; never appends to the legacy candidate document."""
+        from datetime import date
+
+        title = f"论文研究日报 {date.today().isoformat()}"
+        if self.wiki_space_id and self.daily_parent_node_token:
+            try:
+                res = self._call_api(
+                    "GET",
+                    f"/wiki/v2/spaces/{self.wiki_space_id}/nodes",
+                    params={"parent_node_token": str(self.daily_parent_node_token), "page_size": 50},
+                )
+                for item in res.get("items", []):
+                    if item.get("title") == title:
+                        node_token = item.get("node_token")
+                        return item.get("obj_token"), item.get("url") or f"https://feishu.cn/wiki/{node_token}"
+            except Exception as exc:
+                logger.warning(f"Error checking daily report in Wiki: {exc}")
+
+            node_res = self._call_api(
+                "POST",
+                f"/wiki/v2/spaces/{self.wiki_space_id}/nodes",
+                params={"space_id": str(self.wiki_space_id)},
+                data={
+                    "obj_type": "docx",
+                    "node_type": "origin",
+                    "parent_node_token": str(self.daily_parent_node_token),
+                    "title": title,
+                },
+            )
+            node = node_res.get("node", {})
+            return node.get("obj_token"), node.get("url") or f"https://feishu.cn/wiki/{node.get('node_token')}"
+
+        target_folder = folder_token or self.daily_folder_token or ""
+        if target_folder:
+            res = self._call_api("GET", "/drive/v1/files", params={"folder_token": target_folder, "page_size": 200})
+            for item in res.get("files", []):
+                if item.get("name") == title and item.get("type") == "docx":
+                    token = item.get("token")
+                    return token, item.get("url") or f"https://feishu.cn/docx/{token}"
+        create_payload: dict[str, Any] = {"title": title}
+        if target_folder:
+            create_payload["folder_token"] = target_folder
+        doc_res = self._call_api("POST", "/docx/v1/documents", data=create_payload)
+        doc_id = doc_res.get("document", {}).get("document_id")
+        return doc_id, f"https://feishu.cn/docx/{doc_id}"
+
     def create_or_update_daily_report(
         self,
         papers: list[Paper],
@@ -1252,15 +1299,15 @@ class FeishuClient:
         question_briefs: Optional[list[dict]] = None,
         corpus: Optional[list[CorpusPaper]] = None,
     ) -> str:
-        """Publishes candidate papers and trending items into the persistent '候选文档' in Feishu Docx."""
+        """Publishes one standalone, date-scoped daily report in Feishu Docx."""
         if self.dry_run:
             logger.info("Feishu dry-run enabled. Skipping document creation.")
             return "https://feishu.cn/docx/dry_run"
 
-        # 1. Target persistent candidate document
-        doc_id, doc_url = self.get_or_create_candidate_document(folder_token)
+        # 1. Target today's standalone report
+        doc_id, doc_url = self.get_or_create_daily_document(folder_token)
         if not doc_id:
-            raise RuntimeError("Failed to resolve candidate document_id in Feishu")
+            raise RuntimeError("Failed to resolve daily report document_id in Feishu")
 
         # Ensure document edit permissions so checkboxes are clickable
         self._ensure_doc_permissions(doc_id)
@@ -1293,7 +1340,7 @@ class FeishuClient:
                 "block_type": 4,
                 "heading2": {
                     "elements": [
-                        {"text_run": {"content": "一、候选学术论文与研究工作"}}
+                        {"text_run": {"content": "一、今日推荐论文"}}
                     ]
                 }
             })
@@ -1506,20 +1553,33 @@ class FeishuClient:
                 }
             })
             for brief in question_briefs:
+                status_raw = (brief.get("status") or "exploring").lower()
+                status_badge = {
+                    "exploring": "🌱 [探索期]",
+                    "contested": "⚖️ [争议交锋]",
+                    "converged": "✅ [证据收敛]",
+                    "falsified": "❌ [假设证伪]",
+                }.get(status_raw, "🌱 [探索期]")
+                q_title = f"{status_badge} {brief.get('question', '')}".strip()
                 children.append({
                     "block_type": 5,
                     "heading3": {
-                        "elements": [{"text_run": {"content": brief.get("question", "")}}]
+                        "elements": [{"text_run": {"content": q_title}}]
                     }
                 })
                 body = brief.get("summary", "")
                 evidence = brief.get("evidence") or []
                 if evidence:
-                    body += "\n证据: " + "；".join(
+                    body += "\n🟢 正向证据: " + "；".join(
                         f"{e.get('title', '')} ({e.get('url', '')})" for e in evidence[:4]
                     )
+                counter_ev = brief.get("counter_evidence") or []
+                if counter_ev:
+                    body += "\n⚡ 反例/局限证据: " + "；".join(
+                        f"{c.get('title', '')} ({c.get('url', '')})" for c in counter_ev[:3]
+                    )
                 if brief.get("gap"):
-                    body += f"\n仍待解决: {brief['gap']}"
+                    body += f"\n🔍 仍待解决: {brief['gap']}"
                 children.append({
                     "block_type": 2,
                     "text": {"elements": [{"text_run": {"content": body + "\n"}}]}
@@ -1618,7 +1678,7 @@ class FeishuClient:
 
         # 6. Append blocks in batches of 50 if there are new blocks
         if children:
-            logger.info(f"Writing {len(children)} candidate blocks to document {doc_id} in batches of 50...")
+            logger.info(f"Writing {len(children)} daily report blocks to document {doc_id} in batches of 50...")
             batch_size = 50
             for i in range(0, len(children), batch_size):
                 chunk = children[i : i + batch_size]
@@ -1629,7 +1689,7 @@ class FeishuClient:
                 )
 
         doc_url = doc_url or f"https://feishu.cn/docx/{doc_id}"
-        logger.info(f"Feishu candidate document updated successfully: {doc_url}")
+        logger.info(f"Feishu daily report updated successfully: {doc_url}")
         return doc_url
 
     def fetch_console_settings(self, node_token: str) -> dict[str, list[str]]:
@@ -1944,6 +2004,131 @@ class FeishuClient:
                         "card_block_ids": card_block_ids,
                     })
         return checked_papers
+
+    def resolve_document_ai_queries(self, document_id: str, router: Any) -> int:
+        """Scans a Feishu document for unanswered '@AI:' or '@paper-bot' queries and writes answers in-place."""
+        if self.dry_run or not document_id or not getattr(router, "available", False):
+            return 0
+
+        from .annotator import resolve_inline_ai_followups
+
+        try:
+            root_res = self._call_api("GET", f"/docx/v1/documents/{document_id}/blocks/{document_id}")
+            root_children = root_res.get("block", {}).get("children", [])
+            items = self.get_document_blocks(document_id)
+        except Exception as exc:
+            logger.debug(f"Could not read document {document_id} for @AI queries: {exc}")
+            return 0
+
+        last_title = ""
+        last_url = ""
+        last_abstract = ""
+        answered_count = 0
+
+        # Collect existing texts to check if already answered
+        all_texts = [
+            "".join(el.get("text_run", {}).get("content", "") for el in b.get("text", {}).get("elements", []))
+            for b in items if b.get("block_type") == 2
+        ]
+
+        for item in items:
+            b_type = item.get("block_type")
+            b_id = item.get("block_id", "")
+            if b_type in (4, 5):
+                h_key = "heading2" if b_type == 4 else "heading3"
+                raw_h = "".join(el.get("text_run", {}).get("content", "") for el in item.get(h_key, {}).get("elements", [])).strip()
+                if not re.match(r"^[一二三四五六七八九十]+、", raw_h):
+                    last_title = re.sub(r"^\d+\.\s*", "", raw_h).strip()
+                    last_url = ""
+                    last_abstract = ""
+            elif b_type == 2:
+                txt = "".join(el.get("text_run", {}).get("content", "") for el in item.get("text", {}).get("elements", [])).strip()
+                if "原文链接:" in txt or "原文/开源主页:" in txt:
+                    m = re.search(r"https?://\S+", txt)
+                    if m:
+                        last_url = m.group(0).rstrip(" \n\r")
+                elif "英文摘要" in txt or "论文正文研读" in txt or "TL;DR:" in txt:
+                    last_abstract += txt + "\n"
+
+                # Check for @AI: or @paper-bot query
+                q_match = re.search(r"(?:@AI|@paper-bot)\s*[:：]?\s*(.+)", txt, re.IGNORECASE)
+                if q_match and "🤖 [AI 追问解答" not in txt:
+                    query_str = q_match.group(1).strip()
+                    if not query_str or any(f"Q: {query_str[:25]}" in t for t in all_texts):
+                        continue
+
+                    qa_pairs = resolve_inline_ai_followups(
+                        router=router,
+                        title=last_title or "Paper",
+                        abstract=last_abstract[:2500],
+                        arxiv_id_or_url=last_url,
+                        user_queries=[query_str],
+                    )
+                    if qa_pairs:
+                        ans_text = qa_pairs[0]["answer"]
+                        insert_idx = (root_children.index(b_id) + 1) if b_id in root_children else -1
+                        reply_block = {
+                            "block_type": 2,
+                            "text": {
+                                "elements": [
+                                    {
+                                        "text_run": {
+                                            "content": f"🤖 [AI 追问解答 | Q: {query_str}]\n",
+                                            "text_element_style": {"bold": True, "text_color": 5, "background_color": 4},
+                                        }
+                                    },
+                                    {
+                                        "text_run": {
+                                            "content": f"💡 {ans_text}\n",
+                                            "text_element_style": {"italic": True},
+                                        }
+                                    },
+                                ]
+                            },
+                        }
+                        try:
+                            self._call_api(
+                                "POST",
+                                f"/docx/v1/documents/{document_id}/blocks/{document_id}/children",
+                                data={"children": [reply_block], "index": insert_idx},
+                            )
+                            answered_count += 1
+                            logger.info(f"Resolved inline @AI query in {document_id}: '{query_str[:30]}'")
+                        except Exception as w_exc:
+                            logger.warning(f"Failed to write @AI answer to {document_id}: {w_exc}")
+
+        return answered_count
+
+    def resolve_wiki_ai_queries(self, router: Any) -> int:
+        """Scans candidate document and recent reading notes in Wiki for '@AI:' inline questions."""
+        if not self.wiki_space_id or self.dry_run or not getattr(router, "available", False):
+            return 0
+
+        doc_ids: list[str] = []
+        if self.candidate_node_token:
+            cand_obj, _ = self.get_obj_token_from_node_token(str(self.candidate_node_token))
+            if cand_obj:
+                doc_ids.append(cand_obj)
+
+        for parent_tok in [self.daily_parent_node_token, self.notes_parent_node_token]:
+            if parent_tok:
+                try:
+                    res = self._call_api(
+                        "GET",
+                        f"/wiki/v2/spaces/{self.wiki_space_id}/nodes",
+                        params={"parent_node_token": str(parent_tok), "page_size": 15},
+                    )
+                    for r in res.get("items", []):
+                        obj = r.get("obj_token")
+                        if obj and obj not in doc_ids:
+                            doc_ids.append(obj)
+                except Exception:
+                    pass
+
+        total_answered = 0
+        for d_id in doc_ids[:10]:
+            total_answered += self.resolve_document_ai_queries(d_id, router)
+        return total_answered
 
     def fetch_checked_papers(self, document_id: str) -> list[str]:
         """Scans document blocks for todo items marked as done (backwards-compatible heading list)."""

@@ -173,6 +173,24 @@ class PaperStore:
         self.data["discarded"][key] = entry
         self.save()
 
+    def recent_discarded(self, limit: int = 200) -> list[dict[str, Any]]:
+        """Returns metadata for the most recently discarded items, newest first."""
+        discarded = self.data.get("discarded", {})
+        ordered = sorted(
+            discarded.items(),
+            key=lambda kv: kv[1].get("discarded_at", ""),
+            reverse=True,
+        )
+        recent: list[dict[str, Any]] = []
+        for key, entry in ordered:
+            title = str(entry.get("title") or key)
+            if not entry.get("title") and title.startswith(("http://", "https://")):
+                continue  # URL-only records carry no title to compare against
+            recent.append({"title": title, "url": entry.get("url") or ""})
+            if len(recent) >= limit:
+                break
+        return recent
+
     def filter_discarded(self, items: list[Any]) -> list[Any]:
         discarded = self.data.get("discarded", {})
         return [p for p in items if (p.dedup_key() if hasattr(p, "dedup_key") else str(p)) not in discarded]

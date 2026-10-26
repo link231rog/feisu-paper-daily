@@ -123,13 +123,20 @@ uv run src/zotero_arxiv_daily/main.py
 | `FEISHU_APP_ID` | 飞书开放平台自建应用 App ID | `cli_xxx` |
 | `FEISHU_APP_SECRET` | 飞书应用 App Secret | `xxx` |
 | `FEISHU_WIKI_SPACE_ID` | 飞书知识库空间 Space ID | `748xxxx` |
-| `FEISHU_CANDIDATE_NODE_TOKEN` | 候选文献流文档的 Node Token | 每日推送候选库目标节点 |
+| `FEISHU_DAILY_PARENT_NODE_TOKEN` | 每日日报的父节点 Node Token | 每天创建或更新独立的日期日报，不再追加到候选库 |
 | `FEISHU_CONSOLE_NODE_TOKEN` | 推荐控制台文档的 Node Token | 存放关注标签与问题的文档 |
 | `FEISHU_NOTES_PARENT_NODE_TOKEN` | 精读笔记存放的父节点 Node Token | 用户确认入库文献的目标父节点 |
 | `LLM_API_KEYS` | 大模型 API Key 资源池（逗号分隔） | `key1,key2,key3` |
 | `TRANSLATION_API_KEY` | 备选学术翻译服务 API Key | 常用模型或翻译接口 Key |
 | `ZOTERO_ID` / `ZOTERO_KEY` | (可选) Zotero 账户 ID 与 API Key | 用于同步 Zotero 个人文献库 |
 | `NOTION_TOKEN` / `NOTION_DATABASE_ID` | (可选) Notion 凭据 | 用于读取 Notion 文献数据库 |
+| `SENDER` / `RECEIVER` / `SENDER_PASSWORD` | (可选) 发件人、收件人、SMTP 授权码 | 多收件人用英文逗号分隔 |
+| `WECHAT_APP_ID` / `WECHAT_APP_SECRET` | (可选) 公众号开发者凭据 | 仅创建草稿，不会自动公开发布 |
+| `WECHAT_THUMB_MEDIA_ID` | 公众号永久封面图片素材 ID | 避免每天重复上传封面 |
+
+邮件、飞书和公众号统一发送当天的完整日报，包含论文、研究问题进展、反例、AI 批注和 AI 动态。飞书每天创建独立的 `论文研究日报 YYYY-MM-DD`，不再向旧候选库追加内容。三个渠道独立投递；某个渠道失败不会阻止其他渠道。启用公众号时设置 Variable `WECHAT_ENABLED=true`，并在公众号后台配置 GitHub Actions 出口 IP 白名单。封面可在本地通过 `WECHAT_COVER_PATH` 上传，但 Actions 环境应优先使用 `WECHAT_THUMB_MEDIA_ID`。邮件可用 `EMAIL_ENABLED=false` 关闭；SMTP 地址和端口分别由 Variables `SMTP_SERVER`、`SMTP_PORT` 控制。
+
+微信草稿接口：https://developers.weixin.qq.com/doc/subscription/api/draftbox/draftmanage/api_draft_add.html 。接口流程参考 MIT 项目：https://github.com/imraywang/wewrite/tree/main/src/wewrite/toolkit 。
 
 3. 进入 **Actions** 页面，手动触发 **Feishu Paper Daily** 测试运行；流水线默认通过定时 Cron 每天自动执行推送。
 

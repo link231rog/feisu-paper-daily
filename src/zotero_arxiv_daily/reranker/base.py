@@ -1,11 +1,20 @@
 from abc import ABC, abstractmethod
+from datetime import date
 from omegaconf import DictConfig
 from ..protocol import Paper, CorpusPaper
 import numpy as np
-from typing import Type
+from typing import Any, Type
 class BaseReranker(ABC):
     def __init__(self, config:DictConfig):
         self.config = config
+
+    def _setting(self, key: str, default: Any) -> Any:
+        """Reads a reranker setting even when the config section or key is absent."""
+        cfg = self.config.get("reranker") if self.config is not None else None
+        if cfg is None:
+            return default
+        value = cfg.get(key, default)
+        return default if value is None else value
 
     def rerank(self, candidates: list[Paper], corpus: list[CorpusPaper]) -> list[Paper]:
         if not candidates or not corpus:
@@ -18,25 +27,36 @@ class BaseReranker(ABC):
         assert sim.shape == (len(candidates), len(corpus))
         sim_scores = (sim * time_decay_weight).sum(axis=1) * 10  # [n_candidate]
 
-        top_venues = ("emnlp", "acl", "neurips", "iclr", "icml", "kdd", "aaai", "sigir", "cvpr", "iccv")
+        recency_boost = float(self._setting("recency_boost", 0.5))
+        venue_boost = float(self._setting("venue_boost", 0.5))
+        citation_boost_max = float(self._setting("citation_boost_max", 1.0))
+        recency_years = self._setting("recency_years", None)
+        if recency_years:
+            recency_years = {int(y) for y in recency_years}
+        else:
+            current_year = date.today().year
+            recency_years = {current_year, current_year - 1}
+        top_venues = self._setting("top_venues", None) or (
+            "emnlp", "acl", "neurips", "iclr", "icml", "kdd", "aaai", "sigir", "cvpr", "iccv"
+        )
 
         for idx, c in enumerate(candidates):
             score = float(sim_scores[idx])
 
-            # 1. Recency Boost (2025-2026 preference)
+            # 1. Recency Boost
             pub_year = c.published_year
-            if pub_year in (2025, 2026):
-                score += 1.5
+            if pub_year in recency_years:
+                score += recency_boost
 
             # 2. Top Venue Boost (e.g. EMNLP 2026, ACL, NeurIPS, ICLR, ICML)
             venue_lower = (c.venue or "").lower()
             if any(v in venue_lower for v in top_venues):
-                score += 1.5
+                score += venue_boost
 
             # 3. Classic Baseline / High Citation Boost
             # Enables foundational works with strong citation impact to rank strongly
             if c.citation_count and c.citation_count > 0:
-                citation_boost = min(2.5, float(np.log1p(c.citation_count) * 0.4))
+                citation_boost = min(citation_boost_max, float(np.log1p(c.citation_count) * 0.4))
                 score += citation_boost
 
             c.score = round(score, 2)

@@ -1,5 +1,6 @@
 """Shared LLM access with key rotation across the free API pool."""
 
+import threading
 from typing import Any
 
 from loguru import logger
@@ -25,6 +26,7 @@ class LLMRouter:
         self.base_url = base_url or DEFAULT_BASE_URL
         self.model = model or DEFAULT_MODEL
         self._index = 0
+        self._lock = threading.Lock()
         self._clients: dict[str, OpenAI] = {}
 
     @classmethod
@@ -63,8 +65,11 @@ class LLMRouter:
             return ""
 
         attempts = 0
-        while attempts < len(self.keys):
-            key = self.keys[self._index % len(self.keys)]
+        while attempts < max(len(self.keys), 1):
+            with self._lock:
+                if not self.keys:
+                    break
+                key = self.keys[self._index % len(self.keys)]
             attempts += 1
             for boost in (1, 2):
                 try:
@@ -76,18 +81,21 @@ class LLMRouter:
                         timeout=timeout,
                     )
                 except Exception as exc:
-                    logger.warning(f"LLM call failed with key #{self.keys.index(key) + 1}: {exc}")
-                    if "401" in str(exc) or "403" in str(exc):
-                        self.keys.remove(key)
-                        self._index = 0
-                    else:
-                        self._index += 1
+                    logger.warning(f"LLM call failed with a pooled key: {exc}")
+                    with self._lock:
+                        if "401" in str(exc) or "403" in str(exc):
+                            if key in self.keys:
+                                self.keys.remove(key)
+                            self._index = 0
+                        else:
+                            self._index += 1
                     break
 
                 choice = resp.choices[0]
                 text = (choice.message.content or "").strip()
                 if text:
-                    self._index = (self._index + 1) % max(len(self.keys), 1)
+                    with self._lock:
+                        self._index = (self._index + 1) % max(len(self.keys), 1)
                     return text
                 # Reasoning models spend the budget before writing the answer
                 if choice.finish_reason != "length":

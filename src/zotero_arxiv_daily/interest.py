@@ -81,6 +81,18 @@ def build_corpus_from_console(
     return corpus
 
 
+def taste_corpus(corpus: list[CorpusPaper]) -> list[CorpusPaper]:
+    """Drops console tags/questions so they cannot dominate the library taste score."""
+    taste = [
+        c for c in corpus
+        if not any(str(path).startswith("console/") for path in (c.paths or []))
+    ]
+    if not taste and corpus:
+        logger.warning("Interest corpus is only console tags/questions; falling back for reranking")
+        return corpus
+    return taste
+
+
 def get_interest_corpus(
     config: DictConfig,
     console_settings: dict[str, list[str]] | None = None,

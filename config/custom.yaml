@@ -28,11 +28,21 @@ zotero:
   console_note_key: ${oc.env:ZOTERO_CONSOLE_NOTE_KEY,null}
 
 email:
+  enabled: ${oc.env:EMAIL_ENABLED,true}
   sender: ${oc.env:SENDER,null}
   receiver: ${oc.env:RECEIVER,null}
   smtp_server: ${oc.env:SMTP_SERVER,smtp.qq.com}
   smtp_port: ${oc.env:SMTP_PORT,465}
   sender_password: ${oc.env:SENDER_PASSWORD,null}
+
+wechat:
+  enabled: ${oc.env:WECHAT_ENABLED,false}
+  app_id: ${oc.env:WECHAT_APP_ID,null}
+  app_secret: ${oc.env:WECHAT_APP_SECRET,null}
+  thumb_media_id: ${oc.env:WECHAT_THUMB_MEDIA_ID,null}
+  cover_path: ${oc.env:WECHAT_COVER_PATH,null}
+  author: ${oc.env:WECHAT_AUTHOR,Feishu Paper Daily}
+  content_source_url: ${oc.env:WECHAT_CONTENT_SOURCE_URL,null}
 
 llm:
   api:
@@ -52,6 +62,12 @@ translation:
   model: ${oc.env:TRANSLATION_MODEL,z-ai/glm-5.3-flash}
   layout: ${oc.env:TRANSLATION_LAYOUT,quote}
   batch_size: ${oc.env:TRANSLATION_BATCH_SIZE,5}
+
+reranker:
+  recency_boost: ${oc.env:RERANKER_RECENCY_BOOST,0.5}
+  venue_boost: ${oc.env:RERANKER_VENUE_BOOST,0.5}
+  citation_boost_max: ${oc.env:RERANKER_CITATION_BOOST_MAX,1.0}
+  recency_years: ${oc.env:RERANKER_RECENCY_YEARS,null}
 
 source:
   arxiv:
@@ -173,5 +189,12 @@ research:
   adversarial_queries: ${oc.env:RESEARCH_ADVERSARIAL_QUERIES,true}
   full_text_ar5iv: ${oc.env:RESEARCH_FULL_TEXT_AR5IV,true}
   state_path: "data/research_state.json"
+  converge_min_support: ${oc.env:RESEARCH_CONVERGE_MIN_SUPPORT,6}
+  falsify_min_counter: ${oc.env:RESEARCH_FALSIFY_MIN_COUNTER,3}
+  negative_similarity: ${oc.env:RESEARCH_NEGATIVE_SIMILARITY,0.6}
+  negative_penalty: ${oc.env:RESEARCH_NEGATIVE_PENALTY,1.0}
+  judge_weight: ${oc.env:RESEARCH_JUDGE_WEIGHT,0.6}
+  max_brief_questions: ${oc.env:RESEARCH_MAX_BRIEF_QUESTIONS,8}
+  trace: ${oc.env:RESEARCH_TRACE,true}
 
 

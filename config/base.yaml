@@ -29,11 +29,21 @@ source:
     api_key: null # Semantic Scholar API key (optional, avoids 429 rate limit)
 
 email:
+  enabled: true
   sender: null
-  receiver: null
+  receiver: null # Comma-separated addresses are supported
   smtp_server: null
   smtp_port: 465
   sender_password: null
+
+wechat:
+  enabled: false # Create a draft for review; never auto-publish
+  app_id: null
+  app_secret: null
+  thumb_media_id: null # Existing permanent image material ID; avoids repeated uploads
+  cover_path: null # Used only when thumb_media_id is not configured
+  author: "Feishu Paper Daily"
+  content_source_url: null # Public URL only; do not expose private Feishu documents
 
 llm:
   api:
@@ -47,6 +57,10 @@ llm:
   language: Chinese # Preferred language for the TL;DR. Example: Chinese
 
 reranker:
+  recency_boost: 0.5 # Bonus for papers in recency_years
+  venue_boost: 0.5 # Bonus for top venues
+  citation_boost_max: 1.0 # Cap for log-scaled citation bonus
+  recency_years: null # Defaults to [current year, current year - 1]
   local:
     model: jinaai/jina-embeddings-v5-text-nano-retrieval
     encode_kwargs:
@@ -376,6 +390,10 @@ research:
   qa_workers: 8 # Concurrent LLM calls when scoring candidates
   judge: true # One comparative LLM pass over the top candidates
   max_judge: 25
+  judge_weight: 0.6 # 0 = keep fused order, 1 = trust the judge fully
+  max_brief_questions: 8 # Questions that get a per-run evidence brief
+  trace: true # Write data/last_run_trace.json with scores and selection reasons
+  trace_path: "data/last_run_trace.json"
   per_question_cap: 6 # A single question may not dominate the daily list
   exploration_slots: 2 # Reserve slots for strong library matches no question asked for
   # Baseline extraction, attribution, and bi-directional linking
@@ -388,5 +406,10 @@ research:
   # Active hypothesis and adversarial querying
   adversarial_queries: true
   full_text_ar5iv: true
+  # Evidence accumulation thresholds and discarded-paper negative feedback
+  converge_min_support: 6
+  falsify_min_counter: 3
+  negative_similarity: 0.6
+  negative_penalty: 1.0
 
 

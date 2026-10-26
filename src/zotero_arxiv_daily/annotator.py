@@ -12,6 +12,7 @@ from loguru import logger
 from .baseline import match_baselines_with_corpus
 from .llm import LLMRouter
 from .protocol import CorpusPaper, Paper
+from .textutil import UNTRUSTED_NOTICE, extract_json
 
 
 def fetch_ar5iv_targeted_sections(arxiv_id: str) -> dict[str, str]:
@@ -54,30 +55,44 @@ def extract_inline_annotations(
     router: LLMRouter,
     paper: Paper,
     questions: list[str],
+    use_ar5iv: bool = True,
 ) -> list[dict[str, Any]]:
-    """Extracts exact quote spans and inline annotations (baseline, claim, critique, counter) from paper abstract."""
+    """Extracts exact quote spans and inline annotations (baseline, claim, critique, counter) from paper abstract, grounded by ar5iv sections when available."""
     if not router.available or not paper.abstract:
         return []
 
-    q_list = "\n".join(f"- {q}" for q in questions) if questions else "None"
+    q_list = "\n".join(f"- {i}. {q}" for i, q in enumerate(questions, 1)) if questions else "None"
+    sections = [{"id": "S1", "title": "摘要", "text": paper.abstract.strip()}]
+    if use_ar5iv:
+        arxiv_id = paper.arxiv_id
+        if not arxiv_id and paper.url and "arxiv.org" in paper.url:
+            m = re.search(r"(\d{4}\.\d{4,5})", paper.url)
+            if m:
+                arxiv_id = m.group(1)
+        if arxiv_id:
+            fetched = fetch_ar5iv_targeted_sections(arxiv_id)
+            for key, title in (("method", "方法"), ("experiments", "实验"), ("limitations", "局限与讨论")):
+                text = fetched.get(key, "").strip()
+                if text:
+                    sections.append({"id": f"S{len(sections) + 1}", "title": title, "text": text[:5000]})
+    paper.annotation_sections = sections
+    source_text = "\n\n".join(f"[{s['id']}] {s['title']}\n{s['text']}" for s in sections)
+    source_text = f"<untrusted_source>\n{source_text}\n</untrusted_source>"
 
     prompt = (
-        "Annotate this research abstract directly with inline notes.\n\n"
-        f"Title: {paper.title}\n"
-        f"Abstract:\n{paper.abstract}\n\n"
+        "Annotate the supplied source text inline. Each comment must immediately follow the exact source sentence or phrase it discusses.\n"
+        f"{UNTRUSTED_NOTICE}\n\n"
+        f"Title: {paper.title}\n{source_text}\n\n"
         f"Tracked Questions:\n{q_list}\n\n"
-        "Identify 2 to 5 exact quotes from the abstract across 4 categories:\n"
-        "1. baseline: exact phrase mentioning baseline methods (e.g. ReAct, MemGPT). Include canonical name, standard venue (e.g. ICLR 2023), and 1-sentence Chinese method mechanism.\n"
-        "2. claim: exact sentence that provides empirical results or mechanisms answering a tracked question. Include 1-sentence Chinese answer.\n"
-        "3. critique: exact phrase of limitation, synthetic scope, or unverified assumption. Include 1-sentence Chinese critical review.\n"
-        "4. counter: exact phrase presenting counter-evidence, negative results, or challenging a premise or baseline. Include 1-sentence Chinese counter analysis.\n\n"
-        "Return JSON array ONLY:\n"
-        "[\n"
-        '  {"quote": "exact phrase from abstract", "type": "baseline", "name": "MemGPT", "venue": "arXiv 2023", "comment": "借鉴OS分页管理大模型记忆"},\n'
-        '  {"quote": "exact phrase from abstract", "type": "claim", "comment": "选择性遗忘在多轮对话下降低漂移24%"},\n'
-        '  {"quote": "exact phrase from abstract", "type": "critique", "comment": "仅在合成环境测试，真实人机交互泛化性存疑"},\n'
-        '  {"quote": "exact phrase from abstract", "type": "counter", "comment": "在长序列消融中观察到上下文重叠导致注意力坍塌"}\n'
-        "]"
+        "Return 0 to 8 useful annotations across the supplied sections. Do not fill a quota.\n"
+        "For each annotation, 'source' is the section ID and 'quote' is a contiguous, case-insensitive substring of THAT section, copied verbatim, ideally one sentence or a phrase of at most about 40 words (never a whole paragraph). Never attach a comment to a different sentence.\n"
+        "Categories:\n"
+        "- baseline: a method actually named in the source as a comparison or foundation. Do not add baselines from memory.\n"
+        "- claim: a mechanism or empirical result that directly answers a tracked question. Include its question number.\n"
+        "- critique: an explicit limitation, restricted evaluation scope or assumption visible in the quote. A reviewer inference must be explicitly labeled '推断'.\n"
+        "- counter: only a reported result that directly contradicts another claim or a tracked hypothesis. An ordinary limitation is NOT counter-evidence.\n"
+        "Do not infer missing experiments, venues, numbers or comparisons. Prefer no annotation over a speculative one.\n\n"
+        'Return ONLY JSON: [{"source":"S2", "quote":"exact source substring", "type":"claim", "name":"", "venue":"", "question":1, "comment":"中文批注", "inference":false}]'
     )
 
     try:
@@ -89,26 +104,55 @@ def extract_inline_annotations(
                 },
                 {"role": "user", "content": prompt},
             ],
-            max_tokens=1500,
+            max_tokens=2500,
             temperature=0.1,
-            timeout=50,
+            timeout=60,
         )
-        match = re.search(r"(\[.*\])", raw, flags=re.DOTALL)
-        if not match:
-            return []
-        data = json.loads(match.group(1))
+        data = extract_json(raw, None)
+        if isinstance(data, dict):
+            # Some models wrap the array: {"annotations": [...]}
+            data = next((v for v in data.values() if isinstance(v, list)), None)
         valid = []
+        returned = 0
+        unlocated = 0
         if isinstance(data, list):
+            returned = len(data)
             for item in data:
-                if isinstance(item, dict) and item.get("quote") and item.get("comment"):
-                    valid.append({
-                        "quote": str(item["quote"]).strip(),
-                        "type": str(item.get("type", "critique")).strip(),
-                        "name": str(item.get("name", "")).strip(),
-                        "venue": str(item.get("venue", "")).strip(),
-                        "comment": str(item["comment"]).strip(),
-                    })
-        return valid[:5]
+                if not isinstance(item, dict) or not item.get("quote") or not item.get("comment"):
+                    continue
+                quote_text = str(item["quote"]).strip()
+                ann_type = str(item.get("type", "")).strip()
+                if ann_type not in {"baseline", "claim", "critique", "counter"}:
+                    continue
+                source = str(item.get("source", "S1")).strip()
+                section = next((s for s in sections if s["id"] == source), None)
+                if section is None or not locate_spans(section["text"], [{"quote": quote_text, "type": ann_type}]):
+                    unlocated += 1
+                    continue
+                question = item.get("question")
+                if ann_type == "claim":
+                    if not isinstance(question, int) or not 1 <= question <= len(questions):
+                        continue
+                else:
+                    question = None
+                valid.append({
+                    "source": source,
+                    "quote": quote_text,
+                    "type": ann_type,
+                    "name": str(item.get("name", "")).strip(),
+                    "venue": str(item.get("venue", "")).strip(),
+                    "question": questions[question - 1] if question else None,
+                    "comment": str(item["comment"]).strip(),
+                    "inference": bool(item.get("inference", False)),
+                })
+        if returned and len(valid) < returned:
+            logger.info(
+                f"Annotations for '{paper.title[:35]}': {returned} returned, {len(valid)} kept, "
+                f"{unlocated} quote(s) not found in source"
+            )
+        elif not returned:
+            logger.info(f"Annotations for '{paper.title[:35]}': model returned none usable")
+        return valid[:8]
     except Exception as exc:
         logger.warning(f"Failed to extract inline annotations for '{paper.title}': {exc}")
         return []
@@ -134,8 +178,8 @@ def locate_spans(text: str, annotations: list[dict[str, Any]]) -> list[dict[str,
 
         # 3. Normalized whitespace regex match
         if idx == -1:
-            clean_q = re.sub(r"\s+", r"\\s+", re.escape(quote_str))
-            m = re.search(clean_q, text, re.IGNORECASE)
+            parts = [re.escape(part) for part in quote_str.split()]
+            m = re.search(r"\s+".join(parts), text, re.IGNORECASE) if parts else None
             if m:
                 idx = m.start()
                 matched_len = len(m.group(0))
@@ -179,157 +223,174 @@ def build_annotated_text_elements(
     client: Any = None,
 ) -> list[dict[str, Any]]:
     """Builds Feishu Docx elements with inline text highlights and comment badges."""
-    text = (paper.abstract or "").strip()
-    if not text:
+    sections = paper.annotation_sections or [{"id": "S1", "title": "摘要", "text": (paper.abstract or "").strip()}]
+    annotations = getattr(paper, "inline_annotations", None) or []
+    if not sections:
         return []
 
-    annotations = getattr(paper, "inline_annotations", None) or []
-    if not annotations:
-        return [{"text_run": {"content": f"📄 英文摘要 (Abstract):\n{text}\n"}}]
-
-    # Enrich baseline annotations with corpus match
     corpus = corpus or []
     for ann in annotations:
         if ann.get("type") == "baseline" and ann.get("name"):
             matched = match_baselines_with_corpus([ann], corpus)
             if matched:
                 ann.update(matched[0])
-                if client and ann.get("in_library") and ann.get("obj_token") and hasattr(client, "append_baseline_backlink"):
+                if (
+                    client
+                    and ann.get("in_library")
+                    and ann.get("library_source") == "feishu"
+                    and ann.get("obj_token")
+                    and hasattr(client, "append_baseline_backlink")
+                ):
                     client.append_baseline_backlink(
-                        ann["obj_token"],
-                        referring_paper_title=paper.title,
-                        referring_paper_url=paper.url or "",
-                        comparison=ann.get("comment", ""),
+                        ann["obj_token"], referring_paper_title=paper.title,
+                        referring_paper_url=paper.url or "", comparison=ann.get("comment", ""),
                     )
 
-    located = locate_spans(text, annotations)
-    if not located:
-        return [{"text_run": {"content": f"📄 英文摘要 (Abstract):\n{text}\n"}}]
+    located_by_source: dict[str, list[dict]] = {}
+    for section in sections:
+        source_annotations = [a for a in annotations if a.get("source", "S1") == section["id"]]
+        located_by_source[section["id"]] = locate_spans(section["text"], source_annotations)
+    if not any(located_by_source.values()):
+        return [{"text_run": {"content": f"📄 英文摘要 (Abstract):\n{paper.abstract or ''}\n"}}]
 
     elements: list[dict[str, Any]] = [
-        {"text_run": {"content": "📄 论文正文研读与 AI 行内批注 (Annotated Text):\n", "text_element_style": {"bold": True}}}
+        {"text_run": {"content": "📄 原文与 AI 行内批注：\n", "text_element_style": {"bold": True}}}
     ]
+    for section in sections:
+        located = located_by_source[section["id"]]
+        if not located:
+            continue
+        text = section["text"]
+        elements.append({"text_run": {"content": f"\n【{section['title']}】\n", "text_element_style": {"bold": True}}})
+        curr = 0
+        for s in located:
+            if s["start"] > curr:
+                elements.append({"text_run": {"content": text[curr:s["start"]]}})
+            elements.extend(_inline_annotation_elements(s))
+            curr = s["end"]
+        if curr < len(text):
+            elements.append({"text_run": {"content": text[curr:]}})
+        elements.append({"text_run": {"content": "\n"}})
+    return elements
 
-    curr = 0
-    for s in located:
-        if s["start"] > curr:
-            elements.append({"text_run": {"content": text[curr : s["start"]]}})
 
-        ann = s["data"]
-        ann_type = ann.get("type", "critique")
+def _inline_annotation_elements(s: dict[str, Any]) -> list[dict[str, Any]]:
+    """Renders one source span followed immediately by its own comment."""
+    elements: list[dict[str, Any]] = []
 
-        # Visual highlights:
-        # baseline -> 5 (light green), claim -> 4 (light yellow), counter -> 2 (light red), critique -> 3 (light orange)
-        if ann_type == "baseline":
-            bg_color = 5
-        elif ann_type == "claim":
-            bg_color = 4
-        elif ann_type == "counter":
-            bg_color = 2
-        else:
-            bg_color = 3
+    ann = s["data"]
+    ann_type = ann.get("type", "critique")
+    bg_color = {"baseline": 5, "claim": 4, "counter": 2}.get(ann_type, 3)
+    elements.append({
+        "text_run": {
+            "content": s["quote"],
+            "text_element_style": {"bold": True, "background_color": bg_color},
+        }
+    })
 
+    comment = ann.get("comment", "")
+    if ann.get("inference") and "推断" not in comment:
+        comment = f"推断：{comment}"
+    if ann_type == "baseline":
+        venue = f" [{ann['venue']}]" if ann.get("venue") else ""
         elements.append({
             "text_run": {
-                "content": s["quote"],
-                "text_element_style": {
-                    "bold": True,
-                    "background_color": bg_color,
-                },
+                "content": f" 💬[基线: {comment}{venue} | ",
+                "text_element_style": {"text_color": 5, "background_color": 1, "italic": True},
+            }
+        })
+        if ann.get("in_library") and ann.get("doc_url"):
+            badge_prefix = ann.get("library_badge", "").split(":")[0] + ":" if ":" in ann.get("library_badge", "") else "🟢 已入库:"
+            elements.append({
+                "text_run": {
+                    "content": f"{badge_prefix} {ann.get('doc_title') or ann.get('name')}",
+                    "text_element_style": {
+                        "text_color": 5, "background_color": 1, "bold": True,
+                        "link": {"url": ann["doc_url"]},
+                    },
+                }
+            })
+        elif ann.get("doc_url"):
+            elements.append({
+                "text_run": {
+                    "content": "⚪ 出处检索",
+                    "text_element_style": {"text_color": 5, "background_color": 1, "link": {"url": ann["doc_url"]}},
+                }
+            })
+        else:
+            elements.append({"text_run": {"content": "⚪ 未入库", "text_element_style": {"text_color": 5, "background_color": 1}}})
+        elements.append({
+            "text_run": {"content": "] ", "text_element_style": {"text_color": 5, "background_color": 1, "italic": True}}
+        })
+    elif ann_type == "claim":
+        elements.append({
+            "text_run": {
+                "content": f" 🎯[核心发现: {comment}] ",
+                "text_element_style": {"text_color": 2, "background_color": 1, "bold": True},
+            }
+        })
+    elif ann_type == "counter":
+        elements.append({
+            "text_run": {
+                "content": f" ⚡[反例证据: {comment}] ",
+                "text_element_style": {"text_color": 2, "background_color": 1, "bold": True},
+            }
+        })
+    elif ann_type == "critique":
+        elements.append({
+            "text_run": {
+                "content": f" ⚠️[AI审阅: {comment}] ",
+                "text_element_style": {"text_color": 3, "background_color": 1, "italic": True},
             }
         })
 
-        # Inline annotation badge
-        comment = ann.get("comment", "")
-        if ann_type == "baseline":
-            venue = f" [{ann['venue']}]" if ann.get("venue") else ""
-            elements.append({
-                "text_run": {
-                    "content": f" 💬[基线: {comment}{venue} | ",
-                    "text_element_style": {"text_color": 5, "background_color": 1, "italic": True},
-                }
-            })
-            if ann.get("in_library") and ann.get("doc_url"):
-                badge_prefix = ann.get("library_badge", "").split(":")[0] + ":" if ":" in ann.get("library_badge", "") else "🟢 已入库:"
-                elements.append({
-                    "text_run": {
-                        "content": f"{badge_prefix} {ann.get('doc_title') or ann.get('name')}",
-                        "text_element_style": {
-                            "text_color": 5,
-                            "background_color": 1,
-                            "bold": True,
-                            "link": {"url": ann["doc_url"]},
-                        },
-                    }
-                })
-            elif ann.get("doc_url"):
-                elements.append({
-                    "text_run": {
-                        "content": "⚪ 出处检索",
-                        "text_element_style": {
-                            "text_color": 5,
-                            "background_color": 1,
-                            "link": {"url": ann["doc_url"]},
-                        },
-                    }
-                })
-            else:
-                elements.append({
-                    "text_run": {
-                        "content": "⚪ 未入库",
-                        "text_element_style": {"text_color": 5, "background_color": 1},
-                    }
-                })
-            elements.append({
-                "text_run": {
-                    "content": "] ",
-                    "text_element_style": {"text_color": 5, "background_color": 1, "italic": True},
-                }
-            })
-
-        elif ann_type == "claim":
-            elements.append({
-                "text_run": {
-                    "content": f" 🎯[核心发现: {comment}] ",
-                    "text_element_style": {
-                        "text_color": 2,  # red
-                        "background_color": 1,
-                        "bold": True,
-                    },
-                }
-            })
-
-        elif ann_type == "counter":
-            elements.append({
-                "text_run": {
-                    "content": f" ⚡[反例证据: {comment}] ",
-                    "text_element_style": {
-                        "text_color": 2,  # red
-                        "background_color": 1,
-                        "bold": True,
-                    },
-                }
-            })
-
-        elif ann_type == "critique":
-            elements.append({
-                "text_run": {
-                    "content": f" ⚠️[AI审阅: {comment}] ",
-                    "text_element_style": {
-                        "text_color": 3,  # orange
-                        "background_color": 1,
-                        "italic": True,
-                    },
-                }
-            })
-
-        curr = s["end"]
-
-    if curr < len(text):
-        elements.append({"text_run": {"content": text[curr:]}})
-
-    elements.append({"text_run": {"content": "\n"}})
     return elements
+
+
+def resolve_inline_ai_followups(
+    router: LLMRouter,
+    title: str,
+    abstract: str,
+    arxiv_id_or_url: str,
+    user_queries: list[str],
+) -> list[dict[str, str]]:
+    """Resolves @AI inline questions injected by the user in Feishu / Obsidian / Notion."""
+    if not router.available or not user_queries:
+        return []
+
+    arxiv_id = ""
+    m = re.search(r"(\d{4}\.\d{4,5})", arxiv_id_or_url or "")
+    if m:
+        arxiv_id = m.group(1)
+
+    secs = fetch_ar5iv_targeted_sections(arxiv_id) if arxiv_id else {}
+    context_parts = [f"Title: {title}", f"Abstract: {abstract}"]
+    if secs.get("method"):
+        context_parts.append(f"Method Section:\n{secs['method'][:3500]}")
+    if secs.get("experiments"):
+        context_parts.append(f"Experiments Section:\n{secs['experiments'][:4000]}")
+    if secs.get("limitations"):
+        context_parts.append(f"Limitations Section:\n{secs['limitations'][:2500]}")
+
+    context_str = "\n\n".join(context_parts)
+    results: list[dict[str, str]] = []
+
+    for q in user_queries:
+        prompt = (
+            "You are answering a researcher's inline follow-up question (@AI) inside a paper reading document.\n\n"
+            f"{context_str}\n\n"
+            f"Researcher's Question: {q}\n\n"
+            "Provide a concise, grounded Chinese answer (80-160 字). Cite specific experimental settings, "
+            "metrics, or section details if present in the paper context; if not explicitly stated in the text, "
+            "state that clearly."
+        )
+        try:
+            ans = router.chat([{"role": "user", "content": prompt}], max_tokens=800, temperature=0.2)
+            if ans and ans.strip():
+                results.append({"question": q, "answer": ans.strip()})
+        except Exception as exc:
+            logger.warning(f"Failed to resolve @AI query '{q}' for '{title}': {exc}")
+    return results
 
 
 def enrich_papers_with_inline_annotations(
@@ -337,22 +398,27 @@ def enrich_papers_with_inline_annotations(
     papers: list[Paper],
     questions: list[str],
     max_workers: int = 4,
+    use_ar5iv: bool = True,
 ) -> None:
     """Extracts inline annotations for recommended papers in parallel."""
     if not router.available or not papers:
         return
 
     def process_one(paper: Paper) -> None:
-        anns = extract_inline_annotations(router, paper, questions)
+        anns = extract_inline_annotations(router, paper, questions, use_ar5iv=use_ar5iv)
         if anns:
             paper.inline_annotations = anns
-            # Also populate qa_matches for backward compatibility if present
-            qa_matches = []
-            for a in anns:
-                if a.get("type") == "claim" and questions:
-                    qa_matches.append({"question": questions[0], "answer": a.get("comment", "")})
-            if qa_matches and not paper.qa_matches:
-                paper.qa_matches = qa_matches
+            # Preserve the claim's actual question; never default to the first question.
+            qa_matches = [
+                {"question": a["question"], "answer": a["comment"]}
+                for a in anns
+                if a.get("type") == "claim" and a.get("question")
+            ]
+            if qa_matches:
+                existing = {(m.get("question"), m.get("answer")) for m in paper.qa_matches or []}
+                paper.qa_matches = (paper.qa_matches or []) + [
+                    m for m in qa_matches if (m["question"], m["answer"]) not in existing
+                ]
 
             logger.info(f"Generated {len(anns)} inline annotations for '{paper.title[:35]}'")
 

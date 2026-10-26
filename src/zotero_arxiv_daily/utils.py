@@ -162,36 +162,34 @@ def glob_match(path:str, pattern:str) -> bool:
     re_pattern = glob.translate(pattern,recursive=True)
     return re.match(re_pattern, path) is not None
 
-def send_email(config:DictConfig, html:str):
+def send_email(config:DictConfig, html:str, subject:str | None = None):
     sender = config.email.sender
-    receiver = config.email.receiver
+    receivers = [addr.strip() for addr in str(config.email.receiver).split(",") if addr.strip()]
     password = config.email.sender_password
     smtp_server = config.email.smtp_server
-    smtp_port = config.email.smtp_port
+    smtp_port = int(config.email.smtp_port)
+    if not receivers:
+        raise ValueError("email.receiver must contain at least one address")
     def _format_addr(s):
         name, addr = parseaddr(s)
         return formataddr((Header(name, 'utf-8').encode(), addr))
 
     msg = MIMEText(html, 'html', 'utf-8')
-    msg['From'] = _format_addr('Github Action <%s>' % sender)
-    msg['To'] = _format_addr('You <%s>' % receiver)
+    msg['From'] = _format_addr('Feishu Paper Daily <%s>' % sender)
+    msg['To'] = ', '.join(receivers)
     today = datetime.datetime.now().strftime('%Y/%m/%d')
-    msg['Subject'] = Header(f'Daily arXiv {today}', 'utf-8').encode()
+    msg['Subject'] = Header(subject or f'Daily arXiv {today}', 'utf-8').encode()
 
-    try:
-        server = smtplib.SMTP(smtp_server, smtp_port)
+    if smtp_port == 465:
+        server = smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=30)
+    else:
+        server = smtplib.SMTP(smtp_server, smtp_port, timeout=30)
         server.starttls()
-    except Exception as e:
-        logger.debug(f"Failed to use TLS. {e}\nTry to use SSL.")
-        try:
-            server = smtplib.SMTP_SSL(smtp_server, smtp_port)
-        except Exception as e:
-            logger.debug(f"Failed to use SSL. {e}\nTry to use plain text.")
-            server = smtplib.SMTP(smtp_server, smtp_port)
-
-    server.login(sender, password)
-    server.sendmail(sender, [receiver], msg.as_string())
-    server.quit()
+    try:
+        server.login(sender, password)
+        server.sendmail(sender, receivers, msg.as_string())
+    finally:
+        server.quit()
 
 
 def translate_to_chinese(text: str, timeout: float = 8.0) -> str:

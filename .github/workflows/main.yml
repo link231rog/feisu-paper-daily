@@ -24,6 +24,16 @@ jobs:
       - name: Setup uv
         uses: astral-sh/setup-uv@v5
 
+      # data/ holds paper_store.json (pushed/discarded dedup) and research_state.json.
+      # Runners are ephemeral, so restore the newest snapshot and save a new one every run.
+      - name: Restore pipeline state
+        uses: actions/cache/restore@v4
+        with:
+          path: data
+          key: paper-daily-state-${{ github.run_id }}
+          restore-keys: |
+            paper-daily-state-
+
       - name: Run Paper Daily pipeline
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -56,6 +66,18 @@ jobs:
           TRANSLATION_BACKUP_API_KEY: ${{ secrets.TRANSLATION_BACKUP_API_KEY }}
           TRANSLATION_MODEL: ${{ vars.TRANSLATION_MODEL || 'z-ai/glm-5.3-flash' }}
           CUSTOM_CONFIG: ${{ secrets.CUSTOM_CONFIG }}
+          EMAIL_ENABLED: ${{ vars.EMAIL_ENABLED || 'true' }}
+          SENDER: ${{ secrets.SENDER }}
+          RECEIVER: ${{ secrets.RECEIVER }}
+          SENDER_PASSWORD: ${{ secrets.SENDER_PASSWORD }}
+          SMTP_SERVER: ${{ vars.SMTP_SERVER || 'smtp.qq.com' }}
+          SMTP_PORT: ${{ vars.SMTP_PORT || '465' }}
+          WECHAT_ENABLED: ${{ vars.WECHAT_ENABLED || 'false' }}
+          WECHAT_APP_ID: ${{ secrets.WECHAT_APP_ID }}
+          WECHAT_APP_SECRET: ${{ secrets.WECHAT_APP_SECRET }}
+          WECHAT_THUMB_MEDIA_ID: ${{ secrets.WECHAT_THUMB_MEDIA_ID }}
+          WECHAT_AUTHOR: ${{ vars.WECHAT_AUTHOR || 'Feishu Paper Daily' }}
+          WECHAT_CONTENT_SOURCE_URL: ${{ vars.WECHAT_CONTENT_SOURCE_URL }}
         run: |
           if [ -n "$CUSTOM_CONFIG" ]; then
             printf "%s\n" "$CUSTOM_CONFIG" > config/custom.yaml
@@ -76,3 +98,10 @@ jobs:
           fi
 
           uv run src/zotero_arxiv_daily/main.py
+
+      - name: Save pipeline state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data
+          key: paper-daily-state-${{ github.run_id }}
