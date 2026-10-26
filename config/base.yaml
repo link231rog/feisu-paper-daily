@@ -411,5 +411,9 @@ research:
   falsify_min_counter: 3
   negative_similarity: 0.6
   negative_penalty: 1.0
+  min_qa_score: 6
+  deep_read_min_qa: 7
+  deep_read_quota: 3
+  quick_radar_quota: 4
 
 

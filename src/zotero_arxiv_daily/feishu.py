@@ -1447,12 +1447,26 @@ class FeishuClient:
             })
 
             # Meta text: 来源: [arXiv] | 发表年份/日期: ... | 录用会议: ... | 发表单位/实验室: ... | 原文链接: ...
+            tier = getattr(p, "recommendation_tier", None) or "deep_read"
+            tier_label = "🌟 精读必看" if tier == "deep_read" else "📌 速览雷达"
+            qa_max = max(p.qa_scores.values()) if getattr(p, "qa_scores", None) else None
+            rigor = getattr(p, "evidence_rigor", None)
+            score_badges = []
+            if qa_max is not None:
+                score_badges.append(f"问题推进: {qa_max}/10")
+            if rigor is not None:
+                score_badges.append(f"证据硬核度: {rigor}/5")
+            if getattr(p, "is_priority_institution", False):
+                score_badges.append("🏛️ 核心关注机构")
+            badge_str = f" ({' · '.join(score_badges)})" if score_badges else ""
+
             src_str = ", ".join(p.sources or [p.source])
             date_str = p.published_date.strftime("%Y-%m-%d") if p.published_date else ""
             date_part = f" | 日期: {date_str}" if date_str else ""
             affil_str = ", ".join(p.affiliations) if p.affiliations else "N/A"
             venue_line = f"录用会议: {p.venue}\n" if getattr(p, "venue", None) else ""
             meta_prefix = (
+                f"推荐层级: {tier_label}{badge_str}\n"
                 f"来源: [{src_str}]{date_part}\n"
                 f"{venue_line}"
                 f"发表单位/实验室: {affil_str}\n"
@@ -1483,6 +1497,9 @@ class FeishuClient:
             else:
                 tldr_text = f"TL;DR: {en_summary}"
 
+            if getattr(p, "judge_reason", None):
+                tldr_text += f"\n💡 入选理由: {p.judge_reason}"
+
             # 1. TL;DR text block
             paper_blocks.append({
                 "block_type": 2,
@@ -1493,8 +1510,23 @@ class FeishuClient:
                 }
             })
 
-            # 2. In-line text annotation (direct paragraph highlights & comments)
-            if getattr(p, "inline_annotations", None):
+            # 2. Tier-aware body rendering:
+            # - "quick_radar" (📌 速览雷达): concise question match summary only, no long full-text annotation blocks
+            # - "deep_read" (🌟 精读必看): full continuous source text + AI insight bullets + baselines
+            if tier == "quick_radar":
+                if p.qa_matches:
+                    qa_lines = ["🎯 关键证据速览:"]
+                    for match in p.qa_matches[:2]:
+                        qa_lines.append(f"  • [{match.get('question', '')}] ➔ {match.get('answer', '')}")
+                    paper_blocks.append({
+                        "block_type": 2,
+                        "text": {
+                            "elements": [
+                                {"text_run": {"content": "\n".join(qa_lines) + "\n"}}
+                            ]
+                        }
+                    })
+            elif getattr(p, "inline_annotations", None):
                 from .annotator import build_annotated_text_elements
 
                 annotated_elements = build_annotated_text_elements(p, corpus=corpus, client=self)

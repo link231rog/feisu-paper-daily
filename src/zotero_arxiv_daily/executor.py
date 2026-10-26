@@ -241,19 +241,22 @@ class Executor:
                 f"<untrusted_source>\n{(paper.abstract or '')[:2000]}\n</untrusted_source>\n\n"
                 "Use only the supplied title and abstract; do not use prior knowledge, reputation or invented results.\n"
                 "Score each question 0-10. Most papers answer few or none of the questions, so most scores should be 0-3.\n"
-                "10 = the abstract states a mechanism or measured result that directly answers the question\n"
-                "7-9 = substantial, explicit evidence on the question's core, short of a full answer\n"
+                "10 = the abstract states a concrete algorithmic mechanism or measured result that directly answers the question\n"
+                "7-9 = substantial, explicit empirical or formal evidence on the question's core, short of a full answer\n"
                 "4-6 = a relevant method, setting or partial result that bears on the question\n"
                 "1-3 = same topic, but the abstract says nothing that helps answer it\n"
                 "0 = unrelated (omit it)\n"
-                "Do not raise a score because the topic is fashionable, the method is new or the claims are broad. "
-                "A method that merely could be applied to the question is at most 4.\n"
+                "Strict rigor rules:\n"
+                "- Do not raise a score because the topic is fashionable, the method is new or the claims are broad.\n"
+                "- A method that merely could be applied to the question, or a shallow prompt-wrapping / pure survey without new mechanism or empirical ablation, is at most 4.\n"
+                "- Also rate 'rigor' (1-5): 5 = concrete mechanism + controlled ablations/theoretical bound + open code/benchmark; "
+                "3 = standard empirical comparison; 1-2 = vague prompt wrapper, purely conceptual survey, or unsubstantiated claim.\n"
                 "For scores >= 4 also give: 'answer' (one Chinese sentence stating what the paper shows about the question), "
                 "'evidence_quote' (a contiguous quote copied from the abstract that supports both the score and the answer), and "
                 "'stance': 'supports' if the quoted result favours the question's underlying hypothesis or goal, "
                 "'against' if it reports a failure, limit or contradicting result, 'neutral' otherwise. "
                 "If the abstract offers no such quote, score at most 3.\n"
-                'Return ONLY JSON: [{"question": 1, "score": 8, "answer": "...", "evidence_quote": "exact abstract substring", "stance": "supports"}]'
+                'Return ONLY JSON: [{"question": 1, "score": 8, "rigor": 4, "answer": "...", "evidence_quote": "exact abstract substring", "stance": "supports"}]'
             )
             try:
                 raw = client.chat(
@@ -268,16 +271,23 @@ class Executor:
                     return
                 scores: dict[str, int] = {}
                 matches = []
+                max_rigor = 0
                 for item in data:
                     if not isinstance(item, dict):
                         continue
                     try:
                         idx = int(item.get("question", 0))
                         value = int(item.get("score", 0))
+                        rigor = int(item.get("rigor", 3))
                     except (TypeError, ValueError):
                         continue
                     if not 1 <= idx <= len(questions) or value <= 0:
                         continue
+                    rigor = max(1, min(5, rigor))
+                    max_rigor = max(max_rigor, rigor)
+                    # Cap shallow prompt-wrappers / low-rigor papers at score 4
+                    if rigor <= 2 and value > 4:
+                        value = 4
                     question = questions[idx - 1]
                     answer = str(item.get("answer", "")).strip()
                     evidence_quote = str(item.get("evidence_quote", "")).strip()
@@ -285,7 +295,9 @@ class Executor:
                         if not contains_quote(paper.abstract or "", evidence_quote):
                             value = 3
                             answer = ""
-                    scores[question] = max(scores.get(question, 0), min(10, value))
+                    # Only record meaningful relevance (>= 4) so 1-3 noise never counts as question-relevant
+                    if value >= 4:
+                        scores[question] = max(scores.get(question, 0), min(10, value))
                     if value >= 4 and answer:
                         stance = str(item.get("stance", "neutral")).strip().lower()
                         matches.append(
@@ -294,10 +306,13 @@ class Executor:
                                 "answer": answer,
                                 "evidence_quote": evidence_quote,
                                 "stance": stance if stance in {"supports", "against", "neutral"} else "neutral",
+                                "rigor": rigor,
                             }
                         )
                 paper.qa_scores = scores or None
                 paper.qa_matches = matches or None
+                if max_rigor > 0:
+                    paper.evidence_rigor = max_rigor
             except Exception as exc:
                 logger.warning(f"Question scoring failed for '{paper.title}': {exc}")
 
@@ -411,11 +426,20 @@ class Executor:
                 f"(weight {judge_w:.2f}, dropped {len(head) - len(kept)})"
             )
 
-        cap = int(self.research_cfg.get("per_question_cap", 6))
+        cap = int(self.research_cfg.get("per_question_cap", 4))
         reserve = max(0, min(int(self.research_cfg.get("exploration_slots", 2)), quota - 1))
+        min_qa_score = int(self.research_cfg.get("min_qa_score", 6))
+        deep_read_min_qa = int(self.research_cfg.get("deep_read_min_qa", 7))
+        deep_read_quota = int(self.research_cfg.get("deep_read_quota", 3))
+        quick_radar_quota = int(self.research_cfg.get("quick_radar_quota", 4))
+        effective_quota = min(quota, deep_read_quota + quick_radar_quota)
+
         selected: list[Paper] = []
         picked: set[int] = set()
         counts: dict[str, int] = {}
+
+        def best_qa(p: Paper) -> int:
+            return max(p.qa_scores.values()) if p.qa_scores else 0
 
         def take(paper: Paper) -> None:
             selected.append(paper)
@@ -424,28 +448,46 @@ class Executor:
             if question:
                 counts[question] = counts.get(question, 0) + 1
 
-        # Main pass: best fused papers, capped per question so one topic cannot fill the list
+        # Main pass: ONLY papers that pass the strict QA threshold (default >= 6)
         for paper in ordered:
-            if len(selected) >= quota - reserve:
+            if len(selected) >= effective_quota - reserve:
                 break
+            if questions and self.router.available and best_qa(paper) < min_qa_score:
+                continue
             question = self._dominant_question(paper, weights)
             if question and counts.get(question, 0) >= cap:
                 continue
             take(paper)
 
-        # Exploration: strong library match that no question asked for
+        # Exploration pass: ONLY top taste matches (taste_norm >= 0.75) or priority lab breakthroughs
         for paper in ordered:
-            if len(selected) >= quota:
+            if len(selected) >= effective_quota:
                 break
-            if id(paper) in picked or paper.qa_scores:
+            if id(paper) in picked:
                 continue
-            take(paper)
-
-        for paper in ordered:
-            if len(selected) >= quota:
-                break
-            if id(paper) not in picked:
+            t_norm = (float(paper.score or 0.0) - low) / span
+            q_max = best_qa(paper)
+            if q_max >= min_qa_score or (t_norm >= 0.75 and (getattr(paper, "is_priority_institution", False) or q_max >= 5)):
                 take(paper)
+
+        # Assign Tier: 🌟 精读必看 (deep_read, up to deep_read_quota) vs 📌 速览雷达 (quick_radar)
+        deep_cnt = 0
+        for p in selected:
+            q_max = best_qa(p)
+            rigor = getattr(p, "evidence_rigor", None) or 3
+            if deep_cnt < deep_read_quota and (
+                q_max >= deep_read_min_qa
+                or (getattr(p, "is_priority_institution", False) and q_max >= min_qa_score and rigor >= 4)
+                or (not questions and deep_cnt < deep_read_quota)
+            ):
+                p.recommendation_tier = "deep_read"
+                deep_cnt += 1
+            else:
+                p.recommendation_tier = "quick_radar"
+
+        # Guarantee at least 1 deep_read if any paper passed the strict gate
+        if selected and deep_cnt == 0:
+            selected[0].recommendation_tier = "deep_read"
 
         return selected
 
@@ -1257,12 +1299,18 @@ class Executor:
                 logger.error(f"Failed to rebuild note for {k}: {exc}")
         return results
 
-    def filter_quality_papers(self, papers: list[Paper]) -> list[Paper]:
-        """Filters papers based on academic quality gates:
-        1. Community-curated (Hugging Face / GitHub).
-        2. Top conference / journal acceptance (NeurIPS, ICML, ICLR, ACL, AAAI, CVPR, etc.).
-        3. High citation count (>= min_citations).
-        4. Recognized universities, institutes, or tech AI labs in author affiliations.
+    def filter_quality_papers(
+        self,
+        papers: list[Paper],
+        console_settings: dict[str, list[str]] | None = None,
+    ) -> list[Paper]:
+        """Filters papers based on academic quality gates and declarative console rules:
+        0. Reject robotics/hardware, non-main workshops, and console-defined excluded keywords.
+        1. Enforce console-defined required anchors (if any).
+        2. Community-curated (Hugging Face / GitHub).
+        3. Top conference / journal acceptance (NeurIPS, ICML, ICLR, ACL, AAAI, CVPR, etc.).
+        4. High citation count (>= min_citations).
+        5. Recognized universities, institutes, or tech AI labs in author affiliations.
         Preprints with unknown / unverified affiliations and no venue/citations are filtered out.
         """
         filter_cfg = self.config.get("filter") or {}
@@ -1273,6 +1321,18 @@ class Executor:
         top_institutions = [inst.lower() for inst in filter_cfg.get("top_institutions", [])]
         exclude_non_main = filter_cfg.get("exclude_non_main", True) or filter_cfg.get("exclude_workshops", True)
         min_citations = int(filter_cfg.get("min_citations", 5))
+
+        cs = console_settings or {}
+        excluded_kws = [
+            kw.lower().strip()
+            for kw in (cs.get("excluded_keywords") or filter_cfg.get("excluded_keywords") or [])
+            if kw.strip()
+        ]
+        required_anchors = [
+            anc.lower().strip()
+            for anc in (cs.get("required_anchors") or filter_cfg.get("required_anchors") or [])
+            if anc.strip()
+        ]
 
         non_main_patterns = [
             r"\bworkshop\b",
@@ -1307,20 +1367,35 @@ class Executor:
             v_str = (p.venue or "").lower()
             t_str = (p.title or "").lower()
             abs_str = (p.abstract or "").lower()
+            full_text_str = f"{t_str} {abs_str}"
 
             # 0a. Reject robotics-heavy papers (check title & abstract)
             if exclude_robotics:
-                # If title contains explicit robot keywords, reject
                 if any(re.search(pat, t_str) for pat in robot_patterns):
                     logger.debug(f"Filtered out robotics paper by title: '{p.title}'")
                     continue
-                # If abstract has multiple robotics cues, reject
                 robot_matches = sum(1 for pat in robot_patterns if re.search(pat, abs_str))
                 if robot_matches >= 2:
                     logger.debug(f"Filtered out robotics paper by abstract cues: '{p.title}'")
                     continue
 
-            # 0b. Reject workshops, short papers, demo papers, extended abstracts
+            # 0b. Reject console-defined excluded keywords / topics
+            if excluded_kws:
+                # If title hits any excluded keyword, or abstract hits >= 2 excluded cues
+                if any(kw in t_str for kw in excluded_kws):
+                    logger.debug(f"Filtered out paper by console excluded keyword in title: '{p.title}'")
+                    continue
+                if sum(1 for kw in excluded_kws if kw in abs_str) >= 2:
+                    logger.debug(f"Filtered out paper by console excluded keywords in abstract: '{p.title}'")
+                    continue
+
+            # 0c. Enforce console-defined required topic anchors (at least one must match in title or abstract)
+            if required_anchors:
+                if not any(anc in full_text_str for anc in required_anchors):
+                    logger.debug(f"Filtered out paper missing required topic anchors: '{p.title}'")
+                    continue
+
+            # 0d. Reject workshops, short papers, demo papers, extended abstracts
             if exclude_non_main:
                 combined_check = f"{v_str} {t_str}"
                 if any(re.search(pat, combined_check) for pat in non_main_patterns):
@@ -1426,7 +1501,7 @@ class Executor:
         logger.info(f"{len(new_papers)} new unpushed papers ready for quality filtering")
 
         # Academic Quality Gate (filter out obscure preprints without top affiliation or recognized venue)
-        quality_papers = self.filter_quality_papers(new_papers)
+        quality_papers = self.filter_quality_papers(new_papers, console_settings=console_settings)
         logger.info(f"{len(quality_papers)} / {len(new_papers)} papers passed academic quality gate")
         funnel = {
             "retrieved": len(all_papers),
@@ -1436,12 +1511,23 @@ class Executor:
         }
 
         priority_institutions = console_settings.get("institutions", [])
+        topic_anchors = list(
+            dict.fromkeys(
+                (console_settings.get("tags") or [])
+                + (console_settings.get("required_anchors") or [])
+            )
+        ) or None
 
         # Multi-hop retrieval: chase citations of the most promising candidates
         if self.research_cfg.get("enabled", True) and self.research_cfg.get("multi_hop", True):
             # Seeds come from the taste-ordered head, not retrieval order, and are chosen for the questions
             seed_pool = (
-                self.reranker.rerank(list(quality_papers), taste_corpus(corpus), priority_institutions=priority_institutions)
+                self.reranker.rerank(
+                    list(quality_papers),
+                    taste_corpus(corpus),
+                    priority_institutions=priority_institutions,
+                    topic_anchors=topic_anchors,
+                )
                 if quality_papers
                 else []
             )
@@ -1456,7 +1542,8 @@ class Executor:
                 if related:
                     merged = self.paper_store.dedup(quality_papers + related)
                     quality_papers = self.filter_quality_papers(
-                        self.paper_store.filter_already_pushed(merged, allow_same_day=force_today)
+                        self.paper_store.filter_already_pushed(merged, allow_same_day=force_today),
+                        console_settings=console_settings,
                     )
                     logger.info(f"{len(quality_papers)} papers after citation chasing")
 
@@ -1474,7 +1561,12 @@ class Executor:
         reranked_papers: list[Paper] = []
         if len(quality_papers) > 0:
             logger.info("Reranking papers against interest corpus...")
-            ranked = self.reranker.rerank(quality_papers, taste_corpus(corpus), priority_institutions=priority_institutions)
+            ranked = self.reranker.rerank(
+                quality_papers,
+                taste_corpus(corpus),
+                priority_institutions=priority_institutions,
+                topic_anchors=topic_anchors,
+            )
 
             questions = console_settings.get("questions", [])
             if questions:
@@ -1483,12 +1575,19 @@ class Executor:
 
             self.apply_negative_feedback(ranked)
             reranked_papers = self.fuse_and_select(ranked, questions, paper_quota)
-            logger.info(f"Selected {len(reranked_papers)} of {len(ranked)} candidates")
+            deep_read_papers = [p for p in reranked_papers if getattr(p, "recommendation_tier", "deep_read") == "deep_read"]
+            quick_radar_papers = [p for p in reranked_papers if getattr(p, "recommendation_tier", None) == "quick_radar"]
+            logger.info(
+                f"Selected {len(reranked_papers)} of {len(ranked)} candidates "
+                f"(deep_read={len(deep_read_papers)}, quick_radar={len(quick_radar_papers)})"
+            )
             funnel.update(
                 {
                     "after_citation_chasing": len(quality_papers),
                     "question_relevant": sum(1 for p in ranked if p.qa_scores),
                     "selected": len(reranked_papers),
+                    "deep_read": len(deep_read_papers),
+                    "quick_radar": len(quick_radar_papers),
                 }
             )
             logger.info("Funnel: " + " -> ".join(f"{k} {v}" for k, v in funnel.items()))
@@ -1517,21 +1616,21 @@ class Executor:
             with ThreadPoolExecutor(max_workers=tldr_workers) as pool:
                 list(tqdm(pool.map(summarize_one, reranked_papers), total=len(reranked_papers), desc="Summarizing papers"))
 
-            # Baseline extraction, attribution, and bi-directional library linking
-            if self.research_cfg.get("baselines", True):
+            # Baseline extraction, attribution, and bi-directional library linking (only for deep_read tier)
+            if self.research_cfg.get("baselines", True) and deep_read_papers:
                 workers = int(self.research_cfg.get("baseline_workers", 4))
-                logger.info("Extracting baseline comparisons and linking with library...")
-                enrich_papers_with_baselines(self.router, reranked_papers, corpus, max_workers=workers)
+                logger.info(f"Extracting baseline comparisons for {len(deep_read_papers)} deep-read papers...")
+                enrich_papers_with_baselines(self.router, deep_read_papers, corpus, max_workers=workers)
 
-            # In-line text annotation (direct paragraph highlights, baselines, claims, and critiques)
-            if self.research_cfg.get("inline_annotations", True):
+            # In-line text annotation (only for deep_read tier so quick_radar stays lightweight)
+            if self.research_cfg.get("inline_annotations", True) and deep_read_papers:
                 from .annotator import enrich_papers_with_inline_annotations
 
                 workers = int(self.research_cfg.get("annotation_workers", 4))
                 use_ar5iv = bool(self.research_cfg.get("full_text_ar5iv", True))
-                logger.info("Generating in-line text annotations and review comments...")
+                logger.info(f"Generating in-line text annotations for {len(deep_read_papers)} deep-read papers...")
                 enrich_papers_with_inline_annotations(
-                    self.router, reranked_papers, questions, max_workers=workers, use_ar5iv=use_ar5iv
+                    self.router, deep_read_papers, questions, max_workers=workers, use_ar5iv=use_ar5iv
                 )
 
             # Per-question synthesis and next-round question proposals

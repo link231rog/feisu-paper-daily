@@ -118,7 +118,9 @@ def build_daily_report(
 
     omitted = 0
     for index, paper in enumerate(papers, 1):
-        item = [f"<h2>{index}. {escape(_text(paper.title, 500))}</h2>"]
+        tier = getattr(paper, "recommendation_tier", None) or "deep_read"
+        tier_badge = "🌟 精读必看" if tier == "deep_read" else "📌 速览雷达"
+        item = [f"<h2>{index}. [{tier_badge}] {escape(_text(paper.title, 500))}</h2>"]
         if paper.authors:
             item.append(f"<p>{escape(_text(', '.join(paper.authors), 500))}</p>")
         if paper.url:
@@ -128,13 +130,20 @@ def build_daily_report(
             item.append(f"<p><strong>核心摘要：</strong>{escape(_text(paper.tldr, 3000))}</p>")
         if paper.judge_reason:
             item.append(f"<p><strong>推荐理由：</strong>{escape(_text(paper.judge_reason))}</p>")
-        annotated_html = _inline_annotated_html(paper)
-        if annotated_html:
-            item.append(annotated_html)
+        if tier == "deep_read":
+            annotated_html = _inline_annotated_html(paper)
+            if annotated_html:
+                item.append(annotated_html)
+            else:
+                for qa in paper.qa_matches or []:
+                    item.append(
+                        f"<p><strong>{escape(_text(qa.get('question'), 300))}</strong><br>"
+                        f"{escape(_text(qa.get('answer')))}</p>"
+                    )
         else:
-            for qa in paper.qa_matches or []:
+            for qa in (paper.qa_matches or [])[:2]:
                 item.append(
-                    f"<p><strong>{escape(_text(qa.get('question'), 300))}</strong><br>"
+                    f"<p><strong>🎯 {escape(_text(qa.get('question'), 300))}</strong>："
                     f"{escape(_text(qa.get('answer')))}</p>"
                 )
         block = "".join(item)

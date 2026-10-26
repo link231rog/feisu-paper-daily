@@ -308,7 +308,8 @@ def judge_ranking(router: LLMRouter, questions: list[str], papers: list[Paper]) 
         lines = [f"{position}. {paper.title}", f"   {(paper.abstract or '').replace(chr(10), ' ')[:700]}"]
         if paper.qa_scores:
             best = max(paper.qa_scores.items(), key=lambda kv: kv[1])
-            lines.append(f"   Earlier per-paper scoring: best question fit {best[1]}/10")
+            rigor_tag = f", rigor {paper.evidence_rigor}/5" if getattr(paper, "evidence_rigor", None) else ""
+            lines.append(f"   Earlier per-paper scoring: best question fit {best[1]}/10{rigor_tag}")
         for match in (paper.qa_matches or [])[:2]:
             tag = " (reports a result against the hypothesis)" if match.get("stance") == "against" else ""
             lines.append(f"   Extracted answer{tag}: {match.get('answer', '')}")
@@ -323,9 +324,10 @@ def judge_ranking(router: LLMRouter, questions: list[str], papers: list[Paper]) 
         f"{UNTRUSTED_NOTICE}\nCandidates:\n<untrusted_source>\n{listing}\n</untrusted_source>\n\n"
         "Use only the supplied evidence, not reputation or prior knowledge. Rank by direct, question-specific evidence: "
         "explicit mechanism/result/benchmark > partial evidence > topic overlap. Do not infer missing experiments.\n"
-        "Keep genuinely useful papers. Return dropped only for a paper with no question-specific evidence or an exact duplicate of a stronger candidate; "
-        "do not drop merely because it is a baseline, negative result or opposing view. "
-        "Papers that report a result against a tracked hypothesis are especially valuable.\n"
+        "Strict selectivity rules:\n"
+        "- Actively put into 'dropped' any paper that: (a) is a shallow prompt-wrapping or thin pipeline application without algorithmic/architectural mechanism; "
+        "(b) is a pure position/survey paper with no empirical or formal evidence; (c) has no direct evidence for the tracked questions; or (d) is an incremental duplicate of a stronger candidate.\n"
+        "- Prioritize papers with verifiable empirical ablations, formal analysis, open-source code/benchmarks, or counter-intuitive negative findings that falsify or bound a hypothesis.\n"
         "Give a concise Chinese reason tied to the abstract; do not invent novelty or results.\n"
         'Return ONLY JSON: {"ranking": [{"index": 3, "reason": "一句话中文理由"}], "dropped": [7]}'
     )

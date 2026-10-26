@@ -21,6 +21,7 @@ class BaseReranker(ABC):
         candidates: list[Paper],
         corpus: list[CorpusPaper],
         priority_institutions: list[str] | None = None,
+        topic_anchors: list[str] | None = None,
     ) -> list[Paper]:
         if not candidates or not corpus:
             return candidates
@@ -52,8 +53,16 @@ class BaseReranker(ABC):
         if priority_institutions:
             all_priority_insts.update(i.lower().strip() for i in priority_institutions if i.strip())
 
+        default_anchors = [
+            "agent", "memory", "decision", "planning", "reasoning", "reinforcement learning",
+            "rl", "multi-agent", "llm", "language model", "world model", "policy", "self-improv",
+            "knowledge graph", "harness", "benchmark", "eval", "reward", "tool use"
+        ]
+        anchors = [a.lower().strip() for a in (topic_anchors or default_anchors) if a.strip()]
+
         for idx, c in enumerate(candidates):
-            score = float(sim_scores[idx])
+            base_sim = float(sim_scores[idx])
+            score = base_sim
 
             # 1. Recency Boost
             pub_year = c.published_year
@@ -71,13 +80,20 @@ class BaseReranker(ABC):
                 citation_boost = min(citation_boost_max, float(np.log1p(c.citation_count) * 0.4))
                 score += citation_boost
 
-            # 4. Priority Institution Boost (e.g. Anthropic, OpenAI, Google)
+            # 4. Priority Institution × Topic Anchor Gate
+            # Only boost priority labs when the paper also aligns with core research topics/taste
             c_text = " ".join((c.affiliations or []) + (c.authors or [])).lower()
             if not c_text and c.abstract:
                 c_text = c.abstract[:400].lower()
             if any(inst in c_text for inst in all_priority_insts):
-                score += institution_boost
                 c.is_priority_institution = True
+                full_content = f"{c.title or ''} {c.abstract or ''}".lower()
+                anchor_matched = any(a in full_content for a in anchors)
+                if anchor_matched or base_sim >= 2.5:
+                    score += institution_boost
+                else:
+                    # Slight boost if from priority lab but off-topic (prevents weather/genomics noise from dominating)
+                    score += round(institution_boost * 0.2, 2)
 
             c.score = round(score, 2)
 

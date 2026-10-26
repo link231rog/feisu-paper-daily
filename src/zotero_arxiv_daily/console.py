@@ -21,8 +21,14 @@ _ITEM_RE = re.compile(r"^(?:[-*+]|\d+[.)])\s+(.*)$")
 
 
 def parse_console_text(text: str) -> dict[str, list[str]]:
-    """Parses markdown-ish console text into tags, questions, and priority institutions."""
-    settings: dict[str, list[str]] = {"tags": [], "questions": [], "institutions": []}
+    """Parses markdown-ish console text into tags, questions, institutions, excluded_keywords, and required_anchors."""
+    settings: dict[str, list[str]] = {
+        "tags": [],
+        "questions": [],
+        "institutions": [],
+        "excluded_keywords": [],
+        "required_anchors": [],
+    }
     section = None
 
     for raw in (text or "").splitlines():
@@ -31,7 +37,13 @@ def parse_console_text(text: str) -> dict[str, list[str]]:
             continue
         if line.startswith("#"):
             heading = line.lstrip("#").strip()
-            if "标签" in heading:
+            if "建议问题" in heading or "待确认" in heading:
+                section = None
+            elif any(k in heading for k in ["屏蔽", "排除", "黑名单", "exclude", "block"]):
+                section = "excluded_keywords"
+            elif any(k in heading for k in ["必含", "核心锚点", "必须命中", "require", "anchor"]):
+                section = "required_anchors"
+            elif "标签" in heading:
                 section = "tags"
             elif "问题" in heading or "QA" in heading.upper():
                 section = "questions"

@@ -196,5 +196,9 @@ research:
   judge_weight: ${oc.env:RESEARCH_JUDGE_WEIGHT,0.6}
   max_brief_questions: ${oc.env:RESEARCH_MAX_BRIEF_QUESTIONS,8}
   trace: ${oc.env:RESEARCH_TRACE,true}
+  min_qa_score: ${oc.env:RESEARCH_MIN_QA_SCORE,6}
+  deep_read_min_qa: ${oc.env:RESEARCH_DEEP_READ_MIN_QA,7}
+  deep_read_quota: ${oc.env:RESEARCH_DEEP_READ_QUOTA,3}
+  quick_radar_quota: ${oc.env:RESEARCH_QUICK_RADAR_QUOTA,4}
 
 
