@@ -55,10 +55,20 @@ jobs:
               --max-time 12 "$U" || echo "curl exit=$?"
           done
           FIRST=$(printf '%s' "$LLM_API_KEYS" | tr ',' '\n' | head -1)
-          curl -sS -o /tmp/chat.txt -w 'nvidia chat http=%{http_code} time=%{time_total}s\n' --max-time 20 \
-            -H "Authorization: Bearer $FIRST" -H 'Content-Type: application/json' \
-            -d '{"model":"z-ai/glm-5.3-flash","messages":[{"role":"user","content":"reply with ok"}],"max_tokens":8}' \
+          AUTH="Authorization: Bearer $FIRST"
+          printf 'POST /models (expect 405): '
+          curl -sS -o /dev/null -w 'http=%{http_code} time=%{time_total}s\n' --max-time 15 -X POST -H "$AUTH" "$BASE/models" || echo "curl exit=$?"
+          printf 'POST llama-3.1-8b (30s):    '
+          curl -sS -o /tmp/llama.txt -w 'http=%{http_code} time=%{time_total}s\n' --max-time 30 \
+            -H "$AUTH" -H 'Content-Type: application/json' \
+            -d '{"model":"meta/llama-3.1-8b-instruct","messages":[{"role":"user","content":"ok"}],"max_tokens":4}' \
             "$BASE/chat/completions" || echo "curl exit=$?"
+          printf 'POST glm-5.3-flash (60s):  '
+          curl -sS -o /tmp/glm.txt -w 'http=%{http_code} time=%{time_total}s\n' --max-time 60 \
+            -H "$AUTH" -H 'Content-Type: application/json' \
+            -d '{"model":"z-ai/glm-5.3-flash","messages":[{"role":"user","content":"ok"}],"max_tokens":4}' \
+            "$BASE/chat/completions" || echo "curl exit=$?"
+          head -c 200 /tmp/llama.txt 2>/dev/null; echo; head -c 200 /tmp/glm.txt 2>/dev/null
 
       - name: Setup uv
         uses: astral-sh/setup-uv@v5
