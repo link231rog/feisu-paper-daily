@@ -1641,62 +1641,48 @@ class Executor:
             logger.info("Funnel: " + " -> ".join(f"{k} {v}" for k, v in funnel.items()))
             self.write_trace(ranked, reranked_papers, funnel)
 
-            logger.info("Generating TLDR, affiliations, and conference venue...")
+            # Execute Critical-Paper-Digest (Default Built-in Skill)
+            from .digest import run_critical_paper_digest
 
-            def summarize_one(p: Paper) -> None:
-                if self.openai_client is None and self.translator is not None:
-                    # Use the configured translator instead of the slow free endpoints.
-                    first = (p.abstract or p.title).split(". ")[0].strip().rstrip(".") + "."
-                    p.tldr_en = first
-                    p.tldr_zh = self.translator.translate_single(first) or first
-                    p.tldr = p.tldr_zh
-                    p.generate_venue()
-                else:
-                    p.generate_tldr(self.openai_client, self.config.llm if self.openai_client else None)
-                    if self.openai_client is not None:
-                        p.generate_affiliations(self.openai_client, self.config.llm)
-                        p.generate_venue(self.openai_client, self.config.llm)
-                    else:
-                        p.generate_venue()
+            custom_rules = console_settings.get("custom_rules", [])
+            library_baselines = [c.title for c in (corpus or [])[:30]]
+            digest_workers = max(1, int(self.config.executor.get("tldr_workers", 4)))
 
-            # Per-paper HTTP calls, so run them concurrently instead of one timeout per paper
-            tldr_workers = max(1, int(self.config.executor.get("tldr_workers", 4)))
-            logger.info(f"Summarizing {len(reranked_papers)} papers...")
-            with ThreadPoolExecutor(max_workers=tldr_workers) as pool:
-                list(pool.map(summarize_one, reranked_papers))
+            logger.info(f"Running Critical-Paper-Digest skill for {len(reranked_papers)} papers (tier1={len(deep_read_papers)})...")
 
-            # Baselines and inline annotations are independent per paper, so run both
-            # stages in a single pool: total time is one paper's work, not two stages' sum.
-            if deep_read_papers:
-                do_baselines = bool(self.research_cfg.get("baselines", True))
-                do_annotations = bool(self.research_cfg.get("inline_annotations", True))
-                if do_baselines or do_annotations:
-                    from .annotator import enrich_papers_with_inline_annotations
+            def process_paper_digest(p: Paper) -> None:
+                is_tier1 = p in deep_read_papers
+                # 1. Critical-Paper-Digest review skill
+                run_critical_paper_digest(
+                    self.router,
+                    p,
+                    questions=questions,
+                    library_baselines=library_baselines,
+                    user_custom_rules=custom_rules,
+                    is_tier1=is_tier1,
+                )
+                # 2. Extract conference venue and affiliations if not populated
+                if not p.venue:
+                    p.generate_venue(self.openai_client, self.config.llm if self.openai_client else None)
+                if self.openai_client is not None and not p.affiliations:
+                    p.generate_affiliations(self.openai_client, self.config.llm)
+                # 3. Fallback for TL;DR if LLM failed
+                if not p.tldr_zh:
+                    if self.translator is not None:
+                        first = (p.abstract or p.title).split(". ")[0].strip().rstrip(".") + "."
+                        p.tldr_en = first
+                        p.tldr_zh = self.translator.translate_single(first) or first
+                        p.tldr = p.tldr_zh
+                    elif p.abstract:
+                        p.tldr = p.abstract[:150]
 
-                    use_ar5iv = as_bool(self.research_cfg.get("full_text_ar5iv", False))
-                    workers = int(
-                        self.research_cfg.get(
-                            "enrich_workers",
-                            max(
-                                int(self.research_cfg.get("baseline_workers", 4)),
-                                int(self.research_cfg.get("annotation_workers", 4)),
-                            ),
-                        )
-                    )
-                    logger.info(
-                        f"Extracting baselines and inline annotations for {len(deep_read_papers)} deep-read papers..."
-                    )
+            with ThreadPoolExecutor(max_workers=digest_workers) as pool:
+                list(pool.map(process_paper_digest, reranked_papers))
 
-                    def enrich_one(paper: Paper) -> None:
-                        if do_baselines:
-                            enrich_papers_with_baselines(self.router, [paper], corpus, max_workers=1)
-                        if do_annotations:
-                            enrich_papers_with_inline_annotations(
-                                self.router, [paper], questions, max_workers=1, use_ar5iv=use_ar5iv
-                            )
-
-                    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
-                        list(pool.map(enrich_one, deep_read_papers))
+            # Extract baseline library links for deep-read papers
+            if deep_read_papers and bool(self.research_cfg.get("baselines", True)):
+                logger.info(f"Extracting baseline linkages for {len(deep_read_papers)} papers...")
+                enrich_papers_with_baselines(self.router, deep_read_papers, corpus, max_workers=digest_workers)
 
             # Per-question synthesis and next-round question proposals
             if self.research_cfg.get("synthesis", True) and questions:

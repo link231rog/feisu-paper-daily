@@ -154,3 +154,86 @@ def test_restore_feishu_and_obsidian_annotations(tmp_path):
     assert ranked[0]["score"] > 5.0
 
 
+def test_critical_paper_digest_and_no_icons():
+    """Verify Critical-Paper-Digest deterministic scoring and strict icon-free report formatting."""
+    import re
+    from zotero_arxiv_daily.digest import (
+        compute_review_confidence,
+        format_digest_feishu_elements,
+        format_digest_html,
+    )
+    from zotero_arxiv_daily.daily_report import _inline_annotated_html
+
+    # 1. Deterministic scoring
+    grades_high = {
+        "claim_support": {"grade": "High", "reason": "实验完备"},
+        "method_reusability": {"grade": "High", "reason": "即插即用"},
+        "baseline_fairness": {"grade": "Medium", "reason": "对比合理"},
+    }
+    score, badge = compute_review_confidence(grades_high)
+    assert score == int(2 * 2 + 2 * 1.5 + 1 * 1)  # 4 + 3 + 1 = 8
+    assert "[强烈推荐复用]" in badge
+    assert "🔥" not in badge
+
+    grades_low = {
+        "claim_support": {"grade": "Low", "reason": "仅在小数据集上有效"},
+        "method_reusability": {"grade": "High", "reason": "可借鉴"},
+        "baseline_fairness": {"grade": "Medium", "reason": "基线较全"},
+    }
+    _, badge_warn = compute_review_confidence(grades_low)
+    assert "[证据存疑/基线较弱]" in badge_warn
+    assert "⚠️" not in badge_warn
+
+    # 2. Paper with critical digest
+    p = Paper(
+        source="arxiv",
+        title="Sparse Attention Router",
+        authors=["Alice"],
+        abstract="We present Sparse Attention Router to achieve linear inference efficiency.",
+        url="https://arxiv.org/abs/2601.11111",
+    )
+    p.critical_digest = {
+        "delta": "基于 Query 熵值的动态 Top-K 块路由",
+        "mechanism": {
+            "pipeline": "长序列 Q,K,V -> 计算熵 H -> 选取 Top-k 关键块 -> 输出 O",
+            "core_formula": "M_{i,j} = I(S_{i,j} >= TopK(S_i, k))",
+            "symbol_dict": "H 为注意力熵，k 为保留块数",
+        },
+        "evidence_and_cost": {
+            "metrics": "在 RULER (128K) 上比 MInference 高 +2.4%",
+            "cost_and_limits": "Batch Size > 32 时显存增加 15%",
+        },
+        "action_or_check": "借用熵动态稀疏算子；[需查正文: 消融实验表 3]",
+        "qualitative_grades": grades_high,
+    }
+    p.review_score = score
+    p.review_badge = badge
+    p.inline_annotations = [
+        {"source": "S1", "quote": "linear inference efficiency", "type": "critique", "comment": "大batch显存暴涨"}
+    ]
+    p.annotation_sections = [{"id": "S1", "title": "摘要", "text": p.abstract}]
+
+    # 3. Format Feishu elements and assert NO decorative emoji icons
+    feishu_elems = format_digest_feishu_elements(p)
+    text_content = "".join(e.get("text_run", {}).get("content", "") for e in feishu_elems)
+    assert "[审稿评级]" in text_content
+    assert "[核心增量]" in text_content
+    assert "[方法链路与公式]" in text_content
+    assert "[实验真相与代价]" in text_content
+    assert "[启发与待查]" in text_content
+    # Strict regex check: NO emoji icons in report text!
+    assert not re.search(r"[\U0001F300-\U0001F9FF\U00002700-\U000027BF\U00002600-\U000026FF]", text_content)
+
+    # 4. Format HTML card and assert NO decorative emoji icons
+    html_card = format_digest_html(p)
+    assert "[审稿评级]" in html_card
+    assert "核心公式" in html_card
+    assert not re.search(r"[\U0001F300-\U0001F9FF\U00002700-\U000027BF\U00002600-\U000026FF]", html_card)
+
+    # 5. Inline annotated HTML and Feishu elements also icon-free
+    inline_html = _inline_annotated_html(p)
+    assert "[审阅批判]" in inline_html
+    assert not re.search(r"[\U0001F300-\U0001F9FF\U00002700-\U000027BF\U00002600-\U000026FF]", inline_html)
+
+
+

@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Optional, TypeVar
+from typing import Any, Optional, TypeVar
 from datetime import datetime
 import re
 import tiktoken
@@ -62,9 +62,12 @@ class Paper:
     baselines: Optional[list[dict]] = None  # [{"name": str, "method_summary": str, "venue": str, "comparison": str, ...}]
     inline_annotations: Optional[list[dict]] = None  # [{"source": str, "quote": str, "type": str, "comment": str, ...}]
     annotation_sections: Optional[list[dict]] = None  # [{"id": "S1", "title": "摘要", "text": "原文"}]
-    recommendation_tier: Optional[str] = None  # "deep_read" (🌟 精读必看) or "quick_radar" (📌 速览雷达)
+    recommendation_tier: Optional[str] = None  # "deep_read" ([精读必看]) or "quick_radar" ([速览雷达])
     evidence_rigor: Optional[int] = None  # 1-5 score for methodological rigor and empirical depth
     is_priority_institution: bool = False
+    critical_digest: Optional[dict[str, Any]] = None  # Structured output from Critical-Paper-Digest skill
+    review_score: Optional[int] = None  # Deterministic review confidence score
+    review_badge: Optional[str] = None  # Qualitative review badge e.g. [强烈推荐复用] (高置信度)
 
     @property
     def published_year(self) -> Optional[int]:

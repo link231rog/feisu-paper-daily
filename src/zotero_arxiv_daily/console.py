@@ -21,13 +21,14 @@ _ITEM_RE = re.compile(r"^(?:[-*+]|\d+[.)])\s+(.*)$")
 
 
 def parse_console_text(text: str) -> dict[str, list[str]]:
-    """Parses markdown-ish console text into tags, questions, institutions, excluded_keywords, and required_anchors."""
+    """Parses markdown-ish console text into tags, questions, institutions, excluded_keywords, required_anchors, and custom_rules."""
     settings: dict[str, list[str]] = {
         "tags": [],
         "questions": [],
         "institutions": [],
         "excluded_keywords": [],
         "required_anchors": [],
+        "custom_rules": [],
     }
     section = None
 
@@ -43,6 +44,8 @@ def parse_console_text(text: str) -> dict[str, list[str]]:
                 section = "excluded_keywords"
             elif any(k in heading for k in ["必含", "核心锚点", "必须命中", "require", "anchor"]):
                 section = "required_anchors"
+            elif any(k in heading for k in ["自定义", "阅读规则", "审阅规则", "custom rule", "rule"]):
+                section = "custom_rules"
             elif "标签" in heading:
                 section = "tags"
             elif "问题" in heading or "QA" in heading.upper():
@@ -165,6 +168,7 @@ def load_console_settings(config: Any, feishu_client: Any = None) -> dict[str, l
     static = {
         "tags": [str(t) for t in (console_cfg.get("tags") or [])],
         "questions": [str(q) for q in (console_cfg.get("questions") or [])],
+        "custom_rules": [str(r) for r in (console_cfg.get("custom_rules") or [])],
     }
 
     def enabled(name: str) -> bool:

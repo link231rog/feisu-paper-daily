@@ -253,10 +253,10 @@ def build_annotated_text_elements(
     abstract_section = next((s for s in sections if s.get("id") == "S1" or s.get("title") == "摘要"), None)
     abstract_located = located_by_source.get("S1") or []
     if not abstract_section or not abstract_located:
-        return [{"text_run": {"content": f"📄 英文摘要 (Abstract):\n{paper.abstract or ''}\n"}}]
+        return [{"text_run": {"content": f"英文摘要 (Abstract):\n{paper.abstract or ''}\n"}}]
 
     elements: list[dict[str, Any]] = [
-        {"text_run": {"content": "📄 原文与核心洞察批注：\n", "text_element_style": {"bold": True}}}
+        {"text_run": {"content": "原文与审阅批注：\n", "text_element_style": {"bold": True}}}
     ]
     elements.append({"text_run": {"content": f"\n【{abstract_section.get('title', '摘要')}】\n", "text_element_style": {"bold": True}}})
 
@@ -280,10 +280,10 @@ def build_annotated_text_elements(
         elements.append({"text_run": {"content": text[curr:]}})
     elements.append({"text_run": {"content": "\n\n"}})
 
-    # 2. Structured, readable notes grouped neatly below the abstract
+    # 2. Structured, readable notes grouped neatly below the abstract (no icons)
     elements.append({
         "text_run": {
-            "content": "💡 AI 审阅与证据解读：\n",
+            "content": "AI 审阅与证据解读：\n",
             "text_element_style": {"bold": True, "text_color": 1},
         }
     })
@@ -295,25 +295,25 @@ def build_annotated_text_elements(
 
 
 def _render_note_bullet_elements(s: dict[str, Any]) -> list[dict[str, Any]]:
-    """Renders one clean, bullet-styled note with quote anchor and commentary."""
+    """Renders one clean, bullet-styled note with quote anchor and commentary (strictly no icons)."""
     elements: list[dict[str, Any]] = []
     ann = s["data"]
     ann_type = ann.get("type", "critique")
 
     badge_info = {
-        "claim": ("🎯", "核心发现", 4),
-        "counter": ("⚡", "反例/局限证据", 2),
-        "critique": ("⚠️", "AI 审阅", 3),
-        "baseline": ("💬", "对比基线", 5),
-    }.get(ann_type, ("💡", "分析批注", 1))
+        "claim": ("核心发现", 4),
+        "counter": ("反例/局限", 2),
+        "critique": ("审阅批判", 3),
+        "baseline": ("对比基线", 5),
+    }.get(ann_type, ("分析批注", 1))
 
-    icon, type_label, tag_color = badge_info
+    type_label, tag_color = badge_info
     comment = ann.get("comment", "").strip()
     if ann.get("inference") and "推断" not in comment:
         comment = f"推断：{comment}"
 
-    # Bullet point line: • 🎯 [核心发现] Quote: "..." -> Comment
-    elements.append({"text_run": {"content": f"  • {icon} [{type_label}] ", "text_element_style": {"bold": True, "text_color": tag_color}}})
+    # Bullet point line: • [核心发现] Quote: "..." -> Comment
+    elements.append({"text_run": {"content": f"  • [{type_label}] ", "text_element_style": {"bold": True, "text_color": tag_color}}})
 
     # Short quote anchor (truncated if long)
     quote_display = s["quote"].strip()
@@ -325,14 +325,15 @@ def _render_note_bullet_elements(s: dict[str, Any]) -> list[dict[str, Any]]:
             "text_element_style": {"italic": True, "background_color": tag_color},
         }
     })
-    elements.append({"text_run": {"content": " ➔ ", "text_element_style": {"bold": True}}})
+    elements.append({"text_run": {"content": " -> ", "text_element_style": {"bold": True}}})
     elements.append({"text_run": {"content": f"{comment}"}})
 
     # Baselines specific linking
     if ann_type == "baseline":
         venue = f" [{ann['venue']}]" if ann.get("venue") else ""
         if ann.get("in_library") and ann.get("doc_url"):
-            badge_prefix = ann.get("library_badge", "").split(":")[0] + ":" if ":" in ann.get("library_badge", "") else "🟢 已入库:"
+            badge_prefix = ann.get("library_badge", "").split(":")[0] + ":" if ":" in ann.get("library_badge", "") else "[已入库]:"
+            badge_prefix = re.sub(r"[^\w\s:\[\]一-龥]", "", badge_prefix).strip()
             elements.append({
                 "text_run": {
                     "content": f" ({badge_prefix} {ann.get('doc_title') or ann.get('name')}{venue})",

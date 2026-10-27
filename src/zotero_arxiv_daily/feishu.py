@@ -1043,7 +1043,7 @@ class FeishuClient:
 
             # Meta text: 来源: [arXiv] | 发表年份/日期: ... | 录用会议: ... | 发表单位/实验室: ... | 原文链接: ...
             tier = getattr(p, "recommendation_tier", None) or "deep_read"
-            tier_label = "🌟 精读必看" if tier == "deep_read" else "📌 速览雷达"
+            tier_label = "[精读必看]" if tier == "deep_read" else "[速览雷达]"
             qa_max = max(p.qa_scores.values()) if getattr(p, "qa_scores", None) else None
             rigor = getattr(p, "evidence_rigor", None)
             score_badges = []
@@ -1052,7 +1052,7 @@ class FeishuClient:
             if rigor is not None:
                 score_badges.append(f"证据硬核度: {rigor}/5")
             if getattr(p, "is_priority_institution", False):
-                score_badges.append("🏛️ 核心关注机构")
+                score_badges.append("[核心关注机构]")
             badge_str = f" ({' · '.join(score_badges)})" if score_badges else ""
 
             src_str = ", ".join(p.sources or [p.source])
@@ -1077,51 +1077,45 @@ class FeishuClient:
                 }
             })
 
-            # TL;DR (Bilingual with Free Translation Fallback)
-            from .utils import translate_to_chinese
+            # Critical-Paper-Digest or fallback TL;DR
+            if getattr(p, "critical_digest", None):
+                from .digest import format_digest_feishu_elements
 
-            en_summary = p.tldr_en or (p.abstract[:250] + "..." if p.abstract else "N/A")
-            zh_summary = p.tldr_zh or p.tldr or ""
-
-            # Ensure Chinese summary is genuinely translated Chinese
-            if not zh_summary or not re.search(r"[\u4e00-\u9fff]", zh_summary):
-                zh_summary = translate_to_chinese(en_summary)
-
-            if zh_summary and re.search(r"[\u4e00-\u9fff]", zh_summary):
-                tldr_text = f"TL;DR: {en_summary}\n中文速览: {zh_summary}"
+                digest_elements = format_digest_feishu_elements(p, corpus=corpus, client=self)
+                paper_blocks.append({
+                    "block_type": 2,
+                    "text": {
+                        "elements": digest_elements
+                    }
+                })
             else:
-                tldr_text = f"TL;DR: {en_summary}"
+                from .utils import translate_to_chinese
 
-            if getattr(p, "judge_reason", None):
-                tldr_text += f"\n💡 入选理由: {p.judge_reason}"
+                en_summary = p.tldr_en or (p.abstract[:250] + "..." if p.abstract else "N/A")
+                zh_summary = p.tldr_zh or p.tldr or ""
 
-            # 1. TL;DR text block
-            paper_blocks.append({
-                "block_type": 2,
-                "text": {
-                    "elements": [
-                        {"text_run": {"content": f"{tldr_text}\n"}}
-                    ]
-                }
-            })
+                if not zh_summary or not re.search(r"[\u4e00-\u9fff]", zh_summary):
+                    zh_summary = translate_to_chinese(en_summary)
 
-            # 2. Tier-aware body rendering:
-            # - "quick_radar" (📌 速览雷达): concise question match summary only, no long full-text annotation blocks
-            # - "deep_read" (🌟 精读必看): full continuous source text + AI insight bullets + baselines
-            if tier == "quick_radar":
-                if p.qa_matches:
-                    qa_lines = ["🎯 关键证据速览:"]
-                    for match in p.qa_matches[:2]:
-                        qa_lines.append(f"  • [{match.get('question', '')}] ➔ {match.get('answer', '')}")
-                    paper_blocks.append({
-                        "block_type": 2,
-                        "text": {
-                            "elements": [
-                                {"text_run": {"content": "\n".join(qa_lines) + "\n"}}
-                            ]
-                        }
-                    })
-            elif getattr(p, "inline_annotations", None):
+                if zh_summary and re.search(r"[\u4e00-\u9fff]", zh_summary):
+                    tldr_text = f"TL;DR: {en_summary}\n中文速览: {zh_summary}"
+                else:
+                    tldr_text = f"TL;DR: {en_summary}"
+
+                if getattr(p, "judge_reason", None):
+                    tldr_text += f"\n入选理由: {p.judge_reason}"
+
+                paper_blocks.append({
+                    "block_type": 2,
+                    "text": {
+                        "elements": [
+                            {"text_run": {"content": f"{tldr_text}\n"}}
+                        ]
+                    }
+                })
+
+            # In-line annotations & abstract rendering
+            if getattr(p, "inline_annotations", None):
                 from .annotator import build_annotated_text_elements
 
                 annotated_elements = build_annotated_text_elements(p, corpus=corpus, client=self)
@@ -1131,6 +1125,18 @@ class FeishuClient:
                         "elements": annotated_elements
                     }
                 })
+            elif tier == "quick_radar" and p.qa_matches:
+                qa_lines = ["[关键证据速览]:"]
+                for match in p.qa_matches[:2]:
+                    qa_lines.append(f"  • [{match.get('question', '')}] -> {match.get('answer', '')}")
+                paper_blocks.append({
+                    "block_type": 2,
+                    "text": {
+                        "elements": [
+                            {"text_run": {"content": "\n".join(qa_lines) + "\n"}}
+                        ]
+                    }
+                })
             else:
                 # Fallback to plain English abstract and standalone cards
                 if p.abstract and p.abstract.strip():
@@ -1138,13 +1144,13 @@ class FeishuClient:
                     paper_blocks.append({
                         "block_type": 2,
                         "text": {
-                            "elements": [{"text_run": {"content": f"📄 英文摘要 (Abstract):\n{clean_abs}\n"}}]
+                            "elements": [{"text_run": {"content": f"英文摘要 (Abstract):\n{clean_abs}\n"}}]
                         }
                     })
 
-                # Tracked-question matches (only when the console questions were answered)
+                # Tracked-question matches
                 if p.qa_matches:
-                    qa_lines = ["🎯 关注问题匹配:"]
+                    qa_lines = ["[关注问题匹配]:"]
                     for match in p.qa_matches:
                         qa_lines.append(f"Q: {match.get('question', '')}\nA: {match.get('answer', '')}")
                     paper_blocks.append({
@@ -1159,7 +1165,7 @@ class FeishuClient:
                 # Baseline analysis and bi-directional linking
                 if getattr(p, "baselines", None):
                     bl_elements: list[dict[str, Any]] = [
-                        {"text_run": {"content": "🔬 核心对比基线 (Baselines):\n"}}
+                        {"text_run": {"content": "核心对比基线 (Baselines):\n"}}
                     ]
                     for b in p.baselines:
                         name = b.get("name", "")
@@ -1253,11 +1259,11 @@ class FeishuClient:
             for brief in question_briefs:
                 status_raw = (brief.get("status") or "exploring").lower()
                 status_badge = {
-                    "exploring": "🌱 [探索期]",
-                    "contested": "⚖️ [争议交锋]",
-                    "converged": "✅ [证据收敛]",
-                    "falsified": "❌ [假设证伪]",
-                }.get(status_raw, "🌱 [探索期]")
+                    "exploring": "[探索期]",
+                    "contested": "[争议交锋]",
+                    "converged": "[证据收敛]",
+                    "falsified": "[假设证伪]",
+                }.get(status_raw, "[探索期]")
                 q_title = f"{status_badge} {brief.get('question', '')}".strip()
                 brief_blocks.append({
                     "block_type": 5,
@@ -1268,16 +1274,16 @@ class FeishuClient:
                 body = brief.get("summary", "")
                 evidence = brief.get("evidence") or []
                 if evidence:
-                    body += "\n🟢 正向证据: " + "；".join(
+                    body += "\n正向证据: " + "；".join(
                         f"{e.get('title', '')} ({e.get('url', '')})" for e in evidence[:4]
                     )
                 counter_ev = brief.get("counter_evidence") or []
                 if counter_ev:
-                    body += "\n⚡ 反例/局限证据: " + "；".join(
+                    body += "\n反例/局限证据: " + "；".join(
                         f"{c.get('title', '')} ({c.get('url', '')})" for c in counter_ev[:3]
                     )
                 if brief.get("gap"):
-                    body += f"\n🔍 仍待解决: {brief['gap']}"
+                    body += f"\n仍待解决: {brief['gap']}"
                 brief_blocks.append({
                     "block_type": 2,
                     "text": {"elements": [{"text_run": {"content": body + "\n"}}]}

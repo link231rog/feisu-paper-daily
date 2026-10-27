@@ -21,7 +21,7 @@ def _text(value: object, limit: int = 1200) -> str:
 
 
 def _inline_annotated_html(paper: Paper) -> str:
-    """Render continuous abstract text followed by structured insight bullets.
+    """Render continuous abstract text followed by structured insight bullets (strictly no icons).
     Full-text method & experiment deep analysis is reserved for confirmed ingestion."""
     sections = paper.annotation_sections or [{"id": "S1", "title": "摘要", "text": paper.abstract or ""}]
     abstract_section = next((s for s in sections if s.get("id") == "S1" or s.get("title") == "摘要"), None)
@@ -33,9 +33,8 @@ def _inline_annotated_html(paper: Paper) -> str:
     if not spans:
         return ""
 
-    labels = {"baseline": "基线", "claim": "核心发现", "counter": "反例/局限", "critique": "AI 审阅"}
+    labels = {"baseline": "基线", "claim": "核心发现", "counter": "反例/局限", "critique": "审阅批判"}
     colors = {"baseline": "#e8f5e9", "claim": "#fff9c4", "counter": "#ffebee", "critique": "#fff3e0"}
-    icons = {"baseline": "💬", "claim": "🎯", "counter": "⚡", "critique": "⚠️"}
 
     # 1. Clean original abstract with highlighted spans
     text = abstract_section["text"]
@@ -51,9 +50,9 @@ def _inline_annotated_html(paper: Paper) -> str:
     parts.append(escape(text[curr:]))
     parts.append("</p>")
 
-    # 2. Structured note bullets below the abstract
+    # 2. Structured note bullets below the abstract (no icons)
     parts.append("<div style='background:#fafafa;border-left:3px solid #0052cc;padding:8px 12px;margin:10px 0;border-radius:4px;'>")
-    parts.append("<strong style='color:#0052cc;'>💡 AI 审阅与证据解读：</strong><ul style='margin:4px 0 0 0;padding-left:18px;'>")
+    parts.append("<strong style='color:#0052cc;'>AI 审阅与证据解读：</strong><ul style='margin:4px 0 0 0;padding-left:18px;'>")
     for span in spans:
         ann = span["data"]
         ann_type = ann.get("type", "critique")
@@ -64,12 +63,11 @@ def _inline_annotated_html(paper: Paper) -> str:
         if len(quote_sub) > 50:
             quote_sub = quote_sub[:47] + "..."
 
-        icon = icons.get(ann_type, "💡")
-        label = labels.get(ann_type, "AI 批注")
+        label = labels.get(ann_type, "审阅批注")
         parts.append(
-            f"<li style='margin-bottom:4px;'><span>{icon} <strong>[{label}]</strong> </span>"
+            f"<li style='margin-bottom:4px;'><strong>[{label}]</strong> "
             f"<span style='background:{colors.get(ann_type, '#fff3e0')};font-style:italic;'>\"{escape(quote_sub)}\"</span>"
-            f" ➔ {escape(comment)}</li>"
+            f" -> {escape(comment)}</li>"
         )
     parts.append("</ul></div>")
     return "".join(parts)
@@ -122,33 +120,43 @@ def build_daily_report(
     omitted = 0
     for index, paper in enumerate(papers, 1):
         tier = getattr(paper, "recommendation_tier", None) or "deep_read"
-        tier_badge = "🌟 精读必看" if tier == "deep_read" else "📌 速览雷达"
-        item = [f"<h2>{index}. [{tier_badge}] {escape(_text(paper.title, 500))}</h2>"]
+        tier_badge = "[精读必看]" if tier == "deep_read" else "[速览雷达]"
+        item = [f"<h2>{index}. {tier_badge} {escape(_text(paper.title, 500))}</h2>"]
         if paper.authors:
             item.append(f"<p>{escape(_text(', '.join(paper.authors), 500))}</p>")
         if paper.url:
             url = escape(paper.url, quote=True)
             item.append(f'<p><a href="{url}">查看论文原文</a></p>')
-        if paper.tldr:
-            item.append(f"<p><strong>核心摘要：</strong>{escape(_text(paper.tldr, 3000))}</p>")
-        if paper.judge_reason:
-            item.append(f"<p><strong>推荐理由：</strong>{escape(_text(paper.judge_reason))}</p>")
+
+        if getattr(paper, "critical_digest", None):
+            from .digest import format_digest_html
+            item.append(format_digest_html(paper))
+        else:
+            if paper.tldr:
+                item.append(f"<p><strong>核心摘要：</strong>{escape(_text(paper.tldr, 3000))}</p>")
+            if paper.judge_reason:
+                item.append(f"<p><strong>推荐理由：</strong>{escape(_text(paper.judge_reason))}</p>")
+
         if tier == "deep_read":
             annotated_html = _inline_annotated_html(paper)
             if annotated_html:
                 item.append(annotated_html)
-            else:
+            elif not getattr(paper, "critical_digest", None):
                 for qa in paper.qa_matches or []:
                     item.append(
-                        f"<p><strong>{escape(_text(qa.get('question'), 300))}</strong><br>"
+                        f"<p><strong>[{escape(_text(qa.get('question'), 300))}]</strong><br>"
                         f"{escape(_text(qa.get('answer')))}</p>"
                     )
         else:
-            for qa in (paper.qa_matches or [])[:2]:
-                item.append(
-                    f"<p><strong>🎯 {escape(_text(qa.get('question'), 300))}</strong>："
-                    f"{escape(_text(qa.get('answer')))}</p>"
-                )
+            annotated_html = _inline_annotated_html(paper)
+            if annotated_html:
+                item.append(annotated_html)
+            elif not getattr(paper, "critical_digest", None):
+                for qa in (paper.qa_matches or [])[:2]:
+                    item.append(
+                        f"<p><strong>[{escape(_text(qa.get('question'), 300))}]</strong>："
+                        f"{escape(_text(qa.get('answer')))}</p>"
+                    )
         block = "".join(item)
         if max_chars is not None:
             size = len("".join(header + content_parts + [block] + footer))
