@@ -3,6 +3,7 @@
 <div align="center">
 
 [![Status](https://img.shields.io/badge/status-active-success.svg)]()
+[![Website](https://img.shields.io/badge/website-paper--daily.pages.dev-black.svg)](https://paper-daily-e9f.pages.dev)
 [![License](https://img.shields.io/badge/license-AGPLv3-blue.svg)](/LICENSE)
 [![GitHub Actions](https://img.shields.io/badge/actions-daily--pipeline-orange.svg)]()
 

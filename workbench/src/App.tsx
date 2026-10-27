@@ -1,224 +1,631 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
-import React, { useState } from 'react';
-import { ArchitectureAuditView } from './components/ArchitectureAuditView';
-import { ActiveResearchSandbox } from './components/ActiveResearchSandbox';
-import { MultiEcosystemMatrixView } from './components/MultiEcosystemMatrixView';
-import { ZeroLocalWorkflowBuilder } from './components/ZeroLocalWorkflowBuilder';
+import React, { useState, useEffect } from 'react';
+import { motion, useScroll, useSpring } from 'motion/react';
 import {
-  REFACTORED_PYTHON_BUNDLE,
-  generateGitHubWorkflowYaml,
-} from './data/workflowTemplates';
-import {
-  FileSearch,
-  Sparkles,
+  Terminal,
+  Webhook,
+  Bot,
+  Cpu,
+  BookOpen,
+  FileText,
+  Mail,
+  Send,
+  Check,
+  Copy,
+  ArrowUpRight,
+  Database,
+  Search,
   Layers,
-  GitBranch,
-  Download,
-  ChevronRight,
+  ShieldCheck,
+  Sparkles,
+  GitPullRequest,
+  Globe,
+  Newspaper,
 } from 'lucide-react';
 
-type ActiveSection = 'audit' | 'research_sandbox' | 'multi_ecosystem' | 'github_actions';
+const SECTIONS = [
+  { id: 'hero', label: '概览' },
+  { id: 'triggers', label: '接入与触发' },
+  { id: 'sources', label: '信源与打分' },
+  { id: 'digest', label: '审稿级评价' },
+  { id: 'tracking', label: '问题追踪' },
+  { id: 'library', label: '文献库与直连' },
+  { id: 'delivery', label: '日报推送' },
+  { id: 'deploy', label: '部署步骤' },
+] as const;
+
+function BrandIcon({ name }: { name: string }) {
+  switch (name) {
+    case 'GitHub Actions':
+    case 'GitHub':
+      return (
+        <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current" aria-hidden="true">
+          <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
+        </svg>
+      );
+    case '飞书':
+      return (
+        <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current" aria-hidden="true">
+          <path d="M3.5 5.5L11 2l9.5 6.5-5.5 4.5L3.5 5.5zm0 6.5l11.5 2.5-4.5 7.5L2 16.5 3.5 12zm12.2 2.2L22 10l-2.5 9.5-3.8-5.3z" />
+        </svg>
+      );
+    case 'Obsidian':
+      return (
+        <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current" aria-hidden="true">
+          <path d="M12 1.5L5.5 7.2 3 15.8l6.8 6.7 8.2-2.3 3-9.2L12 1.5zm0 3.2l5.8 6.5-4.6 7.8-5.7-5.6L12 4.7z" />
+        </svg>
+      );
+    case 'Notion':
+      return (
+        <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current" aria-hidden="true">
+          <path d="M4.5 3.5l11.8-.9c1.2-.1 1.8.3 2.5.9l2.7 2c.4.3.5.6.5 1.1v13.2c0 .9-.4 1.5-1.4 1.6l-13.2.8c-.9.1-1.4-.2-1.9-.8l-2.1-2.7c-.4-.5-.6-1-.6-1.7V4.9c0-.8.5-1.3 1.7-1.4zm2.6 3.7v11.2l2-.1V10l5.3 8.2 2.2-.1V6.8l-1.9.1v7.8L9.6 6.9l-2.5.3z" />
+        </svg>
+      );
+    case 'Zotero':
+      return (
+        <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current" aria-hidden="true">
+          <path d="M4 3h16v3.2L9.2 18H20v3H4v-3.2L14.8 6H4V3z" />
+        </svg>
+      );
+    case '微信公众号':
+      return (
+        <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current" aria-hidden="true">
+          <path d="M9.5 4C5.36 4 2 6.91 2 10.5c0 1.98 1.03 3.75 2.66 4.95L4 18l2.72-1.36c.88.23 1.81.36 2.78.36.34 0 .68-.02 1.01-.06-.2-.63-.31-1.3-.31-1.99 0-3.87 3.58-7 8-7 .34 0 .67.02 1 .06C18.36 5.69 14.34 4 9.5 4zm-2.75 4.25a1 1 0 110 2 1 1 0 010-2zm5.5 0a1 1 0 110 2 1 1 0 010-2zM16.5 10c-3.59 0-6.5 2.46-6.5 5.5S12.91 21 16.5 21c.78 0 1.53-.12 2.22-.34L21 22l-.55-2.15C21.99 18.84 23 17.28 23 15.5c0-3.04-2.91-5.5-6.5-5.5zm-2.25 3.5a.88.88 0 110 1.75.88.88 0 010-1.75zm4.5 0a.88.88 0 110 1.75.88.88 0 010-1.75z" />
+        </svg>
+      );
+    case 'Telegram':
+      return (
+        <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current" aria-hidden="true">
+          <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" />
+        </svg>
+      );
+    case 'Email':
+      return <Mail className="w-5 h-5" />;
+    case 'OpenClaw':
+      return <Terminal className="w-5 h-5" />;
+    case 'Hermes':
+      return <Cpu className="w-5 h-5" />;
+    case 'Grok Bot':
+      return <Bot className="w-5 h-5" />;
+    case 'Webhook':
+      return <Webhook className="w-5 h-5" />;
+    case 'arXiv':
+      return <BookOpen className="w-5 h-5" />;
+    case 'HuggingFace':
+      return <Sparkles className="w-5 h-5" />;
+    case 'OpenReview':
+      return <ShieldCheck className="w-5 h-5" />;
+    case 'Semantic Scholar':
+      return <Search className="w-5 h-5" />;
+    case 'DBLP':
+      return <Database className="w-5 h-5" />;
+    case 'Crossref':
+      return <Layers className="w-5 h-5" />;
+    case 'bioRxiv':
+    case 'medRxiv':
+      return <FileText className="w-5 h-5" />;
+    case 'AI News':
+      return <Newspaper className="w-5 h-5" />;
+    default:
+      return <Globe className="w-5 h-5" />;
+  }
+}
+
+function PlatformPill({ name }: { name: string }) {
+  return (
+    <motion.div
+      whileHover={{ y: -2, borderColor: '#ffffff' }}
+      transition={{ duration: 0.16, ease: 'easeOut' }}
+      className="inline-flex items-center gap-2.5 px-3.5 py-2 border border-neutral-800 bg-neutral-950 text-white text-sm font-medium transition-colors"
+    >
+      <BrandIcon name={name} />
+      <span>{name}</span>
+    </motion.div>
+  );
+}
+
+function GridCard({
+  title,
+  desc,
+  className = '',
+}: {
+  title: string;
+  desc: string;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`group relative p-6 border-r border-b border-neutral-800 bg-black hover:bg-neutral-950 transition-colors duration-200 ${className}`}
+    >
+      <span className="pointer-events-none absolute top-0 left-0 h-px w-0 bg-white transition-all duration-300 group-hover:w-full" />
+      <h3 className="text-lg font-semibold text-white">{title}</h3>
+      <p className="mt-2 text-base text-neutral-300">{desc}</p>
+    </div>
+  );
+}
+
+const sectionReveal = {
+  hidden: { opacity: 0, y: 18 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.45, ease: [0.22, 1, 0.36, 1] as const },
+  },
+};
 
 export default function App() {
-  const [activeSection, setActiveSection] = useState<ActiveSection>('audit');
+  const [copied, setCopied] = useState(false);
+  const [activeId, setActiveId] = useState<string>('hero');
 
-  const handleExportFullBundle = () => {
-    const defaultYaml = generateGitHubWorkflowYaml({
-      ecosystems: { feishu: true, zotero: true, notion: true, obsidian: true },
-      stateBackend: 'orphan_branch',
-      fullTextMode: 'ar5iv_html_targeted',
-      enableAdversarialQueries: true,
-      enableInlineAiThreads: true,
-      onDemandWebhookTrigger: true,
-      schedulePreset: 'three_times_daily',
-    });
+  const { scrollYProgress } = useScroll();
+  const scaleX = useSpring(scrollYProgress, {
+    stiffness: 120,
+    damping: 30,
+    restDelta: 0.001,
+  });
 
-    const combinedArtifact = `# ====================================================================
-# Feishu Paper Daily 2.0 — Full Upgrade Blueprint & Code Bundle
-# ====================================================================
-# 1. .github/workflows/paper-daily-v2.yml (Zero-Local Orphan State Branch)
-# 2. src/zotero_arxiv_daily/paper_daily_v2_core.py (State Machine + ar5iv + 4-Adapters)
-# ====================================================================
+  const cliCommand = `uv run paper-library search "memory gap"`;
 
-# --- [FILE 1: .github/workflows/paper-daily-v2.yml] ---
-${defaultYaml}
+  useEffect(() => {
+    const handleScroll = () => {
+      const scrollPos = window.scrollY + 160;
+      for (let i = SECTIONS.length - 1; i >= 0; i--) {
+        const el = document.getElementById(SECTIONS[i].id);
+        if (el && el.offsetTop <= scrollPos) {
+          setActiveId(SECTIONS[i].id);
+          break;
+        }
+      }
+    };
 
-# --- [FILE 2: src/zotero_arxiv_daily/paper_daily_v2_core.py] ---
-${REFACTORED_PYTHON_BUNDLE}
-`;
-    const blob = new Blob([combinedArtifact], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'feisu-paper-daily-v2-upgrade-bundle.txt';
-    a.click();
-    URL.revokeObjectURL(url);
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    handleScroll();
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const scrollToSection = (id: string) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
   };
 
-  const navItems: {
-    id: ActiveSection;
-    label: string;
-    shortLabel: string;
-    subtitle: string;
-    icon: React.FC<{ className?: string }>;
-  }[] = [
-    {
-      id: 'audit',
-      label: '01. 架构瓶颈诊断与 Diff',
-      shortLabel: '架构诊断',
-      subtitle: '5 大核心模块源码审计与重构对照',
-      icon: FileSearch,
-    },
-    {
-      id: 'research_sandbox',
-      label: '02. AI 主动追踪与全文批注',
-      shortLabel: 'AI 追踪与批注',
-      subtitle: '假设状态机 · 反例检索 · ar5iv · @AI 闭环',
-      icon: Sparkles,
-    },
-    {
-      id: 'multi_ecosystem',
-      label: '03. 四端对称双向适配器',
-      shortLabel: '四端双向适配',
-      subtitle: '飞书 · Zotero · Notion · Obsidian',
-      icon: Layers,
-    },
-    {
-      id: 'github_actions',
-      label: '04. 纯 GitHub Actions 运维',
-      shortLabel: 'Actions 零污染',
-      subtitle: 'Orphan 状态分支 · 按需触发生成器',
-      icon: GitBranch,
-    },
-  ];
+  const handleCopy = () => {
+    navigator.clipboard.writeText(cliCommand);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1800);
+  };
 
   return (
-    <div className="min-h-screen bg-[#0B0F19] text-slate-200 flex flex-col">
-      {/* Top Bar Contract: 3 Zones separated by gap-8 */}
-      <header className="flex items-center justify-between gap-8 px-6 py-4 border-b border-slate-800 bg-[#0B0F19]/95 sticky top-0 z-30 backdrop-blur-xs">
-        {/* Zone 1: Single text element wordmark */}
-        <a
-          href="#top"
-          onClick={(e) => {
-            e.preventDefault();
-            setActiveSection('audit');
-          }}
-          className="text-base font-bold tracking-tight text-white whitespace-nowrap shrink-0 font-display"
-        >
-          Feishu Paper Daily 2.0 Workbench
-        </a>
+    <div className="min-h-screen bg-black text-white selection:bg-white selection:text-black">
+      {/* Top Progress Line */}
+      <motion.div
+        style={{ scaleX }}
+        className="fixed top-0 left-0 right-0 h-0.5 bg-white origin-left z-50"
+      />
 
-        {/* Zone 2: 4 concise single-line text navigation links */}
-        <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-400">
-          {navItems.map((item) => (
+      {/* Top Bar */}
+      <header className="border-b border-neutral-800 bg-black/90 backdrop-blur sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-4">
             <button
-              key={item.id}
-              onClick={() => setActiveSection(item.id)}
-              className={`hover:text-white transition-colors whitespace-nowrap shrink-0 pb-0.5 ${
-                activeSection === item.id
-                  ? 'text-white border-b-2 border-sky-400'
-                  : 'text-slate-400'
-              }`}
+              onClick={() => scrollToSection('hero')}
+              className="flex items-center gap-3 cursor-pointer"
             >
-              {item.shortLabel}
+              <div className="w-3 h-3 bg-white" />
+              <span className="font-semibold tracking-tight text-lg">Paper Daily</span>
             </button>
-          ))}
-        </nav>
+            <span className="text-neutral-700">/</span>
+            <a
+              href="https://github.com/link231rog"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-2 text-sm font-mono text-neutral-300 hover:text-white transition-colors"
+            >
+              <span>Zixuan Huang (@link231rog)</span>
+            </a>
+          </div>
 
-        {/* Zone 3: 1 primary action */}
-        <div className="flex items-center gap-3 shrink-0">
-          <button
-            onClick={handleExportFullBundle}
-            className="px-4 py-2 text-xs font-semibold text-slate-950 bg-sky-400 hover:bg-sky-300 rounded-lg transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>导出 v2.0 升级代码包</span>
-          </button>
+          <nav className="flex items-center gap-6">
+            <a
+              href="https://github.com/link231rog/feisu-paper-daily"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-300 hover:text-white transition-colors"
+            >
+              <BrandIcon name="GitHub" />
+              <span>GitHub</span>
+              <ArrowUpRight className="w-4 h-4" />
+            </a>
+          </nav>
         </div>
       </header>
 
-      {/* Workspace Body: Left Architecture Navigation Sidebar + Main Viewport */}
-      <div className="flex-1 flex flex-col lg:flex-row max-w-[1600px] w-full mx-auto">
-        {/* Left Sidebar (270px on desktop) */}
-        <aside className="w-full lg:w-[270px] shrink-0 border-b lg:border-b-0 lg:border-r border-slate-800 bg-[#0B0F19] p-5 space-y-6">
-          <div className="space-y-1">
-            <div className="text-xs font-mono text-slate-400">
-              工作台模块导航
-            </div>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              基于 `feisu-paper-daily` 源码审计，点击切换查看各维度的重构方案与交互沙盘。
-            </p>
-          </div>
+      {/* Main Layout with Sticky Side TOC */}
+      <div className="max-w-7xl mx-auto px-6 lg:grid lg:grid-cols-[240px_1fr] lg:border-x lg:border-neutral-800">
+        {/* Sticky Side TOC matching image-1.png indicator style */}
+        <aside className="hidden lg:block border-r border-neutral-800 py-12 pr-6">
+          <div className="sticky top-28">
+            <nav className="flex flex-col gap-4 py-2">
+              {SECTIONS.map(({ id, label }) => {
+                const isActive = activeId === id;
+                return (
+                  <button
+                    key={id}
+                    onClick={() => scrollToSection(id)}
+                    className="group flex items-center gap-3.5 text-left py-1 cursor-pointer focus:outline-none"
+                    aria-label={`跳转到${label}`}
+                  >
+                    <span
+                      className={`h-[2px] transition-all duration-300 ease-out shrink-0 ${
+                        isActive
+                          ? 'w-14 bg-white'
+                          : 'w-6 bg-neutral-600 group-hover:w-9 group-hover:bg-neutral-400'
+                      }`}
+                    />
+                    <span
+                      className={`transition-all duration-300 tracking-tight select-none ${
+                        isActive
+                          ? 'text-white font-bold text-base'
+                          : 'text-neutral-500 font-medium text-sm group-hover:text-neutral-300'
+                      }`}
+                    >
+                      {label}
+                    </span>
+                  </button>
+                );
+              })}
+            </nav>
 
-          <div className="space-y-2">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = activeSection === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => setActiveSection(item.id)}
-                  className={`w-full text-left p-3 rounded-xl border transition-colors flex items-start justify-between gap-2 ${
-                    isActive
-                      ? 'bg-[#111827] border-sky-500/60 text-white'
-                      : 'bg-transparent border-slate-800/60 text-slate-400 hover:bg-[#111827]/60 hover:text-slate-200'
-                  }`}
-                >
-                  <div className="space-y-1 min-w-0">
-                    <div className="flex items-center gap-2 text-xs font-semibold">
-                      <Icon
-                        className={`w-4 h-4 shrink-0 ${
-                          isActive ? 'text-sky-400' : 'text-slate-500'
-                        }`}
-                      />
-                      <span className="truncate">{item.label}</span>
-                    </div>
-                    <div className="text-[11px] text-slate-500 pl-6 truncate">
-                      {item.subtitle}
-                    </div>
-                  </div>
-                  <ChevronRight
-                    className={`w-4 h-4 shrink-0 mt-0.5 ${
-                      isActive ? 'text-sky-400' : 'text-slate-600'
-                    }`}
-                  />
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Architectural Topology Summary Box */}
-          <div className="p-4 rounded-xl bg-[#111827] border border-slate-800 space-y-3 text-xs">
-            <div className="font-semibold text-white">
-              三大核心演进方向速览
-            </div>
-            <div className="space-y-2.5 text-slate-400 leading-relaxed">
-              <div>
-                <span className="text-emerald-400 font-mono">1. AI 深度交互：</span>
-                跨日假设状态机 + 反例检索 + ar5iv 章节级四色批注 + 文档内 `@AI` 追问闭环。
-              </div>
-              <div>
-                <span className="text-sky-400 font-mono">2. 四端双向对等：</span>
-                统一 `AnnotatedPaperAST`，补齐 Zotero 子笔记、Notion Callout 与 Obsidian 云端 Git 双链回写。
-              </div>
-              <div>
-                <span className="text-amber-400 font-mono">3. 本地零负担：</span>
-                Orphan 分支 `state-store` 隔离状态 JSON，主分支零污染，支持跨端打星按需精读。
-              </div>
+            {/* Author Identity Card in Sidebar */}
+            <div className="mt-12 pt-6 border-t border-neutral-800">
+              <div className="text-xs font-mono text-neutral-500 uppercase tracking-wider">作者</div>
+              <a
+                href="https://github.com/link231rog"
+                target="_blank"
+                rel="noreferrer"
+                className="mt-2 inline-flex items-center gap-1.5 text-sm font-semibold text-white hover:underline"
+              >
+                <span>Zixuan Huang</span>
+                <ArrowUpRight className="w-3.5 h-3.5" />
+              </a>
+              <div className="mt-0.5 text-xs font-mono text-neutral-500">@link231rog</div>
             </div>
           </div>
         </aside>
 
-        {/* Main Content Viewport */}
-        <main className="flex-1 p-6 lg:p-8 min-w-0">
-          {activeSection === 'audit' && <ArchitectureAuditView />}
-          {activeSection === 'research_sandbox' && <ActiveResearchSandbox />}
-          {activeSection === 'multi_ecosystem' && <MultiEcosystemMatrixView />}
-          {activeSection === 'github_actions' && <ZeroLocalWorkflowBuilder />}
+        {/* Content Column */}
+        <main className="divide-y divide-neutral-800">
+          {/* Hero */}
+          <motion.section
+            id="hero"
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, amount: 0.2 }}
+            variants={sectionReveal}
+            className="py-20 md:py-24 lg:px-10 scroll-mt-16"
+          >
+            <div className="inline-flex items-center gap-2 px-3 py-1 border border-neutral-800 bg-neutral-950 text-sm font-mono text-neutral-300 mb-6">
+              <span>Built by Zixuan Huang (@link231rog)</span>
+            </div>
+
+            <h1 className="text-5xl md:text-7xl font-bold tracking-tight text-white">
+              Paper Daily
+            </h1>
+            <p className="mt-5 text-xl md:text-2xl text-neutral-300 font-normal">
+              自动化文献审稿、问题追踪与知识库直连
+            </p>
+
+            <div className="mt-8 flex flex-wrap gap-2.5">
+              {[
+                'GitHub Actions 免服运行',
+                '审稿级精读',
+                '多知识库同步',
+                'Agent 批注还原',
+              ].map((tag) => (
+                <span
+                  key={tag}
+                  className="px-3.5 py-1.5 border border-neutral-800 bg-neutral-950 text-neutral-200 text-sm font-mono"
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
+
+            <div className="mt-10 flex flex-wrap gap-4">
+              <a
+                href="https://github.com/link231rog/feisu-paper-daily/fork"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-2 px-6 py-3 bg-white text-black font-semibold text-base hover:bg-neutral-200 transition-colors"
+              >
+                <span>GitHub 部署</span>
+                <ArrowUpRight className="w-4 h-4" />
+              </a>
+              <a
+                href="https://github.com/link231rog/feisu-paper-daily#readme"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-2 px-6 py-3 border border-neutral-700 bg-black text-white font-semibold text-base hover:border-white transition-colors"
+              >
+                <span>架构文档</span>
+              </a>
+            </div>
+          </motion.section>
+
+          {/* 接入与触发 */}
+          <motion.section
+            id="triggers"
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, amount: 0.2 }}
+            variants={sectionReveal}
+            className="py-16 lg:px-10 scroll-mt-16"
+          >
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+              <h2 className="text-2xl md:text-3xl font-bold tracking-tight">接入与触发</h2>
+              <div className="flex flex-wrap gap-2">
+                {['GitHub Actions', 'OpenClaw', 'Hermes', 'Grok Bot', 'Webhook'].map((item) => (
+                  <PlatformPill key={item} name={item} />
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 border-t border-l border-neutral-800">
+              <GridCard
+                title="GitHub Actions"
+                desc="Fork 仓库填好密钥即可定时运行，无需服务器。"
+              />
+              <GridCard
+                title="OpenClaw"
+                desc="通过本地 CLI 或 Tool 协议直接检索文献与批注。"
+              />
+              <GridCard
+                title="Hermes"
+                desc="支持云端 Agent 定时或按事件触发。"
+              />
+              <GridCard
+                title="Grok Bot / Webhook"
+                desc="单条 POST 请求触发运行，动态注入临时问题与过滤规则。"
+              />
+            </div>
+          </motion.section>
+
+          {/* 信源与打分 */}
+          <motion.section
+            id="sources"
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, amount: 0.2 }}
+            variants={sectionReveal}
+            className="py-16 lg:px-10 scroll-mt-16"
+          >
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+              <h2 className="text-2xl md:text-3xl font-bold tracking-tight">信源与打分</h2>
+              <div className="flex flex-wrap gap-2">
+                {['arXiv', 'HuggingFace', 'OpenReview', 'Semantic Scholar', 'GitHub', 'DBLP'].map(
+                  (item) => (
+                    <PlatformPill key={item} name={item} />
+                  )
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 border-t border-l border-neutral-800">
+              <GridCard
+                title="十源并发抓取"
+                desc="arXiv、Semantic Scholar、OpenReview、HuggingFace、DBLP、Crossref、bioRxiv、medRxiv、GitHub Trending、AI News。"
+              />
+              <GridCard
+                title="重排与机构加权"
+                desc="TF-IDF 与 Embedding 混合初筛，叠加顶会与核心实验室权重。"
+              />
+              <GridCard
+                title="硬性门槛截断"
+                desc="实验扎实度 1–5 分制，QA < 6 直接剔除，不凑数。"
+              />
+              <GridCard
+                title="双层日报分层"
+                desc="高分论文进「精读必看」，其余进「速览雷达」。"
+              />
+            </div>
+          </motion.section>
+
+          {/* 审稿级 LLM 评价 */}
+          <motion.section
+            id="digest"
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, amount: 0.2 }}
+            variants={sectionReveal}
+            className="py-16 lg:px-10 scroll-mt-16"
+          >
+            <h2 className="text-2xl md:text-3xl font-bold tracking-tight mb-8">审稿级 LLM 评价</h2>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 border-t border-l border-neutral-800">
+              <GridCard
+                title="核心增量"
+                desc="一句话对齐基线，指出本文唯一改动变量。"
+              />
+              <GridCard
+                title="方法与公式"
+                desc="单行模块链路、核心 LaTeX 公式、符号释义。"
+              />
+              <GridCard
+                title="实验与代价"
+                desc="核对正文表格，列出真实涨点、算力开销与失效边界。"
+              />
+              <GridCard
+                title="三维评级折算"
+                desc="按证据支撑、可复用度、基线公平度代码算分，自动标记存疑论文。"
+                className="md:col-span-2"
+              />
+              <GridCard
+                title="摘要原位批注"
+                desc="在英文摘要中直接高亮基线、核心发现与审阅批判。"
+              />
+            </div>
+          </motion.section>
+
+          {/* 问题追踪 */}
+          <motion.section
+            id="tracking"
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, amount: 0.2 }}
+            variants={sectionReveal}
+            className="py-16 lg:px-10 scroll-mt-16"
+          >
+            <h2 className="text-2xl md:text-3xl font-bold tracking-tight mb-8">问题追踪</h2>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 border-t border-l border-neutral-800">
+              <GridCard
+                title="文档即控制台"
+                desc="在飞书、Obsidian 或 Notion 中直接修改追踪问题、标签、屏蔽词与必含锚点。"
+              />
+              <GridCard
+                title="正反双向检索"
+                desc="每个问题同步检索支持证据与反例。"
+              />
+              <GridCard
+                title="假设四态流转"
+                desc="按累计证据自动更新「探索期 · 争议交锋 · 已收敛 · 已证伪」。"
+              />
+              <GridCard
+                title="子问题派生"
+                desc="旧问题收敛或出现证据缺口时，自动生成追问。"
+              />
+            </div>
+          </motion.section>
+
+          {/* 文献库与 Agent 直连 */}
+          <motion.section
+            id="library"
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, amount: 0.2 }}
+            variants={sectionReveal}
+            className="py-16 lg:px-10 scroll-mt-16"
+          >
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+              <h2 className="text-2xl md:text-3xl font-bold tracking-tight">
+                文献库与 Agent 直连
+              </h2>
+              <div className="flex flex-wrap gap-2">
+                {['飞书', 'Obsidian', 'Notion', 'Zotero'].map((item) => (
+                  <PlatformPill key={item} name={item} />
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 border-t border-l border-neutral-800">
+              <GridCard
+                title="四端原生读写"
+                desc="支持飞书知识库、Obsidian、Notion、Zotero 双向同步。"
+              />
+              <GridCard
+                title="勾选入库精读"
+                desc="日报中勾选论文，后台抓取正文方法与实验，生成双语笔记与双链索引。"
+              />
+              <GridCard
+                title="个人批注还原"
+                desc="paper-library CLI 直读四端高亮与个人批注，自动附上所属章节与中英段落，供本地 Agent 调用。"
+              />
+            </div>
+          </motion.section>
+
+          {/* 日报推送渠道 */}
+          <motion.section
+            id="delivery"
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, amount: 0.2 }}
+            variants={sectionReveal}
+            className="py-16 lg:px-10 scroll-mt-16"
+          >
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+              <h2 className="text-2xl md:text-3xl font-bold tracking-tight">日报推送渠道</h2>
+              <div className="flex flex-wrap gap-2">
+                {['飞书', 'Email', '微信公众号', 'Telegram'].map((item) => (
+                  <PlatformPill key={item} name={item} />
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 border-t border-l border-neutral-800">
+              <GridCard title="飞书" desc="生成知识库云文档并推送群卡片。" />
+              <GridCard title="邮件" desc="SMTP SSL 推送 HTML 日报。" />
+              <GridCard title="微信公众号" desc="自动排版并写入草稿箱。" />
+              <GridCard title="Telegram" desc="Bot 实时推送摘要与评分。" />
+            </div>
+          </motion.section>
+
+          {/* 部署步骤 */}
+          <motion.section
+            id="deploy"
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, amount: 0.2 }}
+            variants={sectionReveal}
+            className="py-16 lg:px-10 scroll-mt-16"
+          >
+            <h2 className="text-2xl md:text-3xl font-bold tracking-tight mb-8">部署步骤</h2>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 border-t border-l border-neutral-800 mb-8">
+              <div className="p-6 border-r border-b border-neutral-800 flex items-center gap-3">
+                <GitPullRequest className="w-5 h-5 text-white shrink-0" />
+                <span className="text-lg font-semibold">Fork 仓库</span>
+              </div>
+              <div className="p-6 border-r border-b border-neutral-800 flex items-center gap-3">
+                <ShieldCheck className="w-5 h-5 text-white shrink-0" />
+                <span className="text-lg font-semibold">配置密钥</span>
+              </div>
+              <div className="p-6 border-r border-b border-neutral-800 flex items-center gap-3">
+                <Send className="w-5 h-5 text-white shrink-0" />
+                <span className="text-lg font-semibold">连接文献库与推送端</span>
+              </div>
+            </div>
+
+            <div className="border border-neutral-800 bg-neutral-950 p-5 flex items-center justify-between gap-4">
+              <code className="text-base font-mono text-white overflow-x-auto">
+                $ {cliCommand}
+              </code>
+              <button
+                onClick={handleCopy}
+                className="inline-flex items-center gap-2 px-4 py-2 border border-neutral-700 bg-black text-white text-sm font-medium hover:border-white transition-colors shrink-0 cursor-pointer"
+              >
+                {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                <span>{copied ? '已复制' : '复制'}</span>
+              </button>
+            </div>
+          </motion.section>
+
+          {/* Author Footer */}
+          <footer className="py-10 lg:px-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-2.5 h-2.5 bg-white" />
+              <span className="text-base font-semibold text-white">Paper Daily</span>
+              <span className="text-neutral-700">·</span>
+              <a
+                href="https://github.com/link231rog"
+                target="_blank"
+                rel="noreferrer"
+                className="text-base text-neutral-300 hover:text-white transition-colors"
+              >
+                Zixuan Huang (@link231rog)
+              </a>
+            </div>
+            <div className="flex items-center gap-6">
+              <a
+                href="https://github.com/link231rog/feisu-paper-daily"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 text-sm font-mono text-neutral-300 hover:text-white transition-colors"
+              >
+                <span>github.com/link231rog/feisu-paper-daily</span>
+                <ArrowUpRight className="w-4 h-4" />
+              </a>
+            </div>
+          </footer>
         </main>
       </div>
     </div>
