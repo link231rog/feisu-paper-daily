@@ -255,5 +255,30 @@ def test_research_and_baseline_json_parsing():
     assert isinstance(baselines, list)
 
 
+def test_dispatch_payload_overlay(monkeypatch):
+    """Verify external dispatch payload from Hermes/Grok bot merges into console settings."""
+    import json
+    from zotero_arxiv_daily.console import _apply_dispatch_payload
+
+    initial = {
+        "tags": ["Agent"],
+        "questions": ["Q1"],
+        "custom_rules": [],
+    }
+    monkeypatch.setenv(
+        "DISPATCH_PAYLOAD",
+        json.dumps({
+            "questions": ["Q2 from Hermes Bot"],
+            "custom_rules": ["Zero hype rule"],
+            "tags": ["Memory"],
+        }),
+    )
+    merged = _apply_dispatch_payload(initial)
+    assert "Q2 from Hermes Bot" in merged["questions"]
+    assert "Zero hype rule" in merged["custom_rules"]
+    assert "Memory" in merged["tags"]
+
+
+
 
 

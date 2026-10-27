@@ -10,6 +10,8 @@ on:
         description: 'Re-run today: re-evaluate papers pushed earlier today'
         type: boolean
         default: false
+  repository_dispatch:
+    types: [paper-daily, paper_daily, ingest]
   schedule:
     - cron: '0 1,7,11 * * *' # 09:00, 15:00, 19:00 Beijing Time (01:00, 07:00, 11:00 UTC)
 
@@ -64,7 +66,8 @@ jobs:
           NOTION_CONSOLE_PAGE_ID: ${{ vars.NOTION_CONSOLE_PAGE_ID }}
           CONSOLE_PROVIDER: ${{ vars.CONSOLE_PROVIDER || 'auto' }}
           FEISHU_DRY_RUN: "false"
-          FORCE_RERUN_TODAY: ${{ inputs.force_today && 'true' || 'false' }}
+          FORCE_RERUN_TODAY: ${{ (inputs.force_today || github.event.client_payload.force_today) && 'true' || 'false' }}
+          DISPATCH_PAYLOAD: ${{ toJson(github.event.client_payload) }}
           SEMANTIC_SCHOLAR_API_KEY: ${{ secrets.SEMANTIC_SCHOLAR_API_KEY }}
           TRANSLATION_ENABLED: ${{ vars.TRANSLATION_ENABLED || 'true' }}
           TRANSLATION_API_BASE: ${{ vars.TRANSLATION_API_BASE || 'https://openrouter.ai/api/v1' }}
@@ -94,8 +97,9 @@ jobs:
           # - 09:00 Beijing Time (01:00 UTC): Full pipeline (ingest checked + daily literature recommendation)
           # - 15:00 & 19:00 Beijing Time (07:00 & 11:00 UTC): Scheduled ingestion of user-checked papers
           CURRENT_HOUR=$(date -u +%H)
-          if [ "${{ inputs.ingest_only }}" = "true" ]; then
-            echo "Running in ingest-only mode (manual dispatch)"
+          IS_INGEST_ONLY="${{ inputs.ingest_only || github.event.client_payload.ingest_only }}"
+          if [ "$IS_INGEST_ONLY" = "true" ] || [ "${{ github.event.action }}" = "ingest" ]; then
+            echo "Running in ingest-only mode (external dispatch/manual)"
             export INGEST_ONLY="true"
           elif [ "$GITHUB_EVENT_NAME" = "schedule" ] && [ "$CURRENT_HOUR" -gt 3 ]; then
             echo "Running scheduled ingestion at $(date) (UTC hour $CURRENT_HOUR, ingest-only)"

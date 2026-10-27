@@ -971,6 +971,78 @@ def _load_runtime_config() -> Any:
     return OmegaConf.merge(base, custom)
 
 
+def trigger_pipeline_dispatch(
+    repo: Optional[str] = None,
+    token: Optional[str] = None,
+    event_type: str = "paper-daily",
+    force_today: bool = False,
+    ingest_only: bool = False,
+    questions: Optional[list[str]] = None,
+    custom_rules: Optional[list[str]] = None,
+    tags: Optional[list[str]] = None,
+) -> dict[str, Any]:
+    """Triggers remote GitHub Actions Paper Daily pipeline via repository_dispatch webhook.
+    Compatible with external agents (Hermes, Grok bot, Telegram/Discord bots, curl, Dify)."""
+    import subprocess
+
+    token = token or os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if not token:
+        try:
+            res = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True, check=True)
+            token = res.stdout.strip()
+        except Exception:
+            pass
+    if not token:
+        raise ValueError("GitHub token required (set GITHUB_TOKEN or authenticate via 'gh auth login')")
+
+    if not repo:
+        repo = os.environ.get("GITHUB_REPOSITORY")
+        if not repo:
+            try:
+                res = subprocess.run(
+                    ["gh", "repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+                repo = res.stdout.strip()
+            except Exception:
+                pass
+    if not repo:
+        repo = "link231rog/feisu-paper-daily"
+
+    payload: dict[str, Any] = {
+        "force_today": force_today,
+        "ingest_only": ingest_only,
+    }
+    if questions:
+        payload["questions"] = questions
+    if custom_rules:
+        payload["custom_rules"] = custom_rules
+    if tags:
+        payload["tags"] = tags
+
+    url = f"https://api.github.com/repos/{repo}/dispatches"
+    headers = {
+        "Accept": "application/vnd.github.v3+json",
+        "Authorization": f"Bearer {token}",
+        "User-Agent": "Paper-Daily-Agent-Bridge",
+    }
+    resp = requests.post(
+        url,
+        json={"event_type": event_type, "client_payload": payload},
+        headers=headers,
+        timeout=15,
+    )
+    if resp.status_code in (200, 204):
+        return {
+            "status": "success",
+            "message": f"Successfully triggered '{event_type}' on GitHub Actions ({repo})",
+            "client_payload": payload,
+        }
+    raise RuntimeError(f"GitHub API returned {resp.status_code}: {resp.text}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="paper-library",
@@ -1001,6 +1073,17 @@ def main() -> None:
     p_search.add_argument("--refresh", action="store_true", help="Check remote library for updates immediately")
     p_search.add_argument("--json", action="store_true", help="Output raw JSON")
 
+    p_trig = sub.add_parser("trigger", help="Trigger remote GitHub Actions pipeline via repository_dispatch (for Hermes, Grok bot, curl)")
+    p_trig.add_argument("--repo", default=None, help="GitHub repository e.g. 'owner/repo' (defaults to git config or link231rog/feisu-paper-daily)")
+    p_trig.add_argument("--token", default=None, help="GitHub personal access token (defaults to GITHUB_TOKEN or gh CLI)")
+    p_trig.add_argument("--event", default="paper-daily", choices=["paper-daily", "ingest"], help="Event type: 'paper-daily' (full) or 'ingest' (confirmed ingestion)")
+    p_trig.add_argument("--force-today", action="store_true", help="Re-evaluate and deliver papers pushed earlier today")
+    p_trig.add_argument("--ingest-only", action="store_true", help="Only run paper ingestion for user-checked papers")
+    p_trig.add_argument("--question", action="append", dest="questions", help="Ad-hoc research question to append for this run")
+    p_trig.add_argument("--rule", action="append", dest="rules", help="Ad-hoc custom review rule to append for this run")
+    p_trig.add_argument("--tag", action="append", dest="tags", help="Ad-hoc topic tag to append for this run")
+    p_trig.add_argument("--json", action="store_true", help="Output raw JSON")
+
     args = parser.parse_args()
     cfg = _load_runtime_config()
 
@@ -1010,7 +1093,7 @@ def main() -> None:
         ann_notes = [n for n in notes if n.get("annotations") or n.get("reflections")]
         total_anns = sum(len(n.get("annotations") or []) for n in notes)
         print(
-            f"✅ 增量同步完成 ({time.time() - t0:.2f}s): 共 {len(notes)} 篇精读文献, "
+            f"[增量同步完成] ({time.time() - t0:.2f}s): 共 {len(notes)} 篇精读文献, "
             f"{len(ann_notes)} 篇含个人批注/思考, 累计 {total_anns} 处原位划词批注。"
         )
     elif args.cmd == "list":
@@ -1021,7 +1104,7 @@ def main() -> None:
             print(json.dumps(notes, ensure_ascii=False, indent=2))
         else:
             for n in notes:
-                ann_cnt = f" | 🎯 {len(n.get('annotations') or [])} 条批注" if n.get("annotations") else ""
+                ann_cnt = f" | [已批注 {len(n.get('annotations') or [])} 条]" if n.get("annotations") else ""
                 print(f"[{n['source']}] {n['title']} (id={n['id']}){ann_cnt} -> {n.get('url', '')}")
     elif args.cmd in ("get", "search"):
         top_k = getattr(args, "top_k", 5)
@@ -1039,6 +1122,24 @@ def main() -> None:
             print(f"未在文献库中找到匹配 '{args.query}' 的文献或批注。")
         else:
             print("\n\n---\n\n".join(format_restored_note_markdown(n) for n in notes))
+    elif args.cmd == "trigger":
+        try:
+            res = trigger_pipeline_dispatch(
+                repo=args.repo,
+                token=args.token,
+                event_type=args.event,
+                force_today=args.force_today,
+                ingest_only=args.ingest_only,
+                questions=args.questions,
+                custom_rules=args.rules,
+                tags=args.tags,
+            )
+            if args.json:
+                print(json.dumps(res, ensure_ascii=False, indent=2))
+            else:
+                print(f"[触发成功] 已向 GitHub Actions ({res['repo']}) 发送 '{res['event_type']}' 事件调度请求。")
+        except Exception as exc:
+            print(f"[触发失败] {exc}")
 
 
 if __name__ == "__main__":

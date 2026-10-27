@@ -9,6 +9,8 @@ Every provider is reduced to the same markdown shape before parsing:
     - 现有长时记忆系统如何避免记忆漂移？
 """
 
+import json
+import os
 import re
 from typing import Any
 
@@ -154,6 +156,33 @@ def _zotero_note_text(config: Any, note_key: str) -> str:
     return _html_to_text(note.get("data", {}).get("note", ""))
 
 
+def _apply_dispatch_payload(settings: dict[str, list[str]]) -> dict[str, list[str]]:
+    """Merges dynamic parameters from external bot/cloud dispatch payload (Hermes/Grok/curl)."""
+    dispatch_raw = os.environ.get("DISPATCH_PAYLOAD", "").strip()
+    if not dispatch_raw:
+        return settings
+
+    try:
+        payload = json.loads(dispatch_raw)
+        if isinstance(payload, dict):
+            for k in ("tags", "questions", "institutions", "excluded_keywords", "required_anchors", "custom_rules"):
+                items = payload.get(k)
+                if isinstance(items, list):
+                    settings.setdefault(k, [])
+                    for it in items:
+                        s = str(it).strip()
+                        if s and s not in settings[k]:
+                            settings[k].append(s)
+                elif isinstance(items, str) and items.strip():
+                    settings.setdefault(k, [])
+                    s = items.strip()
+                    if s not in settings[k]:
+                        settings[k].append(s)
+    except Exception as exc:
+        logger.debug(f"Could not parse DISPATCH_PAYLOAD: {exc}")
+    return settings
+
+
 def load_console_settings(config: Any, feishu_client: Any = None) -> dict[str, list[str]]:
     """Reads tags and questions from the first configured console provider.
 
@@ -162,7 +191,7 @@ def load_console_settings(config: Any, feishu_client: Any = None) -> dict[str, l
     """
     console_cfg = config.get("console")
     if not console_cfg or str(console_cfg.get("enabled", True)).lower() in ("false", "0", "no"):
-        return {"tags": [], "questions": []}
+        return _apply_dispatch_payload({"tags": [], "questions": []})
 
     provider = str(console_cfg.get("provider", "auto")).lower()
     static = {
@@ -182,7 +211,7 @@ def load_console_settings(config: Any, feishu_client: Any = None) -> dict[str, l
                 feishu_client = FeishuClient(config.feishu)
             remote = feishu_client.fetch_console_settings(str(console_cfg.node_token))
             if remote.get("tags") or remote.get("questions"):
-                return remote
+                return _apply_dispatch_payload(remote)
         except Exception as exc:
             logger.warning(f"Could not read Feishu console: {exc}")
 
@@ -192,22 +221,22 @@ def load_console_settings(config: Any, feishu_client: Any = None) -> dict[str, l
             from pathlib import Path
 
             note = Path(str(obsidian_cfg.vault_path)).expanduser() / str(obsidian_cfg.console_path)
-            return parse_console_text(note.read_text(encoding="utf-8", errors="ignore"))
+            return _apply_dispatch_payload(parse_console_text(note.read_text(encoding="utf-8", errors="ignore")))
         except Exception as exc:
             logger.warning(f"Could not read Obsidian console note: {exc}")
 
     notion_cfg = config.get("notion")
     if enabled("notion") and notion_cfg and notion_cfg.get("token") and notion_cfg.get("console_page_id"):
         try:
-            return parse_console_text(_notion_page_text(str(notion_cfg.token), str(notion_cfg.console_page_id)))
+            return _apply_dispatch_payload(parse_console_text(_notion_page_text(str(notion_cfg.token), str(notion_cfg.console_page_id))))
         except Exception as exc:
             logger.warning(f"Could not read Notion console page: {exc}")
 
     zot_cfg = config.get("zotero")
     if enabled("zotero") and zot_cfg and zot_cfg.get("console_note_key") and zot_cfg.get("user_id") and zot_cfg.get("api_key"):
         try:
-            return parse_console_text(_zotero_note_text(zot_cfg, str(zot_cfg.console_note_key)))
+            return _apply_dispatch_payload(parse_console_text(_zotero_note_text(zot_cfg, str(zot_cfg.console_note_key))))
         except Exception as exc:
             logger.warning(f"Could not read Zotero console note: {exc}")
 
-    return static
+    return _apply_dispatch_payload(static)

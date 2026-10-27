@@ -29,6 +29,7 @@ dependencies = [
 ]
 
 [project.scripts]
+paper-daily = "zotero_arxiv_daily.main:main"
 paper-library = "zotero_arxiv_daily.library:main"
 
 [tool.uv.sources]

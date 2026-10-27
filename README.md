@@ -206,6 +206,75 @@ uv run paper-library search "不确定性检索 memory gap" --top-k 3
 
 ---
 
+## 🌐 云端 Agent 与外部 Bot 兼容触发 (Hermes / Grok Bot / Webhook)
+
+除了 GitHub Actions 默认的每日定时巡航（09:00 / 15:00 / 19:00），系统原生兼容各类云端 Agent 与 Bot 平台（如 **Hermes Agent**、**Grok Bot**、**Telegram / Discord Bot**、**Dify / Coze** 或 **curl Webhook**），支持通过标准 GitHub `repository_dispatch` 远程调用，并可动态注入临时研究问题与自定义审阅规则：
+
+### 1. 标准 HTTP Webhook / cURL 一键触发
+外部 Bot 仅需具备 GitHub Token（拥有 `repo` 权限），即可直接发起调度：
+
+```bash
+curl -X POST \
+  -H "Accept: application/vnd.github.v3+json" \
+  -H "Authorization: Bearer YOUR_GITHUB_TOKEN" \
+  https://api.github.com/repos/YOUR_USERNAME/feisu-paper-daily/dispatches \
+  -d '{
+    "event_type": "paper-daily",
+    "client_payload": {
+      "force_today": true,
+      "questions": ["大模型长程记忆压缩率与检索精度权衡"],
+      "custom_rules": ["优先关注消费级显存开销与长文本退化指标"]
+    }
+  }'
+```
+
+### 2. Hermes Agent / Grok Bot 工具定义 (OpenAPI Tool Schema)
+可直接作为 Function Calling / Tool 注册给云端自主智能体：
+
+```json
+{
+  "name": "trigger_paper_daily",
+  "description": "触发 Feishu Paper Daily 顶会前沿论文自动检索、审阅批判与日报推送",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "event_type": {
+        "type": "string",
+        "enum": ["paper-daily", "ingest"],
+        "description": "paper-daily 为全流程检索与推荐，ingest 为仅入库已勾选文献"
+      },
+      "force_today": {
+        "type": "boolean",
+        "description": "是否强制重新评估并推送今日日报（跳过当日频控）"
+      },
+      "questions": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "本次运行追加关注的核心科研问题列表"
+      },
+      "custom_rules": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "本次运行追加的审阅规则与批判重点"
+      }
+    }
+  }
+}
+```
+
+### 3. CLI 快速触发工具
+本地终端或容器内也可直接使用统一命令行触发：
+
+```bash
+# 全流程触发并附加临时关注问题
+uv run paper-library trigger --repo YOUR_USERNAME/feisu-paper-daily --force-today --question "长上下文 KV Cache 压缩"
+
+# 仅执行勾选文献的精读入库
+uv run paper-library trigger --event ingest
+```
+
+---
+
 ## 📂 核心模块速查 (Codebase Reference)
 
 - `src/zotero_arxiv_daily/executor.py`：全流程总控调度器（检索、过滤、排序、批注、发布）。
