@@ -191,14 +191,17 @@ console:
 本地 Agent（OpenCode / Claude Code / Cursor）无需同步中转文件，可直接通过 `paper-library` CLI 按需读取用户在用的文献库（自动识别配置中的 **飞书知识库**、**Obsidian Vault**、**Zotero** 或 **Notion**），实时还原划词原文、个人批注、所属章节与完整双语段落上下文：
 
 ```bash
-# 1. 列出当前文献库中所有包含个人划词批注的精读文献
+# 1. 增量同步/预热在用文献库修订缓存（基于飞书 obj_edit_time / Obsidian mtime 增量跳过未改动正文）
+uv run paper-library sync
+
+# 2. 列出当前文献库中所有包含个人划词批注的精读文献
 uv run paper-library list --annotated-only
 
-# 2. 按标题或 ID 实时还原某篇文献的全部划词批注与双语上下文（支持 --json）
+# 3. 按标题或 ID 还原某篇文献的全部划词批注与双语上下文（支持 --refresh 强制拉新、--json 输出）
 uv run paper-library get "Oblivion"
 
-# 3. 跨文献检索个人批注关键词（如检索你写过的某条批注思路并还原对应原文段落）
-uv run paper-library search "三个gap"
+# 4. 跨文献混合中英检索（支持中文二元分词 + TF-IDF 字符/词级相似度与批注加权排序）
+uv run paper-library search "不确定性检索 memory gap" --top-k 3
 ```
 
 ---

@@ -406,8 +406,14 @@ class FeishuClient:
                 "Content-Type": "application/json; charset=utf-8",
             }
             url = f"{FEISHU_BASE_URL}{path}"
-            resp = requests.request(method, url, headers=headers, params=params, json=data, timeout=60)
-            resp.raise_for_status()
+            for attempt in range(3):
+                resp = requests.request(method, url, headers=headers, params=params, json=data, timeout=60)
+                if resp.status_code in (429, 502, 503, 504) or (resp.status_code == 400 and "99991400" in resp.text):
+                    if attempt < 2:
+                        time.sleep(0.6 * (attempt + 1))
+                        continue
+                resp.raise_for_status()
+                break
             res_json = resp.json()
             if res_json.get("code") != 0 and res_json.get("code") is not None:
                 raise RuntimeError(f"Feishu API error ({path}): {res_json}")
@@ -1496,12 +1502,18 @@ class FeishuClient:
         corpus: list[CorpusPaper] = []
         if self.wiki_space_id and self.notes_parent_node_token:
             try:
-                res = self._call_api(
-                    "GET",
-                    f"/wiki/v2/spaces/{self.wiki_space_id}/nodes",
-                    params={"parent_node_token": str(self.notes_parent_node_token)}
-                )
-                items = res.get("items", [])
+                items: list[dict[str, Any]] = []
+                page_token = None
+                while True:
+                    params: dict[str, Any] = {"parent_node_token": str(self.notes_parent_node_token), "page_size": 50}
+                    if page_token:
+                        params["page_token"] = page_token
+                    res = self._call_api("GET", f"/wiki/v2/spaces/{self.wiki_space_id}/nodes", params=params)
+                    items.extend(res.get("items", []))
+                    if not res.get("has_more") or not res.get("page_token"):
+                        break
+                    page_token = res.get("page_token")
+
                 for item in items:
                     title = item.get("title", "")
                     clean_title = re.sub(r"^📄\s*\[精读\]\s*", "", title).strip()
@@ -1512,11 +1524,13 @@ class FeishuClient:
                     node_tok = item.get("node_token")
                     obj_tok = item.get("obj_token")
                     wiki_url = item.get("url") or (f"https://feishu.cn/wiki/{node_tok}" if node_tok else None)
+                    edit_ts = item.get("obj_edit_time") or item.get("obj_create_time")
+                    added_dt = datetime.fromtimestamp(int(edit_ts)) if str(edit_ts or "").isdigit() else datetime.now()
                     corpus.append(
                         CorpusPaper(
                             title=clean_title,
                             abstract=f"User curated deep reading note: {clean_title}.{tag_note}",
-                            added_date=datetime.now(),
+                            added_date=added_dt,
                             paths=[f"wiki/notes/{clean_title}"],
                             url=wiki_url,
                             node_token=node_tok,

@@ -145,3 +145,12 @@ def test_restore_feishu_and_obsidian_annotations(tmp_path):
     assert obs_note["annotations"][0]["comments"] == ["核心衰减机制"]
     assert obs_note["annotations"][0]["section"] == "Method"
 
+    # 3. Hybrid bilingual search & ranking across restored notes
+    from zotero_arxiv_daily.library import rank_library_notes
+
+    ranked = rank_library_notes([feishu_note, obs_note], "外部存储 三个gap", top_k=2)
+    assert len(ranked) >= 1
+    assert ranked[0]["title"] == "Oblivion"
+    assert ranked[0]["score"] > 5.0
+
+

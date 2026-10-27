@@ -10,6 +10,9 @@ from __future__ import annotations
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 import json
+import os
+import tempfile
+import time
 from datetime import datetime
 from pathlib import Path
 import re
@@ -18,10 +21,13 @@ from urllib.parse import quote
 
 import requests
 from loguru import logger
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
 from .protocol import CorpusPaper
 
 NOTION_VERSION = "2022-06-28"
+DEFAULT_CACHE_PATH = "data/library_cache.json"
 
 _DEFAULT_PLACEHOLDERS = (
     "可在研读后直接划词批注或记录关键洞察",
@@ -562,8 +568,36 @@ def restore_notion_page(token: str, page_id: str, title: str = "", url: str = ""
 
 
 # ---------------------------------------------------------------------------
-# 5. Unified Multi-Provider Query & CLI Interface for Local Agents
+# 5. Incremental Revision Cache & Hybrid Bilingual Scorer
 # ---------------------------------------------------------------------------
+
+
+def _load_cache(cache_path: str = DEFAULT_CACHE_PATH) -> dict[str, Any]:
+    p = Path(cache_path)
+    if p.exists():
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+            if isinstance(data, dict) and "entries" in data:
+                return data
+        except Exception:
+            pass
+    return {"version": 1, "synced_at": 0.0, "entries": {}}
+
+
+def _save_cache(cache: dict[str, Any], cache_path: str = DEFAULT_CACHE_PATH) -> None:
+    p = Path(cache_path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=str(p.parent), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(cache, f, ensure_ascii=False)
+        os.replace(tmp, p)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def _enabled_providers(config: Any, provider: str = "auto") -> list[str]:
@@ -595,31 +629,72 @@ def _fetch_feishu_comments(client: Any, obj_token: str) -> list[dict[str, Any]]:
         return []
 
 
-def list_library_notes(config: Any, provider: str = "auto", annotated_only: bool = False) -> list[dict[str, Any]]:
-    """Lists literature notes directly from the user's active library providers."""
+def _comment_signature(cmts: list[dict[str, Any]]) -> str:
+    return "|".join(f"{c.get('comment_id')}:{c.get('update_time')}" for c in cmts)
+
+
+def sync_library_notes(
+    config: Any,
+    provider: str = "auto",
+    refresh: bool = False,
+    cache_ttl: int = 300,
+    cache_path: str = DEFAULT_CACHE_PATH,
+) -> list[dict[str, Any]]:
+    """Incrementally syncs notes from active providers using revision/mtime invalidation."""
+    cache = _load_cache(cache_path)
+    entries: dict[str, Any] = cache.setdefault("entries", {})
+    now = time.time()
+    target_providers = _enabled_providers(config, provider)
+
+    # Fast path: if cache was synced within TTL and no forced refresh, return cached notes directly
+    if not refresh and (now - float(cache.get("synced_at", 0))) < cache_ttl and entries:
+        cached_notes = [
+            e["note"] for e in entries.values() if e.get("note", {}).get("source") in target_providers
+        ]
+        if cached_notes:
+            return cached_notes
+
     results: list[dict[str, Any]] = []
-    for prov in _enabled_providers(config, provider):
+    dirty = False
+
+    for prov in target_providers:
         if prov == "feishu":
             from .feishu import FeishuClient
 
             client = FeishuClient(config.feishu)
             notes = [cp for cp in client.fetch_reading_notes() if cp.obj_token]
-            if annotated_only:
-                # Filter by lightweight comments API first before pulling full document block trees
-                with ThreadPoolExecutor(max_workers=3) as pool:
-                    cmts_list = list(pool.map(lambda cp: _fetch_feishu_comments(client, cp.obj_token), notes))
-                for cp, cmts in zip(notes, cmts_list):
-                    if cmts:
-                        results.append(
-                            restore_feishu_note(
-                                client, cp.obj_token, title=cp.title, url=cp.url or "", comments_override=cmts
-                            )
-                        )
-            else:
-                results.extend(
-                    {"source": "feishu", "id": cp.obj_token, "title": cp.title, "url": cp.url or ""}
-                    for cp in notes
+            # Check comments in parallel (polite 3-worker pool with retry in _call_api)
+            with ThreadPoolExecutor(max_workers=3) as pool:
+                cmts_list = list(pool.map(lambda cp: _fetch_feishu_comments(client, cp.obj_token), notes))
+
+            for cp, cmts in zip(notes, cmts_list):
+                ckey = f"feishu:{cp.obj_token}"
+                edit_time = int(cp.added_date.timestamp()) if cp.added_date else 0
+                c_sig = _comment_signature(cmts)
+                existing = entries.get(ckey)
+
+                # Only pull the 500-block Docx tree if edit_time or comment_signature changed (or not cached yet)
+                if (
+                    existing
+                    and not refresh
+                    and existing.get("edit_time") == edit_time
+                    and existing.get("comment_sig") == c_sig
+                ):
+                    results.append(existing["note"])
+                    continue
+
+                restored = restore_feishu_note(
+                    client, cp.obj_token, title=cp.title, url=cp.url or "", comments_override=cmts
                 )
+                entries[ckey] = {
+                    "edit_time": edit_time,
+                    "comment_sig": c_sig,
+                    "checked_at": now,
+                    "note": restored,
+                }
+                results.append(restored)
+                dirty = True
+
         elif prov == "obsidian":
             obs_cfg = config.get("obsidian") or {}
             root = Path(str(obs_cfg.get("vault_path", ""))).expanduser()
@@ -627,10 +702,18 @@ def list_library_notes(config: Any, provider: str = "auto", annotated_only: bool
                 for md in root.rglob("*.md"):
                     if any(part.startswith(".") for part in md.relative_to(root).parts):
                         continue
-                    restored = restore_obsidian_note(md, root)
-                    if annotated_only and not restored["annotations"] and not restored["reflections"]:
+                    rel = md.relative_to(root).as_posix()
+                    ckey = f"obsidian:{rel}"
+                    mtime = int(md.stat().st_mtime)
+                    existing = entries.get(ckey)
+                    if existing and not refresh and existing.get("edit_time") == mtime:
+                        results.append(existing["note"])
                         continue
+                    restored = restore_obsidian_note(md, root)
+                    entries[ckey] = {"edit_time": mtime, "checked_at": now, "note": restored}
                     results.append(restored)
+                    dirty = True
+
         elif prov == "zotero":
             from pyzotero import zotero as pyzotero
 
@@ -639,23 +722,169 @@ def list_library_notes(config: Any, provider: str = "auto", annotated_only: bool
             for item in zot.top(limit=50):
                 if item.get("data", {}).get("itemType") in ("attachment", "note", "annotation"):
                     continue
-                restored = restore_zotero_item(zot, item)
-                if annotated_only and not restored["annotations"] and not restored["reflections"]:
+                key = item.get("key") or item.get("data", {}).get("key", "")
+                ver = int(item.get("version") or 0)
+                ckey = f"zotero:{key}"
+                existing = entries.get(ckey)
+                if existing and not refresh and existing.get("edit_time") == ver:
+                    results.append(existing["note"])
                     continue
+                restored = restore_zotero_item(zot, item)
+                entries[ckey] = {"edit_time": ver, "checked_at": now, "note": restored}
                 results.append(restored)
+                dirty = True
+
         elif prov == "notion":
             not_cfg = config.get("notion") or {}
             for cp in load_notion_corpus(str(not_cfg.get("token", "")), str(not_cfg.get("database_id", ""))):
                 pid = cp.paths[0].split("/", 1)[-1] if cp.paths else ""
                 if not pid:
                     continue
-                if annotated_only:
-                    restored = restore_notion_page(str(not_cfg.get("token")), pid, title=cp.title, url=cp.url or "")
-                    if restored["annotations"]:
-                        results.append(restored)
-                else:
-                    results.append({"source": "notion", "id": pid, "title": cp.title, "url": cp.url or ""})
+                ckey = f"notion:{pid}"
+                existing = entries.get(ckey)
+                if existing and not refresh:
+                    results.append(existing["note"])
+                    continue
+                restored = restore_notion_page(str(not_cfg.get("token")), pid, title=cp.title, url=cp.url or "")
+                entries[ckey] = {"edit_time": 0, "checked_at": now, "note": restored}
+                results.append(restored)
+                dirty = True
+
+    cache["synced_at"] = now
+    if dirty or refresh or not Path(cache_path).exists():
+        _save_cache(cache, cache_path)
     return results
+
+
+def _tokenize_query(query: str) -> list[str]:
+    """Splits a bilingual query into English words, CJK phrases, and CJK sliding 2-grams."""
+    q = query.lower().strip()
+    raw_parts = re.findall(r"[\u4e00-\u9fff]+|[a-z0-9_\-]+", q)
+    tokens: list[str] = []
+    for p in raw_parts:
+        if p not in tokens:
+            tokens.append(p)
+        if _has_cjk(p) and len(p) >= 2:
+            for i in range(len(p) - 1):
+                bg = p[i : i + 2]
+                if bg not in tokens:
+                    tokens.append(bg)
+    return tokens
+
+
+def _score_annotation(ann: dict[str, Any], raw_q: str, tokens: list[str]) -> float:
+    """Computes field-weighted relevance score for a single inline annotation."""
+    cmt_text = " ".join(ann.get("comments") or []).lower()
+    quote_text = (ann.get("quote") or "").lower()
+    sec_text = (ann.get("section") or "").lower()
+    para_text = f"{ann.get('paragraph') or ''} {ann.get('paragraph_zh') or ''}".lower()
+
+    score = 0.0
+    if raw_q in cmt_text:
+        score += 6.0
+    if raw_q in quote_text:
+        score += 4.5
+    if raw_q in para_text:
+        score += 3.0
+
+    for tok in tokens:
+        weight_scale = 1.0 if len(tok) > 2 else 0.5
+        if tok in cmt_text:
+            score += 3.0 * weight_scale
+        if tok in quote_text:
+            score += 2.2 * weight_scale
+        if tok in sec_text:
+            score += 1.2 * weight_scale
+        if tok in para_text:
+            score += 1.0 * weight_scale
+    return round(score, 3)
+
+
+def rank_library_notes(notes: list[dict[str, Any]], query: str, top_k: int = 5) -> list[dict[str, Any]]:
+    """Ranks library notes and their annotations using hybrid field-weighted tokens + char/word TF-IDF."""
+    raw_q = query.strip().lower()
+    if not raw_q or not notes:
+        return []
+    tokens = _tokenize_query(raw_q)
+
+    # 1. Build combined bilingual representation per note for char_wb TF-IDF cosine similarity
+    note_blobs: list[str] = []
+    for n in notes:
+        parts = [n.get("title", ""), " ".join(str(v) for v in (n.get("summary") or {}).values())]
+        parts.extend(str(v) for v in (n.get("reflections") or {}).values())
+        for a in n.get("annotations") or []:
+            parts.extend([a.get("section", ""), a.get("quote", ""), " ".join(a.get("comments") or [])])
+            parts.extend([a.get("paragraph", ""), a.get("paragraph_zh", "")])
+        note_blobs.append(" ".join(p for p in parts if p))
+
+    tfidf_scores = [0.0] * len(notes)
+    if any(b.strip() for b in note_blobs):
+        try:
+            vec = TfidfVectorizer(analyzer="char_wb", ngram_range=(2, 4), lowercase=True)
+            mat = vec.fit_transform([raw_q] + note_blobs)
+            sims = cosine_similarity(mat[0:1], mat[1:])[0]
+            tfidf_scores = [float(s) for s in sims]
+        except Exception:
+            pass
+
+    scored_notes: list[dict[str, Any]] = []
+    for idx, n in enumerate(notes):
+        title_l = (n.get("title") or "").lower()
+        refl_l = " ".join(str(v) for v in (n.get("reflections") or {}).values()).lower()
+        summ_l = " ".join(str(v) for v in (n.get("summary") or {}).values()).lower()
+
+        base_score = tfidf_scores[idx] * 5.0
+        if raw_q in title_l:
+            base_score += 5.0
+        if raw_q in refl_l:
+            base_score += 4.0
+        for tok in tokens:
+            w = 1.0 if len(tok) > 2 else 0.5
+            if tok in title_l:
+                base_score += 2.0 * w
+            if tok in refl_l:
+                base_score += 2.0 * w
+            if tok in summ_l:
+                base_score += 0.6 * w
+
+        # Score individual annotations
+        ranked_anns: list[dict[str, Any]] = []
+        max_ann_score = 0.0
+        for a in n.get("annotations") or []:
+            a_score = _score_annotation(a, raw_q, tokens)
+            if a_score > 0:
+                a_copy = dict(a)
+                a_copy["score"] = a_score
+                ranked_anns.append(a_copy)
+                if a_score > max_ann_score:
+                    max_ann_score = a_score
+
+        ranked_anns.sort(key=lambda x: x.get("score", 0.0), reverse=True)
+        total_score = round(base_score + max_ann_score, 3)
+
+        # Require at least one meaningful lexical or strong TF-IDF match
+        if max_ann_score > 0 or base_score >= 1.5:
+            n_copy = dict(n)
+            n_copy["score"] = total_score
+            if ranked_anns:
+                n_copy["annotations"] = ranked_anns
+            scored_notes.append(n_copy)
+
+    scored_notes.sort(key=lambda x: x.get("score", 0.0), reverse=True)
+    return scored_notes[:top_k]
+
+
+def list_library_notes(
+    config: Any,
+    provider: str = "auto",
+    annotated_only: bool = False,
+    refresh: bool = False,
+) -> list[dict[str, Any]]:
+    """Lists literature notes from the user's active library providers (with incremental cache)."""
+    notes = sync_library_notes(config, provider=provider, refresh=refresh)
+    if annotated_only:
+        return [n for n in notes if n.get("annotations") or n.get("reflections")]
+    return notes
 
 
 def query_library_notes(
@@ -663,95 +892,27 @@ def query_library_notes(
     query: str,
     provider: str = "auto",
     search_annotations: bool = False,
+    refresh: bool = False,
+    top_k: int = 5,
 ) -> list[dict[str, Any]]:
-    """Directly retrieves and restores paper annotations matching title/ID or annotation keyword."""
+    """Retrieves and ranks paper annotations matching title/ID or hybrid bilingual search query."""
     q = query.strip().lower()
-    matched: list[dict[str, Any]] = []
-
-    for prov in _enabled_providers(config, provider):
-        if prov == "feishu":
-            from .feishu import FeishuClient
-
-            client = FeishuClient(config.feishu)
-            notes = [cp for cp in client.fetch_reading_notes() if cp.obj_token]
-            if not search_annotations:
-                targets = [
-                    cp
-                    for cp in notes
-                    if q in cp.title.lower() or q == (cp.obj_token or "").lower() or q == (cp.node_token or "").lower()
-                ]
-                for cp in targets:
-                    matched.append(restore_feishu_note(client, cp.obj_token, title=cp.title, url=cp.url or ""))
-            else:
-                # shortcut: check lightweight Drive comments first, only pull Docx blocks for matching notes
-                with ThreadPoolExecutor(max_workers=3) as pool:
-                    cmts_list = list(pool.map(lambda cp: _fetch_feishu_comments(client, cp.obj_token), notes))
-                for cp, cmts in zip(notes, cmts_list):
-                    title_match = q in cp.title.lower()
-                    cmt_blob = json.dumps(cmts, ensure_ascii=False).lower() if cmts else ""
-                    if not title_match and q not in cmt_blob:
-                        continue
-                    restored = restore_feishu_note(
-                        client, cp.obj_token, title=cp.title, url=cp.url or "", comments_override=cmts
-                    )
-                    hit_anns = [
-                        a
-                        for a in restored["annotations"]
-                        if q in a["quote"].lower()
-                        or q in a["paragraph"].lower()
-                        or any(q in c.lower() for c in a["comments"])
-                    ]
-                    if hit_anns:
-                        restored["annotations"] = hit_anns
-                    matched.append(restored)
-        elif prov == "obsidian":
-            obs_cfg = config.get("obsidian") or {}
-            root = Path(str(obs_cfg.get("vault_path", ""))).expanduser()
-            if root.is_dir():
-                for md in root.rglob("*.md"):
-                    if any(part.startswith(".") for part in md.relative_to(root).parts):
-                        continue
-                    restored = restore_obsidian_note(md, root)
-                    title_match = q in restored["title"].lower() or q in restored["id"].lower()
-                    if title_match:
-                        matched.append(restored)
-                    elif search_annotations:
-                        hit_anns = [
-                            a
-                            for a in restored["annotations"]
-                            if q in a["quote"].lower() or any(q in c.lower() for c in a["comments"])
-                        ]
-                        if hit_anns or any(q in str(v).lower() for v in restored["reflections"].values()):
-                            restored["annotations"] = hit_anns or restored["annotations"]
-                            matched.append(restored)
-        elif prov == "zotero":
-            from pyzotero import zotero as pyzotero
-
-            zot_cfg = config.get("zotero") or {}
-            zot = pyzotero.Zotero(str(zot_cfg.get("id")), "user", str(zot_cfg.get("key")))
-            for item in zot.items(q=query, limit=20):
-                if item.get("data", {}).get("itemType") in ("attachment", "note", "annotation"):
-                    continue
-                matched.append(restore_zotero_item(zot, item))
-        elif prov == "notion":
-            not_cfg = config.get("notion") or {}
-            for cp in load_notion_corpus(str(not_cfg.get("token", "")), str(not_cfg.get("database_id", ""))):
-                pid = cp.paths[0].split("/", 1)[-1] if cp.paths else ""
-                if not pid:
-                    continue
-                title_match = q in cp.title.lower() or q == pid.lower()
-                if not search_annotations and not title_match:
-                    continue
-                restored = restore_notion_page(str(not_cfg.get("token")), pid, title=cp.title, url=cp.url or "")
-                if title_match or any(q in a["quote"].lower() for a in restored["annotations"]):
-                    matched.append(restored)
-    return matched
+    notes = sync_library_notes(config, provider=provider, refresh=refresh)
+    if not search_annotations:
+        exact = [
+            n
+            for n in notes
+            if q in (n.get("title") or "").lower() or q == (n.get("id") or "").lower()
+        ]
+        return exact[:top_k] if exact else rank_library_notes(notes, query, top_k=top_k)
+    return rank_library_notes(notes, query, top_k=top_k)
 
 
 def format_restored_note_markdown(note: dict[str, Any]) -> str:
     """Formats a restored note and its inline annotations into clean agent-ready Markdown."""
+    score_str = f" (相关度: {note['score']:.2f})" if "score" in note else ""
     lines = [
-        f"# {note.get('title')}",
+        f"# {note.get('title')}{score_str}",
         f"- **来源库**: `{note.get('source')}` (`{note.get('id')}`)",
     ]
     if note.get("status"):
@@ -817,38 +978,60 @@ def main() -> None:
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
+    p_sync = sub.add_parser("sync", help="Incrementally sync & warm local revision cache from active library")
+    p_sync.add_argument("--provider", default="auto", choices=["auto", "feishu", "obsidian", "zotero", "notion"])
+    p_sync.add_argument("--refresh", action="store_true", help="Force full refresh from remote library")
+
     p_list = sub.add_parser("list", help="List papers in the user's literature library")
     p_list.add_argument("--provider", default="auto", choices=["auto", "feishu", "obsidian", "zotero", "notion"])
     p_list.add_argument("--annotated-only", action="store_true", help="Only return papers with user annotations")
+    p_list.add_argument("--refresh", action="store_true", help="Check remote library for updates immediately")
     p_list.add_argument("--json", action="store_true", help="Output raw JSON")
 
     p_get = sub.add_parser("get", help="Restore annotations and context for a paper by title or ID")
     p_get.add_argument("query", help="Paper title substring, arXiv ID, or document token")
     p_get.add_argument("--provider", default="auto", choices=["auto", "feishu", "obsidian", "zotero", "notion"])
+    p_get.add_argument("--refresh", action="store_true", help="Check remote library for updates immediately")
     p_get.add_argument("--json", action="store_true", help="Output raw JSON")
 
-    p_search = sub.add_parser("search", help="Search across all user annotations, quotes, and reflections")
-    p_search.add_argument("query", help="Keyword to search in user comments, quotes, or titles")
+    p_search = sub.add_parser("search", help="Hybrid bilingual semantic & keyword search across annotations")
+    p_search.add_argument("query", help="Keywords or phrase to search across comments, quotes, and bilingual text")
     p_search.add_argument("--provider", default="auto", choices=["auto", "feishu", "obsidian", "zotero", "notion"])
+    p_search.add_argument("--top-k", type=int, default=5, help="Max matched papers to return (default: 5)")
+    p_search.add_argument("--refresh", action="store_true", help="Check remote library for updates immediately")
     p_search.add_argument("--json", action="store_true", help="Output raw JSON")
 
     args = parser.parse_args()
     cfg = _load_runtime_config()
 
-    if args.cmd == "list":
-        notes = list_library_notes(cfg, provider=args.provider, annotated_only=args.annotated_only)
+    if args.cmd == "sync":
+        t0 = time.time()
+        notes = sync_library_notes(cfg, provider=args.provider, refresh=args.refresh, cache_ttl=0)
+        ann_notes = [n for n in notes if n.get("annotations") or n.get("reflections")]
+        total_anns = sum(len(n.get("annotations") or []) for n in notes)
+        print(
+            f"✅ 增量同步完成 ({time.time() - t0:.2f}s): 共 {len(notes)} 篇精读文献, "
+            f"{len(ann_notes)} 篇含个人批注/思考, 累计 {total_anns} 处原位划词批注。"
+        )
+    elif args.cmd == "list":
+        notes = list_library_notes(
+            cfg, provider=args.provider, annotated_only=args.annotated_only, refresh=args.refresh
+        )
         if args.json:
             print(json.dumps(notes, ensure_ascii=False, indent=2))
         else:
             for n in notes:
-                ann_cnt = f" | 🎯 {len(n['annotations'])} 条批注" if "annotations" in n else ""
+                ann_cnt = f" | 🎯 {len(n.get('annotations') or [])} 条批注" if n.get("annotations") else ""
                 print(f"[{n['source']}] {n['title']} (id={n['id']}){ann_cnt} -> {n.get('url', '')}")
     elif args.cmd in ("get", "search"):
+        top_k = getattr(args, "top_k", 5)
         notes = query_library_notes(
             cfg,
             args.query,
             provider=args.provider,
             search_annotations=(args.cmd == "search"),
+            refresh=args.refresh,
+            top_k=top_k,
         )
         if args.json:
             print(json.dumps(notes, ensure_ascii=False, indent=2))
