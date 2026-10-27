@@ -36,7 +36,7 @@ def extract_baselines(router: LLMRouter, paper: Paper) -> list[dict[str, Any]]:
 
     try:
         raw = router.chat([{"role": "user", "content": prompt}], max_tokens=1000, timeout=60)
-        data = _json_block(raw, [])
+        data = extract_json(raw, [])
         if not isinstance(data, list):
             return []
         valid: list[dict[str, Any]] = []

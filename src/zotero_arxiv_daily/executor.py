@@ -993,6 +993,7 @@ class Executor:
                     tldr_zh=item.get("tldr", ""),
                 )
 
+                full_text_md = None
                 if is_github_or_tool:
                     readme_text = self.fetch_github_readme(url)
                     sections, tags = self.generate_app_note_sections(

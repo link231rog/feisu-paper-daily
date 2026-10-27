@@ -236,4 +236,24 @@ def test_critical_paper_digest_and_no_icons():
     assert not re.search(r"[\U0001F300-\U0001F9FF\U00002700-\U000027BF\U00002600-\U000026FF]", inline_html)
 
 
+def test_research_and_baseline_json_parsing():
+    """Verify research and baseline pipelines call extract_json cleanly."""
+    from zotero_arxiv_daily.baseline import extract_baselines
+    from zotero_arxiv_daily.research import plan_queries
+
+    class MockRouter:
+        available = True
+        def chat(self, messages, **kw):
+            return '{"affirmative_s2": ["agent memory"], "adversarial_s2": ["kv cache"]}'
+
+    plan = plan_queries(MockRouter(), ["agent memory"], "cs.AI")
+    assert "agent memory" in plan["affirmative_s2"]
+    assert "kv cache" in plan["adversarial_s2"]
+
+    p = Paper(source="arxiv", title="T", authors=["A"], abstract="Text citing FlashAttention.", url="http://x")
+    baselines = extract_baselines(MockRouter(), p)
+    assert isinstance(baselines, list)
+
+
+
 

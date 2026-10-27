@@ -75,7 +75,7 @@ def plan_queries(
         "Return ONLY JSON:\n"
         '{"affirmative_s2": [...], "adversarial_s2": [...], "arxiv_categories": [...]}'
     )
-    data = _json_block(router.chat([{"role": "user", "content": prompt}], max_tokens=1400), {})
+    data = extract_json(router.chat([{"role": "user", "content": prompt}], max_tokens=1400), {})
     if not isinstance(data, dict):
         data = {}
     pos = [str(q) for q in data.get("affirmative_s2", []) if str(q).strip()][:5]
@@ -111,7 +111,7 @@ def pick_seeds(
         f"{UNTRUSTED_NOTICE}\n<untrusted_source>\n{_paper_digest(papers, 20)}\n</untrusted_source>\n\n"
         f"Return ONLY a JSON array of up to {limit} numbers from the list above."
     )
-    data = _json_block(router.chat([{"role": "user", "content": prompt}], max_tokens=800), [])
+    data = extract_json(router.chat([{"role": "user", "content": prompt}], max_tokens=800), [])
     seeds = []
     for item in data if isinstance(data, list) else []:
         try:
@@ -188,7 +188,7 @@ def synthesize_questions(
             "Use only the candidate text above. Do not invent citations, evidence, agreement between papers, or results. Empty evidence arrays are valid.\n\n"
             'Return ONLY JSON: {"summary": "...", "evidence": [{"index": 1}], "counter_evidence": [{"index": 2}], "gap": "...", "status": "..."}'
         )
-        data = _json_block(router.chat([{"role": "user", "content": prompt}], max_tokens=1600), {})
+        data = extract_json(router.chat([{"role": "user", "content": prompt}], max_tokens=1600), {})
         if not isinstance(data, dict):
             return None
         summary = str(data.get("summary", "")).strip()
@@ -259,7 +259,7 @@ def suggest_next_questions(
         "- Write each in the same language as the current questions, as one sentence.\n"
         'Return ONLY JSON: {"questions": ["..."]}'
     )
-    data = _json_block(router.chat([{"role": "user", "content": prompt}], max_tokens=1000), {})
+    data = extract_json(router.chat([{"role": "user", "content": prompt}], max_tokens=1000), {})
     proposed: list[str] = []
     for item in data.get("questions", []) if isinstance(data, dict) and isinstance(data.get("questions"), list) else []:
         text = str(item).strip()
@@ -331,7 +331,7 @@ def judge_ranking(router: LLMRouter, questions: list[str], papers: list[Paper]) 
         "Give a concise Chinese reason tied to the abstract; do not invent novelty or results.\n"
         'Return ONLY JSON: {"ranking": [{"index": 3, "reason": "一句话中文理由"}], "dropped": [7]}'
     )
-    data = _json_block(router.chat([{"role": "user", "content": prompt}], max_tokens=2500), {})
+    data = extract_json(router.chat([{"role": "user", "content": prompt}], max_tokens=2500), {})
     if isinstance(data, dict) and "ranking" not in data:
         # Some replies wrap the payload one level deeper.
         nested = next(
