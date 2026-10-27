@@ -1,6 +1,5 @@
 """Baseline method extraction, attribution, and bi-directional library linking."""
 
-import json
 import re
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
@@ -11,9 +10,6 @@ from loguru import logger
 from .llm import LLMRouter
 from .protocol import CorpusPaper, Paper
 from .textutil import UNTRUSTED_NOTICE, extract_json
-
-
-_json_block = extract_json
 
 
 def extract_baselines(router: LLMRouter, paper: Paper) -> list[dict[str, Any]]:

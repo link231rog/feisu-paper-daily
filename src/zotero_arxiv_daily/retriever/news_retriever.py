@@ -2,7 +2,6 @@ import re
 import requests
 import feedparser
 from datetime import datetime, timezone
-from typing import Any
 from loguru import logger
 from omegaconf import DictConfig
 

@@ -3,7 +3,6 @@
 from enum import Enum
 import json
 import random
-import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -22,9 +21,6 @@ class HypothesisStatus(str, Enum):
     CONTESTED = "contested"     # ⚖️ 争议期：同时存在支持与反例证据，优先追踪
     CONVERGED = "converged"     # ✅ 已收敛：证据链充分，降低频率并派生子问题
     FALSIFIED = "falsified"     # ❌ 已证伪：核心假设被反例推翻，归档
-
-
-_json_block = extract_json
 
 
 def _paper_digest(papers: list[Paper], limit: int = 30) -> str:

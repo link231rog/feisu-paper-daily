@@ -1,6 +1,0 @@
-{
-  "summary":  "feisu-paper-daily 2.0 深度架构诊断与代码重构交互式看板实施方案，涵盖 AI 主动问题追踪（跨日演化状态机、全文靶向章节拉取批注、对立反例检索、文档内 @AI 异步追问闭环）、多生态统一双向适配器（飞书/Zotero/Notion/Obsidian 全链路读写与反向双链）以及纯 GitHub Actions 零提交污染与按需精读无服务器架构。",
-  "updatedAt":  "2026-10-24T02:29:50.208267134Z",
-  "requestFeedback":  true,
-  "userFacing":  true
-}

@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 from omegaconf import DictConfig
 from ..protocol import Paper, RawPaperItem
-from tqdm import tqdm
 from typing import Type
 from time import sleep
 from loguru import logger
@@ -24,7 +23,7 @@ class BaseRetriever(ABC):
     def papers_from_raw(self, raw_papers: list[RawPaperItem]) -> list[Paper]:
         papers = []
         delay = float(self.retriever_config.get("conversion_delay", 0.0)) if hasattr(self, "retriever_config") and hasattr(self.retriever_config, "get") and self.retriever_config else 0.0
-        for raw_paper in tqdm(raw_papers, total=len(raw_papers), desc="Converting papers"):
+        for raw_paper in raw_papers:
             try:
                 paper = self.convert_to_paper(raw_paper)
             except Exception as exc:

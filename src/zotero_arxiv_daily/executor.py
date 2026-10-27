@@ -12,7 +12,6 @@ from loguru import logger
 from omegaconf import DictConfig, ListConfig
 from openai import OpenAI
 from pyzotero import zotero
-from tqdm import tqdm
 
 from .baseline import enrich_papers_with_baselines
 from .daily_report import build_daily_report
@@ -1662,8 +1661,9 @@ class Executor:
 
             # Per-paper HTTP calls, so run them concurrently instead of one timeout per paper
             tldr_workers = max(1, int(self.config.executor.get("tldr_workers", 4)))
+            logger.info(f"Summarizing {len(reranked_papers)} papers...")
             with ThreadPoolExecutor(max_workers=tldr_workers) as pool:
-                list(tqdm(pool.map(summarize_one, reranked_papers), total=len(reranked_papers), desc="Summarizing papers"))
+                list(pool.map(summarize_one, reranked_papers))
 
             # Baselines and inline annotations are independent per paper, so run both
             # stages in a single pool: total time is one paper's work, not two stages' sum.
@@ -1673,7 +1673,7 @@ class Executor:
                 if do_baselines or do_annotations:
                     from .annotator import enrich_papers_with_inline_annotations
 
-                    use_ar5iv = bool(self.research_cfg.get("full_text_ar5iv", False))
+                    use_ar5iv = as_bool(self.research_cfg.get("full_text_ar5iv", False))
                     workers = int(
                         self.research_cfg.get(
                             "enrich_workers",

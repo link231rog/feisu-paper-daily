@@ -38,6 +38,8 @@ node_modules/
 workbench/node_modules/
 workbench/dist/
 workbench/.env.local
+.aistudio/
+workbench/.aistudio/
 
 # Archives
 *.zip

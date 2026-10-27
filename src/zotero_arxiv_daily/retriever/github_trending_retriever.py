@@ -2,9 +2,9 @@ import os
 import re
 import requests
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Any
 from loguru import logger
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 
 from ..protocol import TrendingItem
 

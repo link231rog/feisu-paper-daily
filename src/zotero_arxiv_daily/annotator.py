@@ -1,10 +1,8 @@
 """In-line text annotator: highlights and comments directly inside paper paragraphs."""
 
-import json
 import re
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
-from urllib.parse import quote
 
 import requests
 from loguru import logger

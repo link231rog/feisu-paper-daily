@@ -1,5 +1,4 @@
 from .base import BaseRetriever, register_retriever
-import arxiv
 from arxiv import Result as ArxivResult
 from ..protocol import Paper, extract_venue_from_text
 from ..utils import extract_markdown_from_pdf, extract_tex_code_from_tar
@@ -10,14 +9,12 @@ import os
 from queue import Empty
 import re
 from tempfile import TemporaryDirectory
-import time
 from time import sleep
 from typing import Any, Callable, TypeVar
 from html.parser import HTMLParser
 from loguru import logger
 import requests
 import feedparser
-from tqdm import tqdm
 
 T = TypeVar("T")
 
