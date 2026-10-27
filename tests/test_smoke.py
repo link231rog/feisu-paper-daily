@@ -104,3 +104,44 @@ def test_tfidf_reranker():
     sim = reranker.get_similarity_score(s1, s2)
     assert sim.shape == (1, 2)
     assert sim[0, 0] > sim[0, 1]  # Agent memory should match memory buffer higher than astronomy
+
+
+def test_restore_feishu_and_obsidian_annotations(tmp_path):
+    """Verify direct annotation restoration across Feishu and Obsidian libraries."""
+    from zotero_arxiv_daily.library import restore_feishu_note, restore_obsidian_note
+
+    # 1. Feishu restoration with bilingual context & section heading
+    blocks = [
+        {"block_id": "b_h2_full", "block_type": 4, "heading2": {"elements": [{"text_run": {"content": "📄 论文完整原文与逐节研读区"}}]}},
+        {"block_id": "b_sec1", "block_type": 4, "heading2": {"elements": [{"text_run": {"content": "1 Introduction"}}]}},
+        {"block_id": "b_en", "block_type": 2, "text": {"elements": [{"text_run": {"content": "Memory-augmented agents maintain external storage across turns."}}]}},
+        {"block_id": "b_zh", "block_type": 2, "text": {"elements": [{"text_run": {"content": "记忆增强智能体在多轮交互中维护外部存储。"}}]}},
+    ]
+    comments = [
+        {
+            "quote": "maintain external storage",
+            "extra": {"content_anchor_id": "b_en"},
+            "reply_list": {"replies": [{"content": {"elements": [{"text_run": {"text": "三个gap对应三个方法"}}]}}]},
+        }
+    ]
+    feishu_note = restore_feishu_note(None, "doc_1", title="Oblivion", blocks_override=blocks, comments_override=comments)
+    assert len(feishu_note["annotations"]) == 1
+    ann = feishu_note["annotations"][0]
+    assert ann["section"] == "1 Introduction"
+    assert ann["comments"] == ["三个gap对应三个方法"]
+    assert "Memory-augmented agents" in ann["paragraph"]
+    assert "记忆增强智能体" in ann["paragraph_zh"]
+
+    # 2. Obsidian restoration with ==highlight==^[comment]
+    md_file = tmp_path / "paper.md"
+    md_file.write_text(
+        "---\ntitle: Memory-R1\n---\n## Method\n\nWe use ==decay-driven activation==^[核心衰减机制] to prune stale memories.\n",
+        encoding="utf-8",
+    )
+    obs_note = restore_obsidian_note(md_file, tmp_path)
+    assert obs_note["title"] == "Memory-R1"
+    assert len(obs_note["annotations"]) == 1
+    assert obs_note["annotations"][0]["quote"] == "decay-driven activation"
+    assert obs_note["annotations"][0]["comments"] == ["核心衰减机制"]
+    assert obs_note["annotations"][0]["section"] == "Method"
+

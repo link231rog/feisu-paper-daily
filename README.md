@@ -186,6 +186,23 @@ console:
 
 ---
 
+## 🤖 本地 Agent 直连文献库与批注还原 (AI Library Bridge)
+
+本地 Agent（OpenCode / Claude Code / Cursor）无需同步中转文件，可直接通过 `paper-library` CLI 按需读取用户在用的文献库（自动识别配置中的 **飞书知识库**、**Obsidian Vault**、**Zotero** 或 **Notion**），实时还原划词原文、个人批注、所属章节与完整双语段落上下文：
+
+```bash
+# 1. 列出当前文献库中所有包含个人划词批注的精读文献
+uv run paper-library list --annotated-only
+
+# 2. 按标题或 ID 实时还原某篇文献的全部划词批注与双语上下文（支持 --json）
+uv run paper-library get "Oblivion"
+
+# 3. 跨文献检索个人批注关键词（如检索你写过的某条批注思路并还原对应原文段落）
+uv run paper-library search "三个gap"
+```
+
+---
+
 ## 📂 核心模块速查 (Codebase Reference)
 
 - `src/zotero_arxiv_daily/executor.py`：全流程总控调度器（检索、过滤、排序、批注、发布）。
@@ -195,7 +212,7 @@ console:
 - `src/zotero_arxiv_daily/console.py`：多生态控制台加载器（飞书 / Obsidian / Notion / Zotero）。
 - `src/zotero_arxiv_daily/feishu.py`：飞书 API 深度封装（富文本 Docx 渲染、双向回写、权限校验、精读笔记转换）。
 - `src/zotero_arxiv_daily/llm.py`：大模型负载均衡路由器（多 Key 轮换、故障转移、推理预算控制）。
-- `src/zotero_arxiv_daily/library.py`：Obsidian Vault 与 Notion Database 文献库解析适配器。
+- `src/zotero_arxiv_daily/library.py`：多生态文献库（飞书 / Obsidian / Zotero / Notion）直连适配器与精读批注上下文还原 CLI。
 
 ---
 

@@ -28,6 +28,9 @@ dependencies = [
     "trafilatura>=2.0.0",
 ]
 
+[project.scripts]
+paper-library = "zotero_arxiv_daily.library:main"
+
 [tool.uv.sources]
 torch = { index = "pytorch" }
 

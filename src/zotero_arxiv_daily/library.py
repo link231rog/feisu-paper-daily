@@ -1,8 +1,19 @@
-"""Optional interest-corpus adapters for external note libraries."""
+"""Direct literature library & annotation bridge (Feishu, Obsidian, Zotero, Notion).
 
+Allows local AI agents and CLI users to directly inspect, search, and restore
+user deep-reading annotations (highlighted quotes, user comments, section headings,
+and full bilingual paragraph context) from whichever literature library the user uses.
+"""
+
+from __future__ import annotations
+
+import argparse
+from concurrent.futures import ThreadPoolExecutor
+import json
 from datetime import datetime
 from pathlib import Path
 import re
+from typing import Any
 from urllib.parse import quote
 
 import requests
@@ -12,8 +23,14 @@ from .protocol import CorpusPaper
 
 NOTION_VERSION = "2022-06-28"
 
+_DEFAULT_PLACEHOLDERS = (
+    "可在研读后直接划词批注或记录关键洞察",
+    "记录论文假设漏洞、对比缺陷或未解决的边界条件",
+    "记录对自身研究/业务体系的迁移启发",
+)
 
-def _split_tags(raw) -> list[str]:
+
+def _split_tags(raw: Any) -> list[str]:
     if raw is None:
         return []
     if isinstance(raw, list):
@@ -33,6 +50,20 @@ def _parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
             key, value = line.split(":", 1)
             meta[key.strip().lower()] = value.strip().strip("'\"")
     return meta, text[end + 4 :]
+
+
+def _has_cjk(text: str) -> bool:
+    return bool(re.search(r"[\u4e00-\u9fff]", text))
+
+
+def _is_placeholder(text: str) -> bool:
+    cleaned = text.strip(" *()\n\t")
+    return not cleaned or any(p in cleaned for p in _DEFAULT_PLACEHOLDERS)
+
+
+# ---------------------------------------------------------------------------
+# Existing corpus loaders (used by Executor during daily reranking)
+# ---------------------------------------------------------------------------
 
 
 def load_obsidian_corpus(vault_path: str, include_folders: list[str] | None = None) -> list[CorpusPaper]:
@@ -132,3 +163,700 @@ def load_notion_corpus(token: str, database_id: str) -> list[CorpusPaper]:
 
     logger.info(f"Loaded {len(corpus)} pages from Notion database")
     return corpus
+
+
+# ---------------------------------------------------------------------------
+# 1. Feishu Wiki Direct Reader & Annotation Restorer
+# ---------------------------------------------------------------------------
+
+
+def _block_text(block: dict[str, Any]) -> tuple[str, str]:
+    """Returns (block_kind, plain_text) for a Feishu Docx block."""
+    for kind in ("heading1", "heading2", "heading3", "heading4", "text", "todo", "quote", "bullet", "ordered"):
+        if kind in block:
+            txt = "".join(
+                el.get("text_run", {}).get("content", "")
+                for el in block[kind].get("elements", [])
+            ).strip()
+            return kind, txt
+    return "other", ""
+
+
+def restore_feishu_note(
+    feishu_client: Any,
+    obj_token: str,
+    title: str = "",
+    url: str = "",
+    comments_override: list[dict[str, Any]] | None = None,
+    blocks_override: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Restores a paper's deep-reading note, user reflections, and inline annotations from Feishu."""
+    blocks = blocks_override if blocks_override is not None else feishu_client.get_document_blocks(obj_token)
+    if comments_override is not None:
+        raw_comments = comments_override
+    else:
+        try:
+            res = feishu_client._call_api(
+                "GET", f"/drive/v1/files/{obj_token}/comments", params={"file_type": "docx"}
+            )
+            raw_comments = res.get("items", [])
+        except Exception as exc:
+            logger.warning(f"Failed to fetch comments for Feishu doc {obj_token}: {exc}")
+            raw_comments = []
+
+    parsed_blocks: list[dict[str, Any]] = []
+    block_by_id: dict[str, int] = {}
+    full_text_start_idx = 0
+
+    for idx, blk in enumerate(blocks):
+        kind, txt = _block_text(blk)
+        bid = blk.get("block_id", "")
+        entry = {
+            "idx": idx,
+            "id": bid,
+            "kind": kind,
+            "text": txt,
+            "done": bool(blk.get("todo", {}).get("style", {}).get("done")) if kind == "todo" else False,
+        }
+        parsed_blocks.append(entry)
+        if bid:
+            block_by_id[bid] = idx
+        if kind.startswith("heading") and ("论文完整原文" in txt or "Original Full Paper" in txt):
+            full_text_start_idx = idx
+
+    status = "⏳ 待精读"
+    paper_url = ""
+    reflections: dict[str, Any] = {"insights": "", "critique": "", "relevance": "", "action_items": []}
+    summary_sections: dict[str, str] = {}
+
+    cur_h2 = ""
+    cur_h3 = ""
+    for entry in parsed_blocks:
+        kind, txt = entry["kind"], entry["text"]
+        if not txt:
+            continue
+        if "阅读状态:" in txt and "原文直达:" in txt:
+            for st in ("⏳ 待精读", "📖 精读中", "✅ 已精读", "💡 已转化"):
+                if st in txt:
+                    status = st
+                    break
+            m = re.search(r"原文直达:\s*(https?://\S+)", txt)
+            if m:
+                paper_url = m.group(1).strip()
+            continue
+
+        if kind == "heading2":
+            cur_h2, cur_h3 = txt, ""
+            continue
+        if kind == "heading3":
+            cur_h3 = txt
+            continue
+
+        if "Reading Notes & Reflections" in cur_h2:
+            if "Key Insights" in cur_h3 and kind == "text" and not _is_placeholder(txt):
+                reflections["insights"] = (reflections["insights"] + "\n" + txt).strip()
+            elif "Critique" in cur_h3 and kind == "text" and not _is_placeholder(txt):
+                reflections["critique"] = (reflections["critique"] + "\n" + txt).strip()
+            elif "Relevance" in cur_h3 and kind == "text" and not _is_placeholder(txt):
+                reflections["relevance"] = (reflections["relevance"] + "\n" + txt).strip()
+            elif "Action Items" in cur_h3 and kind == "todo" and entry["done"]:
+                reflections["action_items"].append(txt)
+        elif cur_h2 and full_text_start_idx and entry["idx"] < full_text_start_idx:
+            for key, marker in (
+                ("core_summary", "一、核心一句话总结"),
+                ("motivation", "二、研究动机与问题背景"),
+                ("method", "三、核心架构与机制设计"),
+                ("experiments", "四、关键实验与结论"),
+                ("takeaways", "五、落地启示与思考"),
+            ):
+                if marker in cur_h2 and kind == "text":
+                    summary_sections[key] = (summary_sections.get(key, "") + "\n" + txt).strip()
+
+    # Restore inline comments with exact quote, section heading, and bilingual paragraph context
+    grouped_annotations: dict[tuple[str, str], dict[str, Any]] = {}
+    for cmt in raw_comments:
+        quote_str = (cmt.get("quote") or "").strip()
+        anchor_id = (cmt.get("extra") or {}).get("content_anchor_id") or ""
+        replies = []
+        for rep in (cmt.get("reply_list") or {}).get("replies", []):
+            rep_txt = "".join(
+                (el.get("text_run") or {}).get("text", "")
+                for el in (rep.get("content") or {}).get("elements", [])
+            ).strip()
+            if rep_txt:
+                replies.append(rep_txt)
+        if not replies and not quote_str:
+            continue
+
+        # Locate the best matching paragraph block (preferring the full-text body if an orphan block exists at top)
+        anchor_idx = block_by_id.get(anchor_id)
+        anchor_text = parsed_blocks[anchor_idx]["text"] if anchor_idx is not None else ""
+        search_needle = (quote_str[:80] or anchor_text[:80]).lower()
+
+        best_idx = anchor_idx
+        if search_needle:
+            candidates = [
+                b["idx"]
+                for b in parsed_blocks
+                if b["kind"] in ("text", "quote", "bullet") and search_needle in b["text"].lower()
+            ]
+            if candidates:
+                # Prefer the candidate inside the full-text section so heading & bilingual neighbor are intact
+                body_candidates = [i for i in candidates if i >= full_text_start_idx]
+                best_idx = body_candidates[-1] if body_candidates else candidates[-1]
+
+        section = ""
+        paragraph = anchor_text
+        paragraph_zh = ""
+
+        if best_idx is not None:
+            paragraph = parsed_blocks[best_idx]["text"]
+            for back_i in range(best_idx - 1, -1, -1):
+                if parsed_blocks[back_i]["kind"].startswith("heading"):
+                    h_txt = parsed_blocks[back_i]["text"]
+                    if "论文完整原文" not in h_txt:
+                        section = h_txt
+                        break
+            # Check next 1-3 blocks for adjacent Chinese translation paragraph
+            if not _has_cjk(paragraph):
+                for fwd_i in range(best_idx + 1, min(len(parsed_blocks), best_idx + 4)):
+                    cand = parsed_blocks[fwd_i]
+                    if cand["kind"].startswith("heading"):
+                        break
+                    if cand["kind"] == "text" and cand["text"] and _has_cjk(cand["text"]):
+                        paragraph_zh = cand["text"]
+                        break
+
+        group_key = (quote_str, paragraph[:120])
+        if group_key not in grouped_annotations:
+            grouped_annotations[group_key] = {
+                "quote": quote_str,
+                "comments": [],
+                "section": section,
+                "paragraph": paragraph,
+                "paragraph_zh": paragraph_zh,
+                "is_solved": bool(cmt.get("is_solved", False)),
+            }
+        for r in replies:
+            if r not in grouped_annotations[group_key]["comments"]:
+                grouped_annotations[group_key]["comments"].append(r)
+
+    return {
+        "source": "feishu",
+        "id": obj_token,
+        "title": title,
+        "url": url,
+        "paper_url": paper_url,
+        "status": status,
+        "summary": summary_sections,
+        "reflections": {k: v for k, v in reflections.items() if v},
+        "annotations": list(grouped_annotations.values()),
+    }
+
+
+# ---------------------------------------------------------------------------
+# 2. Obsidian Vault Direct Reader & Annotation Restorer
+# ---------------------------------------------------------------------------
+
+
+def restore_obsidian_note(note_path: Path, vault_root: Path | None = None) -> dict[str, Any]:
+    """Restores a paper note and inline annotations directly from an Obsidian markdown file."""
+    text = note_path.read_text(encoding="utf-8", errors="ignore")
+    meta, body = _parse_frontmatter(text)
+    heading_m = re.search(r"^#\s+(.+)$", body, flags=re.MULTILINE)
+    title = meta.get("title") or (heading_m.group(1).strip() if heading_m else note_path.stem)
+    tags = _split_tags(meta.get("tags")) or re.findall(r"(?:^|\s)#([\w\-/]+)", body)
+    rel = note_path.relative_to(vault_root).as_posix() if vault_root else note_path.name
+    vault_name = vault_root.name if vault_root else ""
+
+    annotations: list[dict[str, Any]] = []
+    reflections: dict[str, Any] = {}
+    current_section = ""
+
+    paragraphs = re.split(r"\n\s*\n", body)
+    for idx, para in enumerate(paragraphs):
+        p_strip = para.strip()
+        if not p_strip:
+            continue
+        if p_strip.startswith("#"):
+            current_section = p_strip.lstrip("#").strip()
+            continue
+
+        # 1. Obsidian ==highlight== syntax with optional inline ^[comment] or %%comment%%
+        for m in re.finditer(r"==([^=\n]+)==(?:\^\[([^\]]+)\]|\s*%%([^%]+)%%)?", p_strip):
+            quote_str = m.group(1).strip()
+            inline_cmt = (m.group(2) or m.group(3) or "").strip()
+            comments = [inline_cmt] if inline_cmt else []
+            # Also check if the immediately following block is a blockquote comment (> ...)
+            if idx + 1 < len(paragraphs):
+                next_p = paragraphs[idx + 1].strip()
+                if next_p.startswith(">") and not next_p.startswith("> [!"):
+                    comments.append(re.sub(r"^>\s*", "", next_p, flags=re.MULTILINE).strip())
+            annotations.append(
+                {
+                    "quote": quote_str,
+                    "comments": comments,
+                    "section": current_section,
+                    "paragraph": re.sub(r"==([^=\n]+)==", r"\1", p_strip),
+                    "paragraph_zh": "",
+                }
+            )
+
+        # 2. Obsidian Callout / Quote annotation blocks (> [!quote] or > [!note])
+        callout_m = re.match(r"^>\s*\[!(quote|cite|note|important)\][^\n]*\n((?:>.*\n?)+)", p_strip, re.IGNORECASE)
+        if callout_m:
+            quote_body = re.sub(r"^>\s?", "", callout_m.group(2), flags=re.MULTILINE).strip()
+            comments = []
+            if idx + 1 < len(paragraphs):
+                next_p = paragraphs[idx + 1].strip()
+                if not next_p.startswith(("#", ">")):
+                    comments.append(next_p)
+            annotations.append(
+                {
+                    "quote": quote_body,
+                    "comments": comments,
+                    "section": current_section,
+                    "paragraph": quote_body,
+                    "paragraph_zh": "",
+                }
+            )
+
+        if any(k in current_section.lower() for k in ("reflection", "insight", "critique", "思考", "批注", "笔记")):
+            if not _is_placeholder(p_strip) and not p_strip.startswith("=="):
+                reflections.setdefault("notes", []).append(p_strip)
+
+    return {
+        "source": "obsidian",
+        "id": rel,
+        "title": title,
+        "url": f"obsidian://open?vault={quote(vault_name)}&file={quote(rel)}" if vault_name else str(note_path),
+        "paper_url": meta.get("url") or meta.get("source") or "",
+        "status": meta.get("status") or "",
+        "tags": tags,
+        "summary": {},
+        "reflections": reflections,
+        "annotations": annotations,
+    }
+
+
+# ---------------------------------------------------------------------------
+# 3. Zotero Direct Reader & PDF Annotation Restorer
+# ---------------------------------------------------------------------------
+
+
+def restore_zotero_item(zot: Any, item: dict[str, Any]) -> dict[str, Any]:
+    """Restores a paper item and its child PDF annotations/notes directly from Zotero."""
+    data = item.get("data", {})
+    key = item.get("key") or data.get("key", "")
+    title = data.get("title", "Untitled")
+    annotations: list[dict[str, Any]] = []
+    notes: list[str] = []
+
+    try:
+        children = zot.children(key)
+    except Exception:
+        children = []
+
+    for child in children:
+        cdata = child.get("data", {})
+        ctype = cdata.get("itemType")
+        if ctype == "annotation":
+            quote_str = (cdata.get("annotationText") or "").strip()
+            comment_str = (cdata.get("annotationComment") or "").strip()
+            page_lbl = cdata.get("annotationPageLabel") or ""
+            if quote_str or comment_str:
+                annotations.append(
+                    {
+                        "quote": quote_str,
+                        "comments": [comment_str] if comment_str else [],
+                        "section": f"Page {page_lbl}" if page_lbl else "",
+                        "paragraph": quote_str,
+                        "paragraph_zh": "",
+                    }
+                )
+        elif ctype == "note":
+            raw_html = cdata.get("note", "")
+            clean_note = re.sub(r"<[^>]+>", " ", raw_html).strip()
+            if clean_note:
+                notes.append(clean_note)
+
+    return {
+        "source": "zotero",
+        "id": key,
+        "title": title,
+        "url": f"zotero://select/library/items/{key}",
+        "paper_url": data.get("url", ""),
+        "status": "",
+        "summary": {"abstract": data.get("abstractNote", "")},
+        "reflections": {"notes": notes} if notes else {},
+        "annotations": annotations,
+    }
+
+
+# ---------------------------------------------------------------------------
+# 4. Notion Direct Reader & Block/Comment Restorer
+# ---------------------------------------------------------------------------
+
+
+def restore_notion_page(token: str, page_id: str, title: str = "", url: str = "") -> dict[str, Any]:
+    """Restores a paper page and its highlighted spans/quote blocks directly from Notion."""
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Notion-Version": NOTION_VERSION,
+        "Content-Type": "application/json",
+    }
+    annotations: list[dict[str, Any]] = []
+    current_section = ""
+
+    try:
+        resp = requests.get(f"https://api.notion.com/v1/blocks/{page_id}/children?page_size=100", headers=headers, timeout=20)
+        blocks = resp.json().get("results", []) if resp.status_code == 200 else []
+    except Exception:
+        blocks = []
+
+    for blk in blocks:
+        btype = blk.get("type", "")
+        bdata = blk.get(btype) or {}
+        rich = bdata.get("rich_text") or []
+        full_txt = "".join(r.get("plain_text", "") for r in rich).strip()
+        if not full_txt:
+            continue
+        if btype.startswith("heading_"):
+            current_section = full_txt
+            continue
+        if btype in ("quote", "callout"):
+            annotations.append(
+                {
+                    "quote": full_txt,
+                    "comments": [],
+                    "section": current_section,
+                    "paragraph": full_txt,
+                    "paragraph_zh": "",
+                }
+            )
+        else:
+            for r in rich:
+                color = (r.get("annotations") or {}).get("color", "default")
+                if color and color != "default":
+                    annotations.append(
+                        {
+                            "quote": r.get("plain_text", "").strip(),
+                            "comments": [f"Highlight ({color})"],
+                            "section": current_section,
+                            "paragraph": full_txt,
+                            "paragraph_zh": "",
+                        }
+                    )
+
+    return {
+        "source": "notion",
+        "id": page_id,
+        "title": title,
+        "url": url,
+        "paper_url": "",
+        "status": "",
+        "summary": {},
+        "reflections": {},
+        "annotations": annotations,
+    }
+
+
+# ---------------------------------------------------------------------------
+# 5. Unified Multi-Provider Query & CLI Interface for Local Agents
+# ---------------------------------------------------------------------------
+
+
+def _enabled_providers(config: Any, provider: str = "auto") -> list[str]:
+    p = (provider or "auto").lower()
+    if p != "auto":
+        return [p]
+    active: list[str] = []
+    feishu_cfg = config.get("feishu") or {}
+    if feishu_cfg.get("app_id") and (feishu_cfg.get("notes_parent_node_token") or feishu_cfg.get("notes_folder_token")):
+        active.append("feishu")
+    obs_cfg = config.get("obsidian") or {}
+    if obs_cfg.get("vault_path") and Path(str(obs_cfg.get("vault_path"))).expanduser().is_dir():
+        active.append("obsidian")
+    zot_cfg = config.get("zotero") or {}
+    if zot_cfg.get("id") and zot_cfg.get("key"):
+        active.append("zotero")
+    not_cfg = config.get("notion") or {}
+    if not_cfg.get("token") and not_cfg.get("database_id"):
+        active.append("notion")
+    return active or ["feishu"]
+
+
+def _fetch_feishu_comments(client: Any, obj_token: str) -> list[dict[str, Any]]:
+    try:
+        res = client._call_api("GET", f"/drive/v1/files/{obj_token}/comments", params={"file_type": "docx"})
+        return res.get("items", [])
+    except Exception as exc:
+        logger.warning(f"Failed to fetch comments for Feishu doc {obj_token}: {exc}")
+        return []
+
+
+def list_library_notes(config: Any, provider: str = "auto", annotated_only: bool = False) -> list[dict[str, Any]]:
+    """Lists literature notes directly from the user's active library providers."""
+    results: list[dict[str, Any]] = []
+    for prov in _enabled_providers(config, provider):
+        if prov == "feishu":
+            from .feishu import FeishuClient
+
+            client = FeishuClient(config.feishu)
+            notes = [cp for cp in client.fetch_reading_notes() if cp.obj_token]
+            if annotated_only:
+                # Filter by lightweight comments API first before pulling full document block trees
+                with ThreadPoolExecutor(max_workers=3) as pool:
+                    cmts_list = list(pool.map(lambda cp: _fetch_feishu_comments(client, cp.obj_token), notes))
+                for cp, cmts in zip(notes, cmts_list):
+                    if cmts:
+                        results.append(
+                            restore_feishu_note(
+                                client, cp.obj_token, title=cp.title, url=cp.url or "", comments_override=cmts
+                            )
+                        )
+            else:
+                results.extend(
+                    {"source": "feishu", "id": cp.obj_token, "title": cp.title, "url": cp.url or ""}
+                    for cp in notes
+                )
+        elif prov == "obsidian":
+            obs_cfg = config.get("obsidian") or {}
+            root = Path(str(obs_cfg.get("vault_path", ""))).expanduser()
+            if root.is_dir():
+                for md in root.rglob("*.md"):
+                    if any(part.startswith(".") for part in md.relative_to(root).parts):
+                        continue
+                    restored = restore_obsidian_note(md, root)
+                    if annotated_only and not restored["annotations"] and not restored["reflections"]:
+                        continue
+                    results.append(restored)
+        elif prov == "zotero":
+            from pyzotero import zotero as pyzotero
+
+            zot_cfg = config.get("zotero") or {}
+            zot = pyzotero.Zotero(str(zot_cfg.get("id")), "user", str(zot_cfg.get("key")))
+            for item in zot.top(limit=50):
+                if item.get("data", {}).get("itemType") in ("attachment", "note", "annotation"):
+                    continue
+                restored = restore_zotero_item(zot, item)
+                if annotated_only and not restored["annotations"] and not restored["reflections"]:
+                    continue
+                results.append(restored)
+        elif prov == "notion":
+            not_cfg = config.get("notion") or {}
+            for cp in load_notion_corpus(str(not_cfg.get("token", "")), str(not_cfg.get("database_id", ""))):
+                pid = cp.paths[0].split("/", 1)[-1] if cp.paths else ""
+                if not pid:
+                    continue
+                if annotated_only:
+                    restored = restore_notion_page(str(not_cfg.get("token")), pid, title=cp.title, url=cp.url or "")
+                    if restored["annotations"]:
+                        results.append(restored)
+                else:
+                    results.append({"source": "notion", "id": pid, "title": cp.title, "url": cp.url or ""})
+    return results
+
+
+def query_library_notes(
+    config: Any,
+    query: str,
+    provider: str = "auto",
+    search_annotations: bool = False,
+) -> list[dict[str, Any]]:
+    """Directly retrieves and restores paper annotations matching title/ID or annotation keyword."""
+    q = query.strip().lower()
+    matched: list[dict[str, Any]] = []
+
+    for prov in _enabled_providers(config, provider):
+        if prov == "feishu":
+            from .feishu import FeishuClient
+
+            client = FeishuClient(config.feishu)
+            notes = [cp for cp in client.fetch_reading_notes() if cp.obj_token]
+            if not search_annotations:
+                targets = [
+                    cp
+                    for cp in notes
+                    if q in cp.title.lower() or q == (cp.obj_token or "").lower() or q == (cp.node_token or "").lower()
+                ]
+                for cp in targets:
+                    matched.append(restore_feishu_note(client, cp.obj_token, title=cp.title, url=cp.url or ""))
+            else:
+                # shortcut: check lightweight Drive comments first, only pull Docx blocks for matching notes
+                with ThreadPoolExecutor(max_workers=3) as pool:
+                    cmts_list = list(pool.map(lambda cp: _fetch_feishu_comments(client, cp.obj_token), notes))
+                for cp, cmts in zip(notes, cmts_list):
+                    title_match = q in cp.title.lower()
+                    cmt_blob = json.dumps(cmts, ensure_ascii=False).lower() if cmts else ""
+                    if not title_match and q not in cmt_blob:
+                        continue
+                    restored = restore_feishu_note(
+                        client, cp.obj_token, title=cp.title, url=cp.url or "", comments_override=cmts
+                    )
+                    hit_anns = [
+                        a
+                        for a in restored["annotations"]
+                        if q in a["quote"].lower()
+                        or q in a["paragraph"].lower()
+                        or any(q in c.lower() for c in a["comments"])
+                    ]
+                    if hit_anns:
+                        restored["annotations"] = hit_anns
+                    matched.append(restored)
+        elif prov == "obsidian":
+            obs_cfg = config.get("obsidian") or {}
+            root = Path(str(obs_cfg.get("vault_path", ""))).expanduser()
+            if root.is_dir():
+                for md in root.rglob("*.md"):
+                    if any(part.startswith(".") for part in md.relative_to(root).parts):
+                        continue
+                    restored = restore_obsidian_note(md, root)
+                    title_match = q in restored["title"].lower() or q in restored["id"].lower()
+                    if title_match:
+                        matched.append(restored)
+                    elif search_annotations:
+                        hit_anns = [
+                            a
+                            for a in restored["annotations"]
+                            if q in a["quote"].lower() or any(q in c.lower() for c in a["comments"])
+                        ]
+                        if hit_anns or any(q in str(v).lower() for v in restored["reflections"].values()):
+                            restored["annotations"] = hit_anns or restored["annotations"]
+                            matched.append(restored)
+        elif prov == "zotero":
+            from pyzotero import zotero as pyzotero
+
+            zot_cfg = config.get("zotero") or {}
+            zot = pyzotero.Zotero(str(zot_cfg.get("id")), "user", str(zot_cfg.get("key")))
+            for item in zot.items(q=query, limit=20):
+                if item.get("data", {}).get("itemType") in ("attachment", "note", "annotation"):
+                    continue
+                matched.append(restore_zotero_item(zot, item))
+        elif prov == "notion":
+            not_cfg = config.get("notion") or {}
+            for cp in load_notion_corpus(str(not_cfg.get("token", "")), str(not_cfg.get("database_id", ""))):
+                pid = cp.paths[0].split("/", 1)[-1] if cp.paths else ""
+                if not pid:
+                    continue
+                title_match = q in cp.title.lower() or q == pid.lower()
+                if not search_annotations and not title_match:
+                    continue
+                restored = restore_notion_page(str(not_cfg.get("token")), pid, title=cp.title, url=cp.url or "")
+                if title_match or any(q in a["quote"].lower() for a in restored["annotations"]):
+                    matched.append(restored)
+    return matched
+
+
+def format_restored_note_markdown(note: dict[str, Any]) -> str:
+    """Formats a restored note and its inline annotations into clean agent-ready Markdown."""
+    lines = [
+        f"# {note.get('title')}",
+        f"- **来源库**: `{note.get('source')}` (`{note.get('id')}`)",
+    ]
+    if note.get("status"):
+        lines.append(f"- **阅读状态**: {note['status']}")
+    if note.get("paper_url"):
+        lines.append(f"- **论文原文**: {note['paper_url']}")
+    if note.get("url"):
+        lines.append(f"- **笔记直达**: {note['url']}")
+
+    anns = note.get("annotations") or []
+    lines.append(f"\n## 🎯 精读划词批注与上下文还原 ({len(anns)} 处)")
+    if not anns:
+        lines.append("*(暂无划词批注)*")
+    for idx, ann in enumerate(anns, 1):
+        sec = f" [{ann['section']}]" if ann.get("section") else ""
+        lines.append(f"\n### 批注 #{idx}{sec}")
+        if ann.get("quote"):
+            lines.append(f"- **划词原文**: \"{ann['quote']}\"")
+        for c_idx, cmt in enumerate(ann.get("comments") or [], 1):
+            lines.append(f"- **我的批注 ({c_idx})**: **{cmt}**")
+        if ann.get("paragraph") and ann["paragraph"] != ann.get("quote"):
+            lines.append(f"- **所在完整原段**: {ann['paragraph']}")
+        if ann.get("paragraph_zh"):
+            lines.append(f"- **对应中文译段**: {ann['paragraph_zh']}")
+
+    refl = note.get("reflections") or {}
+    if refl:
+        lines.append("\n## ✍️ 个人研读思考与待办")
+        for k, v in refl.items():
+            lines.append(f"- **{k}**: {v}")
+
+    summ = note.get("summary") or {}
+    if summ:
+        lines.append("\n## 📌 论文核心结构摘要")
+        for k, label in (
+            ("core_summary", "核心一句话"),
+            ("motivation", "研究动机"),
+            ("method", "核心方法"),
+            ("experiments", "关键实验"),
+            ("takeaways", "落地启示"),
+            ("abstract", "摘要"),
+        ):
+            if summ.get(k):
+                lines.append(f"- **{label}**: {summ[k]}")
+
+    return "\n".join(lines)
+
+
+def _load_runtime_config() -> Any:
+    from dotenv import load_dotenv
+    from omegaconf import OmegaConf
+
+    load_dotenv(".env")
+    base = OmegaConf.load("config/base.yaml") if Path("config/base.yaml").exists() else OmegaConf.create({})
+    custom = OmegaConf.load("config/custom.yaml") if Path("config/custom.yaml").exists() else OmegaConf.create({})
+    return OmegaConf.merge(base, custom)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        prog="paper-library",
+        description="Direct CLI bridge for AI agents to inspect & restore annotations from Feishu, Obsidian, or Zotero.",
+    )
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    p_list = sub.add_parser("list", help="List papers in the user's literature library")
+    p_list.add_argument("--provider", default="auto", choices=["auto", "feishu", "obsidian", "zotero", "notion"])
+    p_list.add_argument("--annotated-only", action="store_true", help="Only return papers with user annotations")
+    p_list.add_argument("--json", action="store_true", help="Output raw JSON")
+
+    p_get = sub.add_parser("get", help="Restore annotations and context for a paper by title or ID")
+    p_get.add_argument("query", help="Paper title substring, arXiv ID, or document token")
+    p_get.add_argument("--provider", default="auto", choices=["auto", "feishu", "obsidian", "zotero", "notion"])
+    p_get.add_argument("--json", action="store_true", help="Output raw JSON")
+
+    p_search = sub.add_parser("search", help="Search across all user annotations, quotes, and reflections")
+    p_search.add_argument("query", help="Keyword to search in user comments, quotes, or titles")
+    p_search.add_argument("--provider", default="auto", choices=["auto", "feishu", "obsidian", "zotero", "notion"])
+    p_search.add_argument("--json", action="store_true", help="Output raw JSON")
+
+    args = parser.parse_args()
+    cfg = _load_runtime_config()
+
+    if args.cmd == "list":
+        notes = list_library_notes(cfg, provider=args.provider, annotated_only=args.annotated_only)
+        if args.json:
+            print(json.dumps(notes, ensure_ascii=False, indent=2))
+        else:
+            for n in notes:
+                ann_cnt = f" | 🎯 {len(n['annotations'])} 条批注" if "annotations" in n else ""
+                print(f"[{n['source']}] {n['title']} (id={n['id']}){ann_cnt} -> {n.get('url', '')}")
+    elif args.cmd in ("get", "search"):
+        notes = query_library_notes(
+            cfg,
+            args.query,
+            provider=args.provider,
+            search_annotations=(args.cmd == "search"),
+        )
+        if args.json:
+            print(json.dumps(notes, ensure_ascii=False, indent=2))
+        elif not notes:
+            print(f"未在文献库中找到匹配 '{args.query}' 的文献或批注。")
+        else:
+            print("\n\n---\n\n".join(format_restored_note_markdown(n) for n in notes))
+
+
+if __name__ == "__main__":
+    main()
