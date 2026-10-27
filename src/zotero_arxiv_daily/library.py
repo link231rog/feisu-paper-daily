@@ -333,7 +333,7 @@ def restore_feishu_note(
                         paragraph_zh = cand["text"]
                         break
 
-        group_key = (quote_str, paragraph[:120])
+        group_key = (quote_str or cmt.get("comment_id", ""), paragraph[:120])
         if group_key not in grouped_annotations:
             grouped_annotations[group_key] = {
                 "quote": quote_str,
