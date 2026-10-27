@@ -190,7 +190,7 @@ research:
   auto_backlink: ${oc.env:RESEARCH_AUTO_BACKLINK,true}
   inline_annotations: ${oc.env:RESEARCH_INLINE_ANNOTATIONS,true}
   adversarial_queries: ${oc.env:RESEARCH_ADVERSARIAL_QUERIES,true}
-  full_text_ar5iv: ${oc.env:RESEARCH_FULL_TEXT_AR5IV,true}
+  full_text_ar5iv: ${oc.env:RESEARCH_FULL_TEXT_AR5IV,false}
   state_path: "data/research_state.json"
   converge_min_support: ${oc.env:RESEARCH_CONVERGE_MIN_SUPPORT,6}
   falsify_min_counter: ${oc.env:RESEARCH_FALSIFY_MIN_COUNTER,3}

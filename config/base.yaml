@@ -408,7 +408,7 @@ research:
   annotation_workers: 4
   # Active hypothesis and adversarial querying
   adversarial_queries: true
-  full_text_ar5iv: true
+  full_text_ar5iv: false # Abstract only for daily report; method/experiments analyzed upon ingestion
   # Evidence accumulation thresholds and discarded-paper negative feedback
   converge_min_support: 6
   falsify_min_counter: 3

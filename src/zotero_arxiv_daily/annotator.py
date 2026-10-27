@@ -55,9 +55,10 @@ def extract_inline_annotations(
     router: LLMRouter,
     paper: Paper,
     questions: list[str],
-    use_ar5iv: bool = True,
+    use_ar5iv: bool = False,
 ) -> list[dict[str, Any]]:
-    """Extracts exact quote spans and inline annotations (baseline, claim, critique, counter) from paper abstract, grounded by ar5iv sections when available."""
+    """Extracts exact quote spans and inline annotations (baseline, claim, critique, counter) from paper abstract.
+    Full-text method & experiment deep analysis is reserved for confirmed ingestion."""
     if not router.available or not paper.abstract:
         return []
 
@@ -80,19 +81,19 @@ def extract_inline_annotations(
     source_text = f"<untrusted_source>\n{source_text}\n</untrusted_source>"
 
     prompt = (
-        "Annotate the supplied source text inline. Each comment must immediately follow the exact source sentence or phrase it discusses.\n"
+        "Annotate the supplied abstract inline. Each comment must immediately follow the exact source sentence or phrase it discusses.\n"
         f"{UNTRUSTED_NOTICE}\n\n"
         f"Title: {paper.title}\n{source_text}\n\n"
         f"Tracked Questions:\n{q_list}\n\n"
-        "Return 0 to 5 high-value annotations across the supplied sections (ideally 2 to 3 for abstract). Do not annotate trivial background sentences; select ONLY key claims, surprising counter-findings, or pivotal baselines.\n"
-        "For each annotation, 'source' is the section ID and 'quote' is a contiguous, case-insensitive substring of THAT section, copied verbatim, ideally one sentence or a phrase of at most about 35 words (never a whole paragraph). Never attach a comment to a different sentence.\n"
+        "Return 0 to 4 high-value annotations on the abstract (ideally 2 to 3). Do not annotate trivial background sentences; select ONLY key claims, surprising counter-findings, or pivotal baselines.\n"
+        "For each annotation, 'source' is 'S1' and 'quote' is a contiguous, case-insensitive substring of THAT section, copied verbatim, ideally one sentence or a phrase of at most about 35 words (never a whole paragraph). Never attach a comment to a different sentence.\n"
         "Categories:\n"
         "- baseline: a method actually named in the source as a comparison or foundation. Do not add baselines from memory.\n"
         "- claim: a mechanism or empirical result that directly answers a tracked question. Include its question number.\n"
         "- critique: an explicit limitation, restricted evaluation scope or assumption visible in the quote. A reviewer inference must be explicitly labeled '推断'.\n"
         "- counter: only a reported result that directly contradicts another claim or a tracked hypothesis. An ordinary limitation is NOT counter-evidence.\n"
         "Do not infer missing experiments, venues, numbers or comparisons. Prefer no annotation over a speculative one.\n\n"
-        'Return ONLY JSON: [{"source":"S2", "quote":"exact source substring", "type":"claim", "name":"", "venue":"", "question":1, "comment":"中文批注", "inference":false}]'
+        'Return ONLY JSON: [{"source":"S1", "quote":"exact source substring", "type":"claim", "name":"", "venue":"", "question":1, "comment":"中文批注", "inference":false}]'
     )
 
     try:
@@ -250,48 +251,47 @@ def build_annotated_text_elements(
     for section in sections:
         source_annotations = [a for a in annotations if a.get("source", "S1") == section["id"]]
         located_by_source[section["id"]] = locate_spans(section["text"], source_annotations)
-    if not any(located_by_source.values()):
+
+    abstract_section = next((s for s in sections if s.get("id") == "S1" or s.get("title") == "摘要"), None)
+    abstract_located = located_by_source.get("S1") or []
+    if not abstract_section or not abstract_located:
         return [{"text_run": {"content": f"📄 英文摘要 (Abstract):\n{paper.abstract or ''}\n"}}]
 
     elements: list[dict[str, Any]] = [
         {"text_run": {"content": "📄 原文与核心洞察批注：\n", "text_element_style": {"bold": True}}}
     ]
-    for section in sections:
-        located = located_by_source[section["id"]]
-        if not located:
-            continue
-        text = section["text"]
-        elements.append({"text_run": {"content": f"\n【{section['title']}】\n", "text_element_style": {"bold": True}}})
+    elements.append({"text_run": {"content": f"\n【{abstract_section.get('title', '摘要')}】\n", "text_element_style": {"bold": True}}})
 
-        # 1. First, render the continuous clean source text with light highlight on quotes
-        curr = 0
-        for s in located:
-            if s["start"] > curr:
-                elements.append({"text_run": {"content": text[curr:s["start"]]}})
-            ann_type = s["data"].get("type", "critique")
-            # 5: Green/teal (baseline), 4: Yellow/gold (claim), 2: Coral/red (counter), 3: Light orange (critique)
-            bg_color = {"baseline": 5, "claim": 4, "counter": 2}.get(ann_type, 3)
-            elements.append({
-                "text_run": {
-                    "content": s["quote"],
-                    "text_element_style": {"background_color": bg_color, "bold": True},
-                }
-            })
-            curr = s["end"]
-        if curr < len(text):
-            elements.append({"text_run": {"content": text[curr:]}})
-        elements.append({"text_run": {"content": "\n\n"}})
-
-        # 2. Then, render structured, readable notes grouped neatly below the section
+    # 1. Continuous clean abstract text with light highlight on quotes
+    text = abstract_section["text"]
+    curr = 0
+    for s in abstract_located:
+        if s["start"] > curr:
+            elements.append({"text_run": {"content": text[curr:s["start"]]}})
+        ann_type = s["data"].get("type", "critique")
+        # 5: Green/teal (baseline), 4: Yellow/gold (claim), 2: Coral/red (counter), 3: Light orange (critique)
+        bg_color = {"baseline": 5, "claim": 4, "counter": 2}.get(ann_type, 3)
         elements.append({
             "text_run": {
-                "content": "💡 AI 审阅与证据解读：\n",
-                "text_element_style": {"bold": True, "text_color": 1},
+                "content": s["quote"],
+                "text_element_style": {"background_color": bg_color, "bold": True},
             }
         })
-        for s in located:
-            elements.extend(_render_note_bullet_elements(s))
-        elements.append({"text_run": {"content": "\n"}})
+        curr = s["end"]
+    if curr < len(text):
+        elements.append({"text_run": {"content": text[curr:]}})
+    elements.append({"text_run": {"content": "\n\n"}})
+
+    # 2. Structured, readable notes grouped neatly below the abstract
+    elements.append({
+        "text_run": {
+            "content": "💡 AI 审阅与证据解读：\n",
+            "text_element_style": {"bold": True, "text_color": 1},
+        }
+    })
+    for s in abstract_located:
+        elements.extend(_render_note_bullet_elements(s))
+    elements.append({"text_run": {"content": "\n"}})
 
     return elements
 

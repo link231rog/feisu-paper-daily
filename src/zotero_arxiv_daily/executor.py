@@ -492,71 +492,98 @@ class Executor:
 
         return selected
 
-    def generate_reading_note_sections(self, paper: Paper) -> tuple[dict[str, str], list[str]]:
-        """Uses LLM to generate deep reading note sections and tags for an ingested paper."""
-        if not self.openai_client:
-            default_summary = paper.tldr_zh or paper.tldr or paper.abstract[:150]
-            sections = {
-                "core_summary": default_summary,
-                "motivation": f"针对 {paper.title} 所聚焦的领域瓶颈，探索更高效稳健的解决方案。",
-                "method": "提出创新性的机制设计与算法流转，通过端到端策略提升核心任务表现。",
-                "experiments": "在基准数据集上进行了详尽的对比与消融实验，结果优于主流基准。",
-                "takeaways": "1. 具备高实用价值与落地潜力。\n2. 机制设计可拓展至更广泛的自主智能体与大模型场景。",
-            }
-            tags = ["Agent", "Research"]
-            return sections, tags
+    def generate_reading_note_sections(
+        self,
+        paper: Paper,
+        full_text: Optional[str] = None,
+        targeted_sections: Optional[dict[str, str]] = None,
+    ) -> tuple[dict[str, str], list[str]]:
+        """Uses LLM to generate deep reading note sections and tags for an ingested paper,
+        extracting detailed methodology, experimental results, and takeaways from the full text / targeted sections."""
+        context_parts = []
+        if paper.abstract:
+            context_parts.append(f"Abstract:\n{paper.abstract.strip()[:2000]}")
+
+        if targeted_sections:
+            if targeted_sections.get("method"):
+                context_parts.append(f"Method Section (Excerpt):\n{targeted_sections['method'].strip()[:4000]}")
+            if targeted_sections.get("experiments"):
+                context_parts.append(f"Experiments Section (Excerpt):\n{targeted_sections['experiments'].strip()[:4000]}")
+            if targeted_sections.get("limitations"):
+                context_parts.append(f"Limitations & Discussion (Excerpt):\n{targeted_sections['limitations'].strip()[:1500]}")
+        elif full_text:
+            context_parts.append(f"Full Paper Excerpt:\n{full_text.strip()[:8000]}")
+
+        context_str = "\n\n".join(context_parts)
 
         prompt = (
-            f"Please analyze the following academic paper and provide a structured deep reading note:\n"
+            "You are an expert AI researcher analyzing an academic paper to generate an in-depth reading note for a knowledge base.\n"
             f"Title: {paper.title}\n"
             f"URL: {paper.url}\n"
-            f"Affiliations: {', '.join(paper.affiliations) if paper.affiliations else 'N/A'}\n"
-            f"Abstract / TL;DR: {paper.abstract or paper.tldr or ''}\n\n"
-            "Format your response as a valid JSON object with the following keys:\n"
-            "- core_summary: 1-sentence Chinese summary of core innovation\n"
-            "- motivation: 1-2 sentences on research problem and motivation (in Chinese)\n"
-            "- method: 2-3 sentences on core architecture / mechanism design (in Chinese)\n"
-            "- experiments: 1-2 sentences on key experimental findings (in Chinese)\n"
-            "- takeaways: 2 bullet points on takeaways / engineering insights (in Chinese)\n"
-            "- venue: accepted conference or journal name and year (e.g. 'ACL 2026', 'NeurIPS 2024', 'ICLR 2025'), or null if preprint / not specified\n"
-            "- tags: array of 2-4 English keyword tags without hash symbol (e.g. [\"Agent\", \"Memory\", \"RL\", \"Harness\", \"RSI\"])\n"
+            f"Affiliations: {', '.join(paper.affiliations) if paper.affiliations else 'N/A'}\n\n"
+            f"{UNTRUSTED_NOTICE}\n"
+            f"<untrusted_source>\n{context_str}\n</untrusted_source>\n\n"
+            "Format your response as a valid JSON object with the following keys (all prose must be in professional, clear Chinese):\n"
+            "- core_summary: 1-sentence Chinese summary of core innovation and result.\n"
+            "- motivation: 1-2 sentences on research problem, bottleneck, and motivation.\n"
+            "- method: 3-5 sentences detailing the core model architecture, algorithm mechanism, state representation, and formulation based on the method section.\n"
+            "- experiments: 3-5 sentences detailing key experimental setup, baseline comparisons, dataset benchmarks, quantitative metrics, and ablation findings based on the experiments section.\n"
+            "- takeaways: 2-3 bullet points on practical engineering takeaways, implementation tips, and extensibility.\n"
+            "- venue: accepted conference or journal name and year (e.g. 'ACL 2026', 'NeurIPS 2024', 'ICLR 2025'), or null if preprint / not specified.\n"
+            "- tags: array of 2-4 English keyword tags without hash symbol (e.g. [\"Agent\", \"Memory\", \"RL\", \"DecisionModel\", \"Harness\", \"RSI\"]).\n"
+            'Return ONLY JSON: {"core_summary": "...", "motivation": "...", "method": "...", "experiments": "...", "takeaways": "...", "venue": "...", "tags": [...] }'
         )
+
         try:
-            resp = self.openai_client.chat.completions.create(
-                model=self.config.llm.generation_kwargs.model,
-                messages=[
-                    {"role": "system", "content": "You are an expert AI researcher analyzing academic papers."},
-                    {"role": "user", "content": prompt}
-                ],
-                response_format={"type": "json_object"},
-                max_tokens=800,
-            )
-            content = resp.choices[0].message.content.strip()
-            data = json.loads(content)
-            sections = {
-                "core_summary": data.get("core_summary", paper.tldr_zh or paper.tldr),
-                "motivation": data.get("motivation", ""),
-                "method": data.get("method", ""),
-                "experiments": data.get("experiments", ""),
-                "takeaways": data.get("takeaways", ""),
-            }
-            if not paper.venue and data.get("venue"):
-                v_str = str(data["venue"]).strip()
-                if v_str.lower() != "null" and v_str.lower() != "none":
-                    paper.venue = v_str
-            tags = data.get("tags") or ["Agent", "Research"]
-            return sections, tags
+            raw = ""
+            if self.router and self.router.available:
+                raw = self.router.chat(
+                    [
+                        {"role": "system", "content": "You are an expert AI researcher. Output valid JSON directly."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    max_tokens=1500,
+                    timeout=90,
+                )
+            elif self.openai_client:
+                resp = self.openai_client.chat.completions.create(
+                    model=self.config.llm.generation_kwargs.model,
+                    messages=[
+                        {"role": "system", "content": "You are an expert AI researcher. Output valid JSON directly."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    response_format={"type": "json_object"},
+                    max_tokens=1500,
+                )
+                raw = resp.choices[0].message.content.strip()
+
+            data = extract_json(raw, {}) if raw else {}
+            if isinstance(data, dict):
+                sections = {
+                    "core_summary": data.get("core_summary", paper.tldr_zh or paper.tldr or paper.abstract[:150]),
+                    "motivation": data.get("motivation", ""),
+                    "method": data.get("method", ""),
+                    "experiments": data.get("experiments", ""),
+                    "takeaways": data.get("takeaways", ""),
+                }
+                if not paper.venue and data.get("venue"):
+                    v_str = str(data["venue"]).strip()
+                    if v_str.lower() not in ("null", "none"):
+                        paper.venue = v_str
+                tags = data.get("tags") or ["Agent", "Research"]
+                return sections, tags
         except Exception as exc:
             logger.warning(f"LLM deep reading generation fallback: {exc}")
-            default_summary = paper.tldr_zh or paper.tldr or paper.abstract[:150]
-            sections = {
-                "core_summary": default_summary,
-                "motivation": f"针对 {paper.title} 核心挑战展开研究。",
-                "method": "提出了系统性的机制创新与算法流程。",
-                "experiments": "实验结果证明了该方法的有效性与鲁棒性。",
-                "takeaways": "具备良好落地价值与拓展空间。",
-            }
-            return sections, ["Agent", "Research"]
+
+        default_summary = paper.tldr_zh or paper.tldr or paper.abstract[:150]
+        sections = {
+            "core_summary": default_summary,
+            "motivation": f"针对 {paper.title} 核心挑战展开研究。",
+            "method": "提出了系统性的机制创新与算法流程。",
+            "experiments": "实验结果证明了该方法的有效性与鲁棒性。",
+            "takeaways": "具备良好落地价值与拓展空间。",
+        }
+        return sections, ["Agent", "Research"]
 
     def fetch_github_readme(self, url: str) -> str:
         """Fetches the README markdown content from a GitHub repository."""
@@ -977,12 +1004,23 @@ class Executor:
                     )
                     paper.venue = "GitHub / Open Source Tool"
                 else:
-                    sections, tags = self.generate_reading_note_sections(paper)
+                    raw_text = None
+                    targeted_sections = None
+                    if url:
+                        # 1. Fetch targeted method/experiments sections if arXiv
+                        arxiv_match = re.search(r"(\d{4}\.\d{4,5})", url)
+                        if arxiv_match:
+                            from .annotator import fetch_ar5iv_targeted_sections
 
-                full_text_md = None
-                if not is_github_or_tool and url:
-                    raw_text = self.fetch_paper_full_text(url)
-                    full_text_md = self.translate_full_text_to_bilingual(raw_text)
+                            targeted_sections = fetch_ar5iv_targeted_sections(arxiv_match.group(1))
+                        # 2. Fetch full paper text
+                        raw_text = self.fetch_paper_full_text(url)
+
+                    # 3. Deep analysis of method & experiments from full text / targeted sections
+                    sections, tags = self.generate_reading_note_sections(
+                        paper, full_text=raw_text, targeted_sections=targeted_sections
+                    )
+                    full_text_md = self.translate_full_text_to_bilingual(raw_text) if raw_text else None
 
                 note_url = client.create_reading_note(paper, sections=sections, full_text_markdown=full_text_md)
                 if is_github_or_tool:
@@ -1635,7 +1673,7 @@ class Executor:
                 if do_baselines or do_annotations:
                     from .annotator import enrich_papers_with_inline_annotations
 
-                    use_ar5iv = bool(self.research_cfg.get("full_text_ar5iv", True))
+                    use_ar5iv = bool(self.research_cfg.get("full_text_ar5iv", False))
                     workers = int(
                         self.research_cfg.get(
                             "enrich_workers",
