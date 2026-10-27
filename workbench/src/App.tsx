@@ -25,10 +25,11 @@ import {
 const SECTIONS = [
   { id: 'hero', label: '概览' },
   { id: 'triggers', label: '接入与触发' },
+  { id: 'console', label: '控制台与规则' },
   { id: 'sources', label: '信源与打分' },
   { id: 'digest', label: '审稿级评价' },
   { id: 'tracking', label: '问题追踪' },
-  { id: 'library', label: '文献库与直连' },
+  { id: 'library', label: '文献库直连' },
   { id: 'delivery', label: '日报推送' },
   { id: 'deploy', label: '部署步骤' },
 ] as const;
@@ -43,6 +44,7 @@ function BrandIcon({ name }: { name: string }) {
         </svg>
       );
     case '飞书':
+    case '飞书控制台':
       return (
         <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current" aria-hidden="true">
           <path d="M3.5 5.5L11 2l9.5 6.5-5.5 4.5L3.5 5.5zm0 6.5l11.5 2.5-4.5 7.5L2 16.5 3.5 12zm12.2 2.2L22 10l-2.5 9.5-3.8-5.3z" />
@@ -88,6 +90,10 @@ function BrandIcon({ name }: { name: string }) {
       return <Bot className="w-5 h-5" />;
     case 'Webhook':
       return <Webhook className="w-5 h-5" />;
+    case '自定义 Skill':
+      return <Sparkles className="w-5 h-5" />;
+    case '范例模板':
+      return <FileText className="w-5 h-5" />;
     case 'arXiv':
       return <BookOpen className="w-5 h-5" />;
     case 'HuggingFace':
@@ -390,6 +396,49 @@ export default function App() {
             </div>
           </motion.section>
 
+          {/* 控制台与规则配置 */}
+          <motion.section
+            id="console"
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, amount: 0.2 }}
+            variants={sectionReveal}
+            className="py-16 lg:px-10 scroll-mt-16"
+          >
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+              <h2 className="text-2xl md:text-3xl font-bold tracking-tight">控制台与规则配置</h2>
+              <div className="flex flex-wrap gap-2">
+                {['飞书控制台', 'Obsidian', 'Notion', '自定义 Skill', '范例模板'].map((item) => (
+                  <PlatformPill key={item} name={item} />
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 border-t border-l border-neutral-800">
+              <GridCard
+                title="文档即配置中心"
+                desc="在飞书、Obsidian 或 Notion 文档中直接维护纯文本规则，无需修改代码或环境变量。"
+              />
+              <GridCard
+                title="每次抓取自动热更新"
+                desc="编辑文档即刻生效，GitHub Actions 或云端 Agent 每次执行前自动同步最新规则。"
+              />
+              <GridCard
+                title="自定义 Skill 导入"
+                desc="支持挂载个性化审稿 Prompt 与分析 Skill，覆盖或叠加系统默认评价逻辑。"
+              />
+              <GridCard
+                title="Example 文献模板导入"
+                desc="可指定自定义 Example 笔记模板，按个人偏好结构生成章节总结、架构图谱与批注区。"
+              />
+              <GridCard
+                title="多维细粒度规则过滤"
+                desc="自由增删关注标签、核心研究问题、必含核心锚点、屏蔽关键词与优先机构实验室。"
+                className="md:col-span-2"
+              />
+            </div>
+          </motion.section>
+
           {/* 信源与打分 */}
           <motion.section
             id="sources"
@@ -479,8 +528,8 @@ export default function App() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 border-t border-l border-neutral-800">
               <GridCard
-                title="文档即控制台"
-                desc="在飞书、Obsidian 或 Notion 中直接修改追踪问题、标签、屏蔽词与必含锚点。"
+                title="问题级证据链综合"
+                desc="针对每个追踪问题跨文献梳理核心证据链、量化指标增量与当前研究盲区。"
               />
               <GridCard
                 title="正反双向检索"
