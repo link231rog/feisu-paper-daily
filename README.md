@@ -1,294 +1,193 @@
-# Feishu Paper Daily & DeepResearch Framework
+# Paper Daily · 多源学术文献精读、问题追踪与多渠道推送系统
 
 <div align="center">
 
-[![Status](https://img.shields.io/badge/status-active-success.svg)]()
 [![Website](https://img.shields.io/badge/website-paper--daily.pages.dev-black.svg)](https://paper-daily-e9f.pages.dev)
 [![License](https://img.shields.io/badge/license-AGPLv3-blue.svg)](/LICENSE)
-[![GitHub Actions](https://img.shields.io/badge/actions-daily--pipeline-orange.svg)]()
+[![Tests](https://img.shields.io/badge/tests-19%20passed-success.svg)]()
 
 </div>
 
----
-
-**Feishu Paper Daily & DeepResearch** 是一个由大语言模型（LLM）驱动的自动化科研文献雷达与深度研究（DeepResearch）工作流框架。
-
-系统超越了传统的单一向量相似度检索，通过**多生态控制台（飞书 / Obsidian / Notion / Zotero）**接入用户动态跟踪的研究标签与核心科学问题，实现**动态检索规划、多跳引文扩散、双信号融合推荐、大模型横向裁判、论文正文原位高亮批注、基线双向互联**以及**每日问题级综合与跟进子问题提议**的全闭环。
+**Paper Daily** 是一套面向科研人员与工程团队的自动化每日文献推荐、审稿级精读批注、跨日科学问题追踪与多渠道分发流水线（含飞书云文档、微信公众号草稿箱、Telegram 原生音频/卡片、HTML 邮件及可选 MP3 双人学术播客）。
 
 ---
 
-## ✨ 核心特性 (Features)
+## 一、 核心架构与目录组织
 
-### 1. 多生态研究控制台 (Multi-Ecosystem Consoles)
-- **跨平台统一抽象**：支持在 **飞书 (Wiki / Docx)**、**Obsidian (本地 Vault)**、**Notion (Database)** 或 **Zotero** 中以 Markdown 标准格式维护研究议程：
-  - `## 关注标签`：定义当前重点追踪的领域技术词（如 `Memory`, `DecisionModel`, `RL`）。
-  - `## 关注问题`：定义正在攻坚的具体科研问题（如 `现有长时记忆系统在多轮交互后如何避免记忆漂移？`）。
-- **零代码动态引导**：修改控制台文本即可实时改变每日文献抓取策略与推荐重心，无需变动配置代码。
-
-### 2. DeepResearch 四层闭环演进 (DeepResearch 4-Layer Loop)
-- **Layer 1: 动态检索规划 (Query Planning)**：
-  大模型基于当前控制台关注的标签与核心问题，自动生成定制化的 Semantic Scholar 针对性检索词和 arXiv 目标分类，替代静态检索词表。
-- **Layer 2: 种子多跳引文扩散 (Multi-hop Citation Chasing)**：
-  对首轮筛选出的高潜力候选论文作为种子，沿其参考文献 (References) 和施引文献 (Citations) 进行二级多跳扩散检索并去重，挖掘隐藏的关键前沿成果。
-- **Layer 3: 问题级每日综合研判 (Question Synthesis)**：
-  针对控制台每个追踪问题，大模型分析当日所有候选文献，生成包含**核心结论摘要**、**支撑证据 (论文标题与原文链接)** 以及**当前研究缺口 (Gaps)** 的专题简报。
-- **Layer 4: 下一轮子问题推演与自动转向 (Next QA & Pivot)**：
-  根据当日文献证据与研读进展，模型自动推演 2~4 个更深度的跟进子问题，追加到飞书控制台的「建议问题（待确认）」区域；同时通过 `ResearchState` 记录证据更新台账，若某问题连续 7 天无新证据突破则主动提议研究转向。
-
-### 3. 品味 + 问题双信号融合推荐与横向裁判 (Fusion Ranking & LLM Judge)
-- **品味契合度 (Library Taste)**：基于个人历史文献库的向量相似度与时间衰减打分，捕捉长期学术审美与技术品味。
-- **问题匹配度 (Question Fit)**：多并发 LLM 为每篇候选论文对各个关注问题进行 0~10 分的相关性与答案证据打分。
-- **动态权重衰减**：对多日无新证据的问题进行权重衰减（0.6x），防止停滞议题霸榜。
-- **大模型横向对比裁判 (Comparative Judge)**：由 LLM 对 Top 候选池进行横向比较与全局洗牌，剔除水分论文并输出中文推荐/淘汰理由。
-- **多样性保护与探索槽位**：设置单问题推荐上限（Per-question cap），并保留固定探索槽位（Exploration slots）给未命中具体问题但深度符合个人知识库品味的潜力论文。
-
-### 4. 正文原位高亮批注与学术基线双向互联 (In-line Annotations & Bi-directional Linking)
-- **正文原位富文本高亮与批注**：彻底取代孤立的底部碎片卡片，直接在论文正文（Abstract）原位做字符级富文本渲染：
-  - 🟢 **基线方法 (Baseline)**：淡绿底色高亮。标注模型名称、机制简述、标准录用会议，并关联知识库状态。
-  - 🟡 **核心发现 (Claim)**：淡黄底色高亮。标注直接回答关注问题的结论与实验证据。
-  - 🟠 **学术质疑 (Critique)**：淡橙底色高亮。指出论文在数据集、合成范围、算力或假设上的局限性。
-- **知识库双向文档互联**：
-  - **正向链接**：正文提及的 Baseline 若已在个人知识库（飞书精读笔记 / Obsidian / Notion）中收录，自动生成 `🟢 [已入库: 笔记名称]` 跳转双链；未收录则生成权威检索链接。
-  - **反向追踪**：自动在个人文献库对应基线文档底部追加 `📌 后续文献对比追踪` 记事，形成动态演进的学术知识图谱。
-
-### 5. 资源池自适应调度与安全合规 (LLM Router & Security)
-- **API Key 资源池与智能轮换**：支持配置多把 API Key，自动负载均衡并在遇到 429 频控或权限失效时无缝故障转移；针对长思考推理模型自动做 Token 预算弹性提额。
-- **零泄漏安全规范**：全面清洗私有 Token，所有敏感信息收拢至 GitHub Actions Secrets / 本地 `.env`，公共运行日志绝不暴露文档链接与鉴权响应。
-
----
-
-## 🏗️ 架构概览 (Architecture)
+代码库按职责划分为三大核心子包与检索/重排插件层，同时在顶层保留向后兼容导入垫片：
 
 ```text
-[ 飞书 Wiki / Obsidian / Notion 控制台 ]
-       │  (关注标签 & 关注问题)
-       ▼
-1. 查询规划器 (Query Planner) ──► 动态 S2 检索词 / arXiv 目标分类
-       │
-       ▼
-2. 多源检索与多跳扩散 (Retrieval & Multi-Hop Chasing)
-       ├── arXiv RSS & Semantic Scholar API
-       └── 顶尖候选种子 ──► 引文 / 参考文献二级扩散
-       │
-       ▼
-3. 学术质量把关 (Quality Gate) ──► 过滤作坊论文与低质预印本
-       │
-       ▼
-4. 双信号融合推荐 (Fusion & Selection)
-       ├── 向量相似度 (个人文献库历史品味)
-       ├── 关注问题契合度 (LLM 0-10 分逐题打分)
-       └── 横向裁判 (Comparative Judge 全局重排)
-       │
-       ▼
-5. 正文行内批注与基线对齐 (In-line Annotations & Baseline Linking)
-       ├── 正文原位高亮: 基线 (绿) / 发现 (黄) / 局限 (橙)
-       └── 个人知识库对齐 ──► 飞书正向双链 + 历史笔记反向追踪回写
-       │
-       ▼
-6. 深度研究研判与议题演进 (Synthesis & Next QA)
-       ├── 每日问题证据简报与研究空白 (Gaps)
-       └── 提议后续跟进子问题 ──► 反写回控制台「建议问题（待确认）」
+src/zotero_arxiv_daily/
+├── core/                  # 核心审阅、评分、研究闭环与状态存储
+│   ├── annotator.py       # 摘要行内三色高亮批注与字符偏移定位
+│   ├── baseline.py        # 对比基线提取与个人文献库双向回链
+│   ├── digest.py          # Critical-Paper-Digest 审稿级摘要与 4D Rubric 量化评分
+│   ├── interest.py        # 多生态个人文献库（飞书/Obsidian/Notion/Zotero）兴趣语料构建
+│   ├── llm.py             # 多 Key 轮询、并发限流与多任务 LLM 路由器
+│   ├── paper_store.py     # 跨源去重、已推送记录与负向反馈（移出待选）持久化
+│   ├── research.py        # DeepResearch 查询规划、多跳引文追踪与问题证据综述
+│   ├── textutil.py        # 鲁棒 JSON 解析与文本工具
+│   └── translator.py      # 学术摘要中英双语翻译
+├── channels/              # 多渠道排版、音频合成与推送适配器
+│   ├── audio.py           # MP3 双人播客（NotebookLM 风格）/ 学术早报 / 微信 60s 语音合成
+│   ├── daily_report.py    # 邮件与通用 HTML 日报构建器
+│   ├── feishu.py          # 飞书云文档/知识库日报、全双语精读笔记与顶部音频块挂载
+│   ├── telegram.py        # Telegram HTML 消息分片推送与原生 sendAudio 音频播放器
+│   └── wechat.py          # 微信公众号三模式推文、内联 CSS、外链转脚注与语音/封面素材上传
+├── library/               # 跨平台文献库同步、批注还原与初始化向导
+│   ├── bridge.py          # paper-library 命令行检索、批注还原与混合排序
+│   ├── console.py         # 飞书 / Obsidian / Notion / Zotero 控制台指令与自定义 Skill 解析
+│   └── init_wizard.py     # 多选交互式初始化向导与按需凭证配置生成
+├── retriever/             # 多源学术文献与社区热点检索器
+│   ├── arxiv_retriever.py            # arXiv API 检索与开源代码/主页链接提取
+│   ├── huggingface_retriever.py      # Hugging Face Daily Papers 检索与实时社区热度交叉赋能
+│   ├── semantic_scholar_retriever.py # Semantic Scholar 关键词与种子引文多跳检索
+│   ├── openreview_retriever.py       # OpenReview API v2 顶会投稿与审稿检索
+│   ├── dblp_retriever.py             # DBLP 计算机顶会/期刊文献检索
+│   ├── rxiv_retriever.py             # bioRxiv / medRxiv / chemRxiv 预印本检索
+│   ├── github_trending_retriever.py  # GitHub AI 趋势仓库检索
+│   └── news_retriever.py             # AI 实验室官方博客与 Hacker News 动态检索
+└── reranker/              # 多峰相似度、负反馈抑制与多样性重排层
+    ├── base.py            # Max-TopK 多峰匹配、Rocchio 负反馈、外部信号加成与 MMR 多样性选择
+    ├── local.py           # 本地 Embedding / TF-IDF（含纯 NumPy 零依赖回退）重排器
+    └── api.py             # 远程 OpenAI 兼容 Embedding API 重排器
 ```
 
 ---
 
-## 🚀 快速上手 (Quick Start)
+## 二、 核心能力与算法特性
 
-### 1. 本地运行 (Local Environment)
+### 1. 文献推荐与粗排/重排算法
+- **Max-TopK 多峰兴趣锚点匹配（Multi-Peak Anchor Similarity）**：
+  克服传统全库均值池化将多个独立研究方向稀释为平庸向量的问题，融合单篇最高锚点相似度（`max_sim_alpha: 0.45`）与 Top-K 锚点均值（`top_k_anchors: 5`）及指数时间衰减，自动记录命中的代表作标题（`matched_anchor_title`）。
+- **Rocchio 负向原型反馈（Negative Prototype Feedback）**：
+  结合用户在日报中勾选「移出待选」的历史负样本（`PaperStore.recent_discarded_texts`）与控制台负向排除词，当候选论文与负向原型的最大相似度超过阈值（`rocchio_neg_threshold: 0.18`）时施加线性扣分（`rocchio_beta: 0.35`）。
+- **MMR 最大边缘相关性多样性去重（Maximal Marginal Relevance）**：
+  在每日精选截断阶段引入 `mmr_select`（`mmr_lambda: 0.75`），抑制同一天内高度同质化的跟风论文刷屏，保障精读列表的方法多样性。
+- **外部冷启动信号与开源代码加成**：
+  - 自动从摘要与正文中提取论文专属 GitHub 代码仓库（`code_url`）与项目主页（`project_url`），自动过滤 `pytorch/pytorch` 等通用框架链接，并对开源代码论文给予复现加分（`code_boost: 0.4`）。
+  - 交叉比对 **Hugging Face Daily Papers** 免费 API，提取社区点赞热度（`hf_upvotes`）并施加对数缩放加成（`hf_boost_max: 0.8`），解决今日新发 arXiv 论文引用数为 0 的冷启动盲区。
 
-本项目采用 [uv](https://github.com/astral-sh/uv) 管理 Python 虚拟环境与依赖。
+### 2. 审稿级精读摘要与四维量化评分（4D OpenReview Rubric）
+- **四维 1–5 分量化打分（`rubric_scores`）**：
+  1. `delta`（实质创新与增量）：问题定义或核心算子是否有非平凡突破；
+  2. `rigor`（实验与消融严谨度）：基线是否公平、消融是否完备、是否诚实披露算力代价；
+  3. `actionability`（对自身研究/工程的可迁移性）：机制或结论能否直接借用；
+  4. `reproducibility`（开源与复现友好度）：是否公开代码仓库、超参与模块细节。
+- **综合校准总分与二次重排（`composite_score`）**：
+  由 4D Rubric 加权映射至 0–10 分，并对「证据存疑/基线较弱」论文执行封顶惩罚（`<= 5.8`），在精读生成后自动重排「精读必看」与「速览雷达」层级。
+
+### 3. 可选 MP3 音频播客与多渠道语音推送
+支持将每日精选论文与追踪问题综述自动合成为 MP3 音频，作为可选推送材料分发：
+- **三种音频内容形态**：
+  - **`dialogue`（双人对谈播客模式，NotebookLM 风格）**：由女声主持（`zh-CN-XiaoxiaoNeural` / `nova`）抛出研究痛点与批判追问，男声学者（`zh-CN-YunxiNeural` / `onyx`）拆解核心增量、四维评分与开源复现价值，男女声交替对谈。
+  - **`briefing`（单人高密度学术早报模式）**：单人主播 3~5 分钟快速串讲今日问题进展与精选论文核心结论。
+  - **`wechat_60s`（微信公众号 60 秒语音导读）**：严格控制在 210 字以内（时长 ≤ 55 秒、体积 ≤ 2MB），适配微信公众号永久语音素材限制。
+- **双语音合成引擎与免 `ffmpeg` 纯 Python 拼接**：
+  - 默认集成开源免费的 **`edge-tts`**，并兼容 **OpenAI `/v1/audio/speech`** 接口（含自建 `openai-edge-tts`）。
+  - 逐轮语音合成后在纯 Python 内剥离次段 ID3v2 标签头并注入 MPEG-1 Layer 3 静音帧间隔拼接，无需宿主机安装 `ffmpeg`。
+- **多渠道音频投递**：
+  - **本地归档**：保存至 `data/audio/daily_podcast_YYYY-MM-DD.mp3` 与 `.script.json`。
+  - **Telegram**：调用 Bot API `/sendAudio` 直接推送原生可拖拽音频播放器。
+  - **邮件**：通过 `MIMEMultipart("mixed")` 将 `.mp3` 作为邮件附件发送。
+  - **飞书日报文档**：通过飞书云空间媒体上传接口（`parent_type="docx_file"`）与 Docx 文件块（`block_type=23`）将音频直接挂载在日报文档顶部。
+  - **微信公众号**：通过 `/cgi-bin/material/add_material?type=voice` 上传 60 秒浓缩版语音导读至公众号永久素材库，并在草稿顶部提示 `Media ID`。
+
+---
+
+## 三、 快速开始与常用命令
+
+### 1. 环境安装
 
 ```bash
-# 1. 克隆仓库
-git clone https://github.com/link231rog/feisu-paper-daily.git
-cd feisu-paper-daily
-
-# 2. 安装依赖
+# Python 后端流水线安装（推荐使用 uv）
 uv sync
 
-# 3. 配置本地环境变量 (.env)
-cp .env.example .env
-# 编辑 .env 填入你的 FEISHU_* 与 LLM_API_KEYS 等凭据
-
-# 4. 执行全流程
-uv run src/zotero_arxiv_daily/main.py
+# 前端交互工作台安装与启动
+npm install
+npm run dev
 ```
 
-### 2. GitHub Actions 自动化部署 (Hosted Pipeline)
+### 2. 交互式初始化向导
 
-1. **Fork 本仓库** 到你的个人 GitHub 账号。
-2. 进入仓库 **Settings -> Secrets and variables -> Actions**，配置以下 Secrets：
-
-| Secret 名称 | 作用说明 | 示例 / 说明 |
-| :--- | :--- | :--- |
-| `FEISHU_APP_ID` | 飞书开放平台自建应用 App ID | `cli_xxx` |
-| `FEISHU_APP_SECRET` | 飞书应用 App Secret | `xxx` |
-| `FEISHU_WIKI_SPACE_ID` | 飞书知识库空间 Space ID | `748xxxx` |
-| `FEISHU_DAILY_PARENT_NODE_TOKEN` | 每日日报的父节点 Node Token | 每天创建或更新独立的日期日报，不再追加到候选库 |
-| `FEISHU_CONSOLE_NODE_TOKEN` | 推荐控制台文档的 Node Token | 存放关注标签与问题的文档 |
-| `FEISHU_NOTES_PARENT_NODE_TOKEN` | 精读笔记存放的父节点 Node Token | 用户确认入库文献的目标父节点 |
-| `LLM_API_KEYS` | 大模型 API Key 资源池（逗号分隔） | `key1,key2,key3` |
-| `TRANSLATION_API_KEY` | 备选学术翻译服务 API Key | 常用模型或翻译接口 Key |
-| `ZOTERO_ID` / `ZOTERO_KEY` | (可选) Zotero 账户 ID 与 API Key | 用于同步 Zotero 个人文献库 |
-| `NOTION_TOKEN` / `NOTION_DATABASE_ID` | (可选) Notion 凭据 | 用于读取 Notion 文献数据库 |
-| `SENDER` / `RECEIVER` / `SENDER_PASSWORD` | (可选) 发件人、收件人、SMTP 授权码 | 多收件人用英文逗号分隔 |
-| `WECHAT_APP_ID` / `WECHAT_APP_SECRET` | (可选) 公众号开发者凭据 | 仅创建草稿，不会自动公开发布 |
-| `WECHAT_THUMB_MEDIA_ID` | 公众号永久封面图片素材 ID | 避免每天重复上传封面 |
-
-邮件、飞书和公众号统一发送当天的完整日报，包含论文、研究问题进展、反例、AI 批注和 AI 动态。飞书每天创建独立的 `论文研究日报 YYYY-MM-DD`，不再向旧候选库追加内容。三个渠道独立投递；某个渠道失败不会阻止其他渠道。启用公众号时设置 Variable `WECHAT_ENABLED=true`，并在公众号后台配置 GitHub Actions 出口 IP 白名单。封面可在本地通过 `WECHAT_COVER_PATH` 上传，但 Actions 环境应优先使用 `WECHAT_THUMB_MEDIA_ID`。邮件可用 `EMAIL_ENABLED=false` 关闭；SMTP 地址和端口分别由 Variables `SMTP_SERVER`、`SMTP_PORT` 控制。
-
-微信草稿接口：https://developers.weixin.qq.com/doc/subscription/api/draftbox/draftmanage/api_draft_add.html 。接口流程参考 MIT 项目：https://github.com/imraywang/wewrite/tree/main/src/wewrite/toolkit 。
-
-3. 进入 **Actions** 页面，手动触发 **Feishu Paper Daily** 测试运行；流水线默认通过定时 Cron 每天自动执行推送。
-
-### 3. 交互式架构工作台 (Architecture Workbench)
-
-本项目附带一套完整的 React / Vite 架构诊断与重构沙盘看板（位于 `workbench/`），提供假设状态机 30 天推演、模块瓶颈 Diff 对照、四端数据映射与零污染工作流定制：
+支持通过多选交互向导一键生成 `config/custom.yaml`、`.env` 以及 GitHub Actions Secrets 配置命令：
 
 ```bash
-cd workbench
-bun install  # 或 npm install
-bun run dev  # 启动本地开发服务器预览看板 (http://localhost:3000)
+# 终端交互式多选配置向导
+uv run paper-daily --init
+
+# Agent / 自动化 JSON 配置注入
+uv run paper-daily --init-json '{"libraries":["obsidian","feishu"],"sources":["arxiv","huggingface","openreview"],"deliveries":["feishu","telegram","wechat"]}'
 ```
 
----
+### 3. 开启可选 MP3 音频播客推送
 
-## ⚙️ 核心配置说明 (Configuration)
-
-配置采用 Hydra / OmegaConf 体系，在 `config/base.yaml` 定义默认项，在 `config/custom.yaml` 中通过 `${oc.env:...}` 动态映射环境变量：
+在 `config/custom.yaml` 中开启 `audio.enabled`：
 
 ```yaml
-research:
+audio:
   enabled: true
-  multi_hop: true          # 是否开启多跳引文追踪扩散
-  max_seeds: 4             # 参与多跳扩散的顶尖种子论文数量
-  synthesis: true          # 是否生成每日问题级综合简报
-  next_questions: true     # 是否在控制台提议下一轮跟进子问题
-  
-  # 融合打分与裁判机制
-  weight_taste: 0.5        # 个人文献库品味权重 (0.0 ~ 1.0)
-  weight_fit: 0.5          # 关注问题匹配度权重 (0.0 ~ 1.0)
-  qa_workers: 8            # 问题相关性打分并发线程数
-  judge: true              # 是否开启横向大模型裁判全局排序
-  max_judge: 25            # 参与横向裁判的候选数量
-  per_question_cap: 6      # 单个问题最大推荐数量（防止单一议题霸榜）
-  exploration_slots: 2     # 为知识库高品味潜力论文保留的探索槽位
-  
-  # 正文原位批注与基线互联
-  inline_annotations: true # 是否直接在正文进行富文本高亮与批注
-  baselines: true          # 是否提取核心对比基线
-  auto_backlink: true      # 是否向知识库已有笔记追加反向追踪记录
-
-console:
-  enabled: true
-  provider: auto           # 支持 feishu, obsidian, notion, zotero, static
-  node_token: ${oc.env:FEISHU_CONSOLE_NODE_TOKEN,null}
+  mode: "dialogue"               # "dialogue" (双人对谈播客) | "briefing" (单人学术早报)
+  engine: "edge-tts"             # "edge-tts" (默认免费) | "openai" (兼容 OpenAI /v1/audio/speech)
+  host_voice: "zh-CN-XiaoxiaoNeural"
+  guest_voice: "zh-CN-YunxiNeural"
+  speech_rate: "+5%"
+  max_papers: 5
+  output_dir: "data/audio"
+  attach_telegram: true          # 推送 Telegram 原生音频播放器
+  attach_email: true             # 作为邮件 MP3 附件发送
+  attach_feishu: true            # 挂载到飞书日报文档顶部
+  upload_wechat_voice: true      # 生成 60 秒浓缩版并上传微信公众号语音素材库
 ```
 
----
-
-## 🤖 本地 Agent 直连文献库与批注还原 (AI Library Bridge)
-
-本地 Agent（OpenCode / Claude Code / Cursor）无需同步中转文件，可直接通过 `paper-library` CLI 按需读取用户在用的文献库（自动识别配置中的 **飞书知识库**、**Obsidian Vault**、**Zotero** 或 **Notion**），实时还原划词原文、个人批注、所属章节与完整双语段落上下文：
+### 4. 运行测试
 
 ```bash
-# 1. 增量同步/预热在用文献库修订缓存（基于飞书 obj_edit_time / Obsidian mtime 增量跳过未改动正文）
-uv run paper-library sync
-
-# 2. 列出当前文献库中所有包含个人划词批注的精读文献
-uv run paper-library list --annotated-only
-
-# 3. 按标题或 ID 还原某篇文献的全部划词批注与双语上下文（支持 --refresh 强制拉新、--json 输出）
-uv run paper-library get "Oblivion"
-
-# 4. 跨文献混合中英检索（支持中文二元分词 + TF-IDF 字符/词级相似度与批注加权排序）
-uv run paper-library search "不确定性检索 memory gap" --top-k 3
+uv run pytest tests/test_smoke.py
 ```
 
 ---
 
-## 🌐 云端 Agent 与外部 Bot 兼容触发 (Hermes / Grok Bot / Webhook)
+## 四、 开源致谢与参考项目引用 (Acknowledgments & Citations)
 
-除了 GitHub Actions 默认的每日定时巡航（09:00 / 15:00 / 19:00），系统原生兼容各类云端 Agent 与 Bot 平台（如 **Hermes Agent**、**Grok Bot**、**Telegram / Discord Bot**、**Dify / Coze** 或 **curl Webhook**），支持通过标准 GitHub `repository_dispatch` 远程调用，并可动态注入临时研究问题与自定义审阅规则：
+本项目在架构演进、推荐算法、审稿评估、音频播客生成与多渠道排版方面吸收并借鉴了以下优秀开源项目的思想与组件，特此致谢并列出完整引用：
 
-### 1. 标准 HTTP Webhook / cURL 一键触发
-外部 Bot 仅需具备 GitHub Token（拥有 `repo` 权限），即可直接发起调度：
+### 1. 基础架构与文献推荐算法
+- **[`link231rog/feisu-paper-daily`](https://github.com/link231rog/feisu-paper-daily)**（作者：Zixuan Huang / `@link231rog`）  
+  *引用说明*：本项目的核心前身与基础框架，提供了飞书云文档/知识库双向协同、行内三色高亮批注、DeepResearch 多跳追问闭环与多生态文献库底座。
+- **[`TideDra/zotero-arxiv-daily`](https://github.com/TideDra/zotero-arxiv-daily)**  
+  *引用说明*：提供了基于个人 Zotero 文献库语料与 GitHub Actions 定时任务驱动的每日 arXiv 推荐流水线原型设计。
+- **[`karpathy/arxiv-sanity-preserver`](https://github.com/karpathy/arxiv-sanity-preserver) & [`Disham220/arxiv_sanity_x`](https://github.com/Disham220/arxiv_sanity_x)**  
+  *引用说明*：借鉴了其基于正负样本反馈的 **Rocchio 负向原型抑制（Negative Prototype Feedback）** 与 **MMR（Maximal Marginal Relevance）多样性去重** 思想，用于抑制已「移出待选」方向的同质化论文。
+- **[`AutoLLM/ArxivDigest`](https://github.com/AutoLLM/ArxivDigest) & [`dw-dengwei/daily-arXiv-ai-enhanced`](https://github.com/dw-dengwei/daily-arXiv-ai-enhanced)**  
+  *引用说明*：借鉴了多兴趣方向下的 **Max-TopK 多峰锚点相似度匹配（Multi-Peak Anchor Similarity）** 与结构化速览生成思路。
 
-```bash
-curl -X POST \
-  -H "Accept: application/vnd.github.v3+json" \
-  -H "Authorization: Bearer YOUR_GITHUB_TOKEN" \
-  https://api.github.com/repos/YOUR_USERNAME/feisu-paper-daily/dispatches \
-  -d '{
-    "event_type": "paper-daily",
-    "client_payload": {
-      "force_today": true,
-      "questions": ["大模型长程记忆压缩率与检索精度权衡"],
-      "custom_rules": ["优先关注消费级显存开销与长文本退化指标"]
-    }
-  }'
-```
+### 2. 审稿级量化评分与外部冷启动信号
+- **[`SakanaAI/AI-Scientist`](https://github.com/SakanaAI/AI-Scientist) & [OpenReview Review Rubric](https://openreview.net)**  
+  *引用说明*：参考了自动化论文审阅中的多维量化评分量表（Rubric）与置信度校准设计，构建了本项目的 **4D OpenReview Rubric（创新增量 Delta / 实验严谨度 Rigor / 可迁移性 Actionability / 复现友好度 Reproducibility）** 及综合重排机制。
+- **[Hugging Face Daily Papers API (`huggingface/hub-docs`)](https://huggingface.co/papers) & [Papers with Code](https://paperswithcode.com)**  
+  *引用说明*：接入了 Hugging Face 每日论文公开接口以获取社区实时热度（`hf_upvotes`），并结合正文代码链接提取实现新发表预印本的冷启动信号加成。
 
-### 2. Hermes Agent / Grok Bot 工具定义 (OpenAPI Tool Schema)
-可直接作为 Function Calling / Tool 注册给云端自主智能体：
+### 3. MP3 语音合成与双人学术播客生成
+- **[`rany2/edge-tts`](https://github.com/rany2/edge-tts)**  
+  *引用说明*：直接集成为默认的免配置神经网络语音合成底座，调用微软 Edge Neural TTS 接口生成中文多角色对谈与早报音频。
+- **[`souzatharsis/podcastfy`](https://github.com/souzatharsis/podcastfy)**  
+  *引用说明*：参考了其将技术文档转化为 NotebookLM 风格双人对谈播客（Host + Expert 交替拆解）的文稿编排架构与多 TTS 后端路由设计。
+- **[`Azzedde/paper_to_podcast`](https://github.com/Azzedde/paper_to_podcast)**  
+  *引用说明*：借鉴了针对学术论文的「主持人痛点追问 + 学者方法/实验拆解」双角色提示词工程，以及 TTS 合成前的 LaTeX 公式与链接脱敏清洗流程。
+- **[`travisvn/openai-edge-tts`](https://github.com/travisvn/openai-edge-tts)**  
+  *引用说明*：参考了其兼容 OpenAI `/v1/audio/speech` 标准接口的音色映射与请求封装方案，使本项目无缝支持 OpenAI 官方 TTS 与自建兼容语音服务。
 
-```json
-{
-  "name": "trigger_paper_daily",
-  "description": "触发 Feishu Paper Daily 顶会前沿论文自动检索、审阅批判与日报推送",
-  "parameters": {
-    "type": "object",
-    "properties": {
-      "event_type": {
-        "type": "string",
-        "enum": ["paper-daily", "ingest"],
-        "description": "paper-daily 为全流程检索与推荐，ingest 为仅入库已勾选文献"
-      },
-      "force_today": {
-        "type": "boolean",
-        "description": "是否强制重新评估并推送今日日报（跳过当日频控）"
-      },
-      "questions": {
-        "type": "array",
-        "items": { "type": "string" },
-        "description": "本次运行追加关注的核心科研问题列表"
-      },
-      "custom_rules": {
-        "type": "array",
-        "items": { "type": "string" },
-        "description": "本次运行追加的审阅规则与批判重点"
-      }
-    }
-  }
-}
-```
-
-### 3. CLI 快速触发工具
-本地终端或容器内也可直接使用统一命令行触发：
-
-```bash
-# 全流程触发并附加临时关注问题
-uv run paper-library trigger --repo YOUR_USERNAME/feisu-paper-daily --force-today --question "长上下文 KV Cache 压缩"
-
-# 仅执行勾选文献的精读入库
-uv run paper-library trigger --event ingest
-```
+### 4. 微信公众号排版、封面生成与草稿箱发布
+- **[`wechatpy/wechatpy`](https://github.com/wechatpy/wechatpy)**  
+  *引用说明*：集成为微信公众号 API 客户端底座，用于 Access Token 管理、永久封面素材上传、60 秒语音素材（`type=voice`）上传及草稿箱创建（`/cgi-bin/draft/add`）。
+- **[`doocs/md`](https://github.com/doocs/md) & [`caol64/wenyan`](https://github.com/caol64/wenyan)**  
+  *引用说明*：借鉴了微信公众号学术风内联 CSS 样式表（Inline Styles）渲染以及将外部超链接自动转化为文末编号角标（`[1]`, `[2]`）的排版方案。
+- **[`LucianaiB2004/wechat-publisher`](https://github.com/LucianaiB2004/wechat-publisher)**  
+  *引用说明*：参考了其面向微信公众号的多模式推文构建（每日精选合集、单篇深度解读、专题综述）与自动化封面图生成流程。
 
 ---
 
-## 📂 核心模块速查 (Codebase Reference)
+## 五、 许可证 (License)
 
-- `src/zotero_arxiv_daily/executor.py`：全流程总控调度器（检索、过滤、排序、批注、发布）。
-- `src/zotero_arxiv_daily/research.py`：DeepResearch 核心算法（规划、多跳选种、问题综合、跟进推演、横向裁判）。
-- `src/zotero_arxiv_daily/annotator.py`：正文原位高亮与批注提取器，负责精确字符切分与富文本 Run 组装。
-- `src/zotero_arxiv_daily/baseline.py`：基线方法抽取、学术出处检索与个人知识库实体对齐。
-- `src/zotero_arxiv_daily/console.py`：多生态控制台加载器（飞书 / Obsidian / Notion / Zotero）。
-- `src/zotero_arxiv_daily/feishu.py`：飞书 API 深度封装（富文本 Docx 渲染、双向回写、权限校验、精读笔记转换）。
-- `src/zotero_arxiv_daily/llm.py`：大模型负载均衡路由器（多 Key 轮换、故障转移、推理预算控制）。
-- `src/zotero_arxiv_daily/library.py`：多生态文献库（飞书 / Obsidian / Zotero / Notion）直连适配器与精读批注上下文还原 CLI。
-
----
-
-## 📃 License
-
-本项目基于 AGPLv3 协议开源分发。详见 [LICENSE](/LICENSE)。
+本项目遵循 **AGPLv3** 许可证开源。基于 [Zixuan Huang (@link231rog) / feisu-paper-daily](https://github.com/link231rog/feisu-paper-daily) 持续演进构建。

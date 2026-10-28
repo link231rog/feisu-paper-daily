@@ -63,17 +63,45 @@ class LocalReranker(BaseReranker):
 
     @staticmethod
     def _tfidf_similarity(s1: list[str], s2: list[str]) -> np.ndarray:
-        from sklearn.feature_extraction.text import TfidfVectorizer
-
         texts = [(t or "").strip() for t in list(s1) + list(s2)]
         if not any(texts):
             return np.zeros((len(s1), len(s2)))
         try:
+            from sklearn.feature_extraction.text import TfidfVectorizer
+
             vectorizer = TfidfVectorizer(ngram_range=(1, 2), sublinear_tf=True, min_df=1)
             matrix = vectorizer.fit_transform(texts)
+            return (matrix[: len(s1)] @ matrix[len(s1) :].T).toarray()
         except ValueError:  # empty vocabulary
             return np.zeros((len(s1), len(s2)))
-        return (matrix[: len(s1)] @ matrix[len(s1) :].T).toarray()
+        except ImportError:
+            import math
+            import re
+            from collections import Counter
+
+            tokenized: list[list[str]] = []
+            df: Counter[str] = Counter()
+            for t in texts:
+                words = re.findall(r"[a-z0-9\u4e00-\u9fff]{2,}", t.lower())
+                bigrams = [f"{words[i]}_{words[i + 1]}" for i in range(len(words) - 1)]
+                feats = words + bigrams
+                tokenized.append(feats)
+                for term in set(feats):
+                    df[term] += 1
+            if not df:
+                return np.zeros((len(s1), len(s2)))
+            vocab = {term: idx for idx, term in enumerate(df)}
+            n_docs = len(texts)
+            idf = np.array([math.log((1 + n_docs) / (1 + df[term])) + 1.0 for term in vocab], dtype=float)
+            mat = np.zeros((n_docs, len(vocab)), dtype=float)
+            for doc_idx, feats in enumerate(tokenized):
+                counts = Counter(feats)
+                for term, cnt in counts.items():
+                    mat[doc_idx, vocab[term]] = (1.0 + math.log(cnt)) * idf[vocab[term]]
+                norm = np.linalg.norm(mat[doc_idx])
+                if norm > 0:
+                    mat[doc_idx] = mat[doc_idx] / norm
+            return mat[: len(s1)] @ mat[len(s1) :].T
 
     def _encoder(self):
         model_name = self.config.reranker.local.model

@@ -11,15 +11,14 @@ import requests
 from loguru import logger
 from omegaconf import DictConfig, ListConfig
 from openai import OpenAI
-from pyzotero import zotero
 
-from .baseline import enrich_papers_with_baselines
-from .daily_report import build_daily_report
-from .interest import get_interest_corpus, taste_corpus
-from .llm import LLMRouter
-from .paper_store import PaperStore
+from .channels.daily_report import build_daily_report
+from .core.baseline import enrich_papers_with_baselines
+from .core.interest import get_interest_corpus, taste_corpus
+from .core.llm import LLMRouter
+from .core.paper_store import PaperStore
 from .protocol import CorpusPaper, Paper, TrendingItem
-from .research import (
+from .core.research import (
     ResearchState,
     judge_ranking,
     pick_seeds,
@@ -30,7 +29,7 @@ from .research import (
 )
 from .reranker import get_reranker_cls
 from .retriever import get_retriever_cls
-from .textutil import UNTRUSTED_NOTICE, contains_quote, extract_json
+from .core.textutil import UNTRUSTED_NOTICE, contains_quote, extract_json
 from .utils import glob_match, send_email, clean_paper_markdown
 
 
@@ -103,8 +102,6 @@ class Executor:
         self.router = LLMRouter.from_config(config)
         self.research_state = ResearchState(
             str(research_cfg.get("state_path", "data/research_state.json")),
-            converge_min_support=int(research_cfg.get("converge_min_support", 6)),
-            falsify_min_counter=int(research_cfg.get("falsify_min_counter", 3)),
         )
         self.question_briefs: list[dict] = []
         self.suggested_questions: list[str] = []
@@ -112,12 +109,13 @@ class Executor:
         # Academic translator for full text bilingual generation
         trans_cfg = config.get("translation")
         if trans_cfg and trans_cfg.get("enabled", True):
-            from .translator import AcademicTranslator
+            from .core.translator import AcademicTranslator
             self.translator = AcademicTranslator(trans_cfg)
         else:
             self.translator = None
 
     def fetch_zotero_corpus(self) -> list[CorpusPaper]:
+        from pyzotero import zotero
         logger.info("Fetching zotero corpus")
         zot = zotero.Zotero(self.config.zotero.user_id, 'user', self.config.zotero.api_key)
         collections = zot.everything(zot.collections())
@@ -371,6 +369,10 @@ class Executor:
                         "title": p.title,
                         "url": p.url,
                         "taste_score": p.score,
+                        "composite_score": getattr(p, "composite_score", None),
+                        "rubric_scores": getattr(p, "rubric_scores", None),
+                        "code_url": getattr(p, "code_url", None),
+                        "hf_upvotes": getattr(p, "hf_upvotes", None),
                         "qa_scores": p.qa_scores or {},
                         "judge_reason": p.judge_reason,
                         "selected": id(p) in chosen,
@@ -387,7 +389,7 @@ class Executor:
     def fuse_and_select(
         self, papers: list[Paper], questions: list[str], quota: int
     ) -> list[Paper]:
-        """Blends library taste with question fit, then applies judge, diversity and exploration."""
+        """Blends library taste with question fit, then applies judge, MMR diversity and exploration."""
         if not papers or quota <= 0:
             return []
 
@@ -424,6 +426,16 @@ class Executor:
             logger.info(
                 f"Judge re-ranked the top {len(head)} candidates "
                 f"(weight {judge_w:.2f}, dropped {len(head) - len(kept)})"
+            )
+
+        # Apply MMR (Maximal Marginal Relevance) diversity selection so a single sub-topic doesn't flood slots
+        if as_bool(self.research_cfg.get("mmr_diversity", True)) and hasattr(self.reranker, "mmr_select") and len(ordered) > 2:
+            mmr_lambda = float(self.research_cfg.get("mmr_lambda", 0.75))
+            ordered = self.reranker.mmr_select(
+                ordered,
+                k=len(ordered),
+                lambda_param=mmr_lambda,
+                relevance_scores=fused,
             )
 
         cap = int(self.research_cfg.get("per_question_cap", 4))
@@ -496,9 +508,11 @@ class Executor:
         paper: Paper,
         full_text: Optional[str] = None,
         targeted_sections: Optional[dict[str, str]] = None,
+        custom_template: Optional[list[str]] = None,
+        custom_rules: Optional[list[str]] = None,
     ) -> tuple[dict[str, str], list[str]]:
-        """Uses LLM to generate deep reading note sections and tags for an ingested paper,
-        extracting detailed methodology, experimental results, and takeaways from the full text / targeted sections."""
+        """Uses LLM to generate deep reading note sections, detail annotations, and tags for an ingested paper,
+        honoring user-defined custom skills and note templates from the console."""
         context_parts = []
         if paper.abstract:
             context_parts.append(f"Abstract:\n{paper.abstract.strip()[:2000]}")
@@ -514,12 +528,26 @@ class Executor:
             context_parts.append(f"Full Paper Excerpt:\n{full_text.strip()[:8000]}")
 
         context_str = "\n\n".join(context_parts)
+        cs = self.console() if hasattr(self, "console") else {}
+        tpl_items = custom_template if custom_template is not None else (cs.get("note_template") or [])
+        rule_items = custom_rules if custom_rules is not None else (cs.get("custom_rules") or [])
+
+        extra_instructions = ""
+        if rule_items:
+            extra_instructions += "\nCustom Review Skill Rules:\n" + "\n".join(f"- {r}" for r in rule_items) + "\n"
+        if tpl_items:
+            extra_instructions += (
+                "\nCustom Note Template Sections (include these keys or structure in your JSON output as well):\n"
+                + "\n".join(f"- {t}" for t in tpl_items)
+                + "\n"
+            )
 
         prompt = (
-            "You are an expert AI researcher analyzing an academic paper to generate an in-depth reading note for a knowledge base.\n"
+            "You are an expert AI researcher analyzing an academic paper to generate an in-depth reading note and detail annotations for a knowledge base.\n"
             f"Title: {paper.title}\n"
             f"URL: {paper.url}\n"
-            f"Affiliations: {', '.join(paper.affiliations) if paper.affiliations else 'N/A'}\n\n"
+            f"Affiliations: {', '.join(paper.affiliations) if paper.affiliations else 'N/A'}\n"
+            f"{extra_instructions}\n"
             f"{UNTRUSTED_NOTICE}\n"
             f"<untrusted_source>\n{context_str}\n</untrusted_source>\n\n"
             "Format your response as a valid JSON object with the following keys (all prose must be in professional, clear Chinese):\n"
@@ -528,9 +556,10 @@ class Executor:
             "- method: 3-5 sentences detailing the core model architecture, algorithm mechanism, state representation, and formulation based on the method section.\n"
             "- experiments: 3-5 sentences detailing key experimental setup, baseline comparisons, dataset benchmarks, quantitative metrics, and ablation findings based on the experiments section.\n"
             "- takeaways: 2-3 bullet points on practical engineering takeaways, implementation tips, and extensibility.\n"
+            "- inline_annotations: array of 2-4 detail annotations on exact quotes from the paper text/abstract, each as {\"quote\": \"exact substring from source\", \"type\": \"baseline | claim | critique\", \"comment\": \"detailed Chinese critique or note\"}.\n"
             "- venue: accepted conference or journal name and year (e.g. 'ACL 2026', 'NeurIPS 2024', 'ICLR 2025'), or null if preprint / not specified.\n"
             "- tags: array of 2-4 English keyword tags without hash symbol (e.g. [\"Agent\", \"Memory\", \"RL\", \"DecisionModel\", \"Harness\", \"RSI\"]).\n"
-            'Return ONLY JSON: {"core_summary": "...", "motivation": "...", "method": "...", "experiments": "...", "takeaways": "...", "venue": "...", "tags": [...] }'
+            'Return ONLY JSON: {"core_summary": "...", "motivation": "...", "method": "...", "experiments": "...", "takeaways": "...", "inline_annotations": [...], "venue": "...", "tags": [...] }'
         )
 
         try:
@@ -541,7 +570,7 @@ class Executor:
                         {"role": "system", "content": "You are an expert AI researcher. Output valid JSON directly."},
                         {"role": "user", "content": prompt},
                     ],
-                    max_tokens=1500,
+                    max_tokens=1800,
                     timeout=90,
                 )
             elif self.openai_client:
@@ -552,19 +581,38 @@ class Executor:
                         {"role": "user", "content": prompt},
                     ],
                     response_format={"type": "json_object"},
-                    max_tokens=1500,
+                    max_tokens=1800,
                 )
                 raw = resp.choices[0].message.content.strip()
 
             data = extract_json(raw, {}) if raw else {}
             if isinstance(data, dict):
-                sections = {
+                sections: dict[str, str] = {
                     "core_summary": data.get("core_summary", paper.tldr_zh or paper.tldr or paper.abstract[:150]),
                     "motivation": data.get("motivation", ""),
                     "method": data.get("method", ""),
                     "experiments": data.get("experiments", ""),
                     "takeaways": data.get("takeaways", ""),
                 }
+                # Preserve any custom template sections returned by the LLM
+                reserved = {"core_summary", "motivation", "method", "experiments", "takeaways", "venue", "tags", "inline_annotations"}
+                for k, v in data.items():
+                    if k not in reserved and isinstance(v, str) and v.strip():
+                        sections[k] = v.strip()
+
+                raw_anns = data.get("inline_annotations")
+                if isinstance(raw_anns, list) and raw_anns:
+                    paper.inline_annotations = [
+                        {
+                            "source": "S1",
+                            "quote": str(a.get("quote") or a.get("exact_quote") or "").strip(),
+                            "type": str(a.get("type") or "claim").strip(),
+                            "comment": str(a.get("comment") or "").strip(),
+                        }
+                        for a in raw_anns
+                        if isinstance(a, dict) and (a.get("quote") or a.get("exact_quote"))
+                    ]
+
                 if not paper.venue and data.get("venue"):
                     v_str = str(data["venue"]).strip()
                     if v_str.lower() not in ("null", "none"):
@@ -926,27 +974,95 @@ class Executor:
             }
             return sections, ["Agent", "Tool"]
 
+    def _write_note_to_extra_libraries(
+        self,
+        paper: Paper,
+        sections: dict[str, str],
+        tags: list[str],
+        full_text_md: Optional[str] = None,
+    ) -> list[str]:
+        """Writes ingested reading note and detail annotations to configured Obsidian, Notion, and Zotero libraries."""
+        from .library import (
+            write_notion_reading_note,
+            write_obsidian_reading_note,
+            write_zotero_reading_note,
+        )
+
+        urls: list[str] = []
+        obsidian_cfg = self.config.get("obsidian")
+        if obsidian_cfg and as_bool(obsidian_cfg.get("enabled")) and obsidian_cfg.get("vault_path"):
+            obs_url = write_obsidian_reading_note(
+                obsidian_cfg,
+                paper,
+                sections=sections,
+                tags=tags,
+                full_text_markdown=full_text_md,
+                inline_annotations=getattr(paper, "inline_annotations", None),
+            )
+            if obs_url:
+                urls.append(obs_url)
+
+        notion_cfg = self.config.get("notion")
+        if notion_cfg and as_bool(notion_cfg.get("enabled")) and notion_cfg.get("token") and notion_cfg.get("database_id"):
+            not_url = write_notion_reading_note(
+                notion_cfg,
+                paper,
+                sections=sections,
+                tags=tags,
+                full_text_markdown=full_text_md,
+                inline_annotations=getattr(paper, "inline_annotations", None),
+            )
+            if not_url:
+                urls.append(not_url)
+
+        zot_cfg = self.config.get("zotero")
+        if zot_cfg and as_bool(zot_cfg.get("write_notes", False)) and zot_cfg.get("user_id") and zot_cfg.get("api_key"):
+            zot_url = write_zotero_reading_note(
+                zot_cfg,
+                paper,
+                sections=sections,
+                tags=tags,
+                inline_annotations=getattr(paper, "inline_annotations", None),
+            )
+            if zot_url:
+                urls.append(zot_url)
+
+        return urls
+
     def ingest_checked_papers(self) -> list[str]:
-        """Scans Feishu daily reports for user-checked papers and ingests them into the Wiki Knowledge Base."""
+        """Scans Feishu daily reports and Obsidian vault for user-checked papers and ingests them into active libraries."""
         feishu_cfg = self.config.get("feishu")
-        if not feishu_cfg or feishu_cfg.get("dry_run", False):
+        obsidian_cfg = self.config.get("obsidian")
+        feishu_active = bool(feishu_cfg and feishu_cfg.get("app_id") and not as_bool(feishu_cfg.get("dry_run", False)))
+        obsidian_active = bool(obsidian_cfg and as_bool(obsidian_cfg.get("enabled")) and obsidian_cfg.get("vault_path"))
+
+        if not feishu_active and not obsidian_active:
             return []
 
         try:
-            from .feishu import FeishuClient
-            client = FeishuClient(feishu_cfg)
+            client = None
+            checked_items: list[dict[str, Any]] = []
 
-            # First resolve any inline @AI follow-up questions in candidate doc or reading notes
-            try:
-                answered = client.resolve_wiki_ai_queries(self.router)
-                if answered:
-                    logger.info(f"Resolved {answered} inline @AI follow-up queries in Feishu Wiki.")
-            except Exception as ai_exc:
-                logger.debug(f"Notice resolving @AI queries: {ai_exc}")
+            if feishu_active:
+                from .feishu import FeishuClient
 
-            checked_items = client.fetch_checked_papers_from_wiki()
+                client = FeishuClient(feishu_cfg)
+                try:
+                    answered = client.resolve_wiki_ai_queries(self.router)
+                    if answered:
+                        logger.info(f"Resolved {answered} inline @AI follow-up queries in Feishu Wiki.")
+                except Exception as ai_exc:
+                    logger.debug(f"Notice resolving @AI queries: {ai_exc}")
+
+                checked_items.extend(client.fetch_checked_papers_from_wiki() or [])
+
+            if obsidian_active:
+                from .library import fetch_checked_papers_from_obsidian
+
+                checked_items.extend(fetch_checked_papers_from_obsidian(obsidian_cfg))
+
             if not checked_items:
-                logger.info("No checked papers found in Feishu daily reports for ingestion.")
+                logger.info("No checked papers found for ingestion.")
                 return []
 
             ingested_urls = []
@@ -959,11 +1075,14 @@ class Executor:
 
                 if action == "delete":
                     logger.info(f"User marked '{title}' for removal/deletion. Deleting card from document {doc_id} and permanently blacklisting...")
-                    if doc_id and card_block_ids:
+                    if client and doc_id and card_block_ids:
                         client.delete_document_blocks(doc_id, card_block_ids)
-                    self.paper_store.mark_discarded(title, metadata={"url": url, "title": title})
+                    self.paper_store.mark_discarded(
+                        title,
+                        metadata={"url": url, "title": title, "abstract": item.get("tldr", "")},
+                    )
                     if url:
-                        self.paper_store.mark_discarded(url)
+                        self.paper_store.mark_discarded(url, metadata={"title": title, "abstract": item.get("tldr", "")})
                     continue
 
                 if not title:
@@ -1007,67 +1126,73 @@ class Executor:
                     raw_text = None
                     targeted_sections = None
                     if url:
-                        # 1. Fetch targeted method/experiments sections if arXiv
                         arxiv_match = re.search(r"(\d{4}\.\d{4,5})", url)
                         if arxiv_match:
                             from .annotator import fetch_ar5iv_targeted_sections
 
                             targeted_sections = fetch_ar5iv_targeted_sections(arxiv_match.group(1))
-                        # 2. Fetch full paper text
                         raw_text = self.fetch_paper_full_text(url)
 
-                    # 3. Deep analysis of method & experiments from full text / targeted sections
                     sections, tags = self.generate_reading_note_sections(
                         paper, full_text=raw_text, targeted_sections=targeted_sections
                     )
                     full_text_md = self.translate_full_text_to_bilingual(raw_text) if raw_text else None
 
-                note_url = client.create_reading_note(paper, sections=sections, full_text_markdown=full_text_md)
-                if is_github_or_tool:
-                    client.append_to_engineering_index(
+                note_url = ""
+                if client is not None:
+                    note_url = client.create_reading_note(paper, sections=sections, full_text_markdown=full_text_md)
+                    if is_github_or_tool:
+                        client.append_to_engineering_index(
+                            paper,
+                            note_url=note_url,
+                            tags=tags,
+                            core_summary=sections.get("core_summary", "")
+                        )
+                    client.append_to_master_index(
                         paper,
                         note_url=note_url,
                         tags=tags,
                         core_summary=sections.get("core_summary", "")
                     )
-                client.append_to_master_index(
-                    paper,
-                    note_url=note_url,
-                    tags=tags,
-                    core_summary=sections.get("core_summary", "")
-                )
-                client.append_to_tag_graph(
-                    paper,
-                    note_url=note_url,
-                    tags=tags,
-                    core_summary=sections.get("core_summary", "")
-                )
+                    client.append_to_tag_graph(
+                        paper,
+                        note_url=note_url,
+                        tags=tags,
+                        core_summary=sections.get("core_summary", "")
+                    )
 
-                if feishu_cfg.get("create_tasks", True):
-                    try:
-                        task_res = client.create_reading_task(
-                            paper=paper,
-                            note_url=note_url,
-                            tags=tags,
-                        )
-                        task_guid = task_res.get("guid") or task_res.get("task", {}).get("guid")
-                        logger.info(f"Created Lark Task for '{title}': guid={task_guid}")
-                    except Exception as t_exc:
-                        logger.warning(f"Notice: creating Lark task for '{title}': {t_exc}")
+                    if feishu_cfg.get("create_tasks", True):
+                        try:
+                            task_res = client.create_reading_task(
+                                paper=paper,
+                                note_url=note_url,
+                                tags=tags,
+                            )
+                            task_guid = task_res.get("guid") or task_res.get("task", {}).get("guid")
+                            logger.info(f"Created Lark Task for '{title}': guid={task_guid}")
+                        except Exception as t_exc:
+                            logger.warning(f"Notice: creating Lark task for '{title}': {t_exc}")
+
+                extra_urls = self._write_note_to_extra_libraries(
+                    paper, sections=sections, tags=tags, full_text_md=full_text_md
+                )
+                primary_url = note_url or (extra_urls[0] if extra_urls else url)
 
                 self.paper_store.mark_ingested(
                     paper,
                     {
                         "title": title,
                         "url": url,
-                        "wiki_url": note_url,
+                        "wiki_url": primary_url,
+                        "extra_urls": extra_urls,
                         "tags": tags,
                     }
                 )
-                if doc_id and card_block_ids:
+                if client and doc_id and card_block_ids:
                     client.delete_document_blocks(doc_id, card_block_ids)
-                ingested_urls.append(note_url)
-                logger.info(f"Successfully ingested '{title}' into Wiki Knowledge Base: {note_url}")
+                if primary_url:
+                    ingested_urls.append(primary_url)
+                logger.info(f"Successfully ingested '{title}' into knowledge library: {primary_url}")
 
             return ingested_urls
         except Exception as exc:
@@ -1133,8 +1258,6 @@ class Executor:
                                         year_match = re.search(r"202\d", comment_node)
                                         venue = f"{v} {year_match.group(0)}" if year_match else v
                                         break
-                            if "Ashish Rana" in authors or "2604.00131" in clean_url:
-                                affiliations = ["NEC Laboratories Europe", "GWDG"]
                 except Exception as exc:
                     logger.warning(f"Failed to query arXiv API for {arxiv_id}: {exc}")
 
@@ -1514,6 +1637,10 @@ class Executor:
                     f"Planned {len(plan['s2_queries'])} S2 queries "
                     f"({pos_cnt} affirmative, {neg_cnt} adversarial counter-queries)"
                 )
+                if "openreview" in self.retrievers and not self.retrievers["openreview"].retriever_config.get("queries"):
+                    self.retrievers["openreview"].retriever_config.queries = plan["s2_queries"][:6]
+                if "dblp" in self.retrievers and not self.retrievers["dblp"].retriever_config.get("queries"):
+                    self.retrievers["dblp"].retriever_config.queries = plan["s2_queries"][:6]
             if plan.get("arxiv_categories") and "arxiv" in self.retrievers:
                 self.retrievers["arxiv"].retriever_config.category = plan["arxiv_categories"]
                 logger.info(f"Planned arXiv categories: {', '.join(plan['arxiv_categories'])}")
@@ -1545,6 +1672,12 @@ class Executor:
         new_papers = self.paper_store.filter_already_pushed(deduped_papers, allow_same_day=force_today)
         logger.info(f"{len(new_papers)} new unpushed papers ready for quality filtering")
 
+        # Enrich arXiv candidates with Hugging Face Daily Papers cold-start upvotes & open-source links
+        hf_cfg = (self.config.get("source") or {}).get("huggingface") or {}
+        if new_papers and as_bool(hf_cfg.get("enrich_daily_signals", True)):
+            from .retriever.huggingface_retriever import enrich_with_hf_daily_signals
+            enrich_with_hf_daily_signals(new_papers, limit=int(hf_cfg.get("limit", 100) or 100))
+
         # Academic Quality Gate (filter out obscure preprints without top affiliation or recognized venue)
         quality_papers = self.filter_quality_papers(new_papers, console_settings=console_settings)
         logger.info(f"{len(quality_papers)} / {len(new_papers)} papers passed academic quality gate")
@@ -1562,6 +1695,12 @@ class Executor:
                 + (console_settings.get("required_anchors") or [])
             )
         ) or None
+        negative_texts = list(
+            dict.fromkeys(
+                self.paper_store.recent_discarded_texts(200)
+                + (console_settings.get("excluded_keywords") or [])
+            )
+        ) or None
 
         # Multi-hop retrieval: chase citations of the most promising candidates
         if self.research_cfg.get("enabled", True) and self.research_cfg.get("multi_hop", True):
@@ -1573,6 +1712,7 @@ class Executor:
                     taste_corpus(corpus),
                     priority_institutions=priority_institutions,
                     topic_anchors=topic_anchors,
+                    negative_texts=negative_texts,
                 )
                 if quality_papers
                 else []
@@ -1615,6 +1755,7 @@ class Executor:
                 taste_corpus(corpus),
                 priority_institutions=priority_institutions,
                 topic_anchors=topic_anchors,
+                negative_texts=negative_texts,
             )
 
             questions = console_settings.get("questions", [])
@@ -1640,12 +1781,12 @@ class Executor:
                 }
             )
             logger.info("Funnel: " + " -> ".join(f"{k} {v}" for k, v in funnel.items()))
-            self.write_trace(ranked, reranked_papers, funnel)
 
             # Execute Critical-Paper-Digest (Default Built-in Skill)
-            from .digest import run_critical_paper_digest
+            from .core.digest import rerank_by_composite_score, run_critical_paper_digest
 
             custom_rules = console_settings.get("custom_rules", [])
+            note_template = console_settings.get("note_template", [])
             library_baselines = [c.title for c in (corpus or [])[:30]]
             digest_workers = max(1, int(self.config.executor.get("tldr_workers", 4)))
 
@@ -1660,6 +1801,7 @@ class Executor:
                     questions=questions,
                     library_baselines=library_baselines,
                     user_custom_rules=custom_rules,
+                    user_note_template=note_template,
                     is_tier1=is_tier1,
                 )
                 # 2. Extract conference venue and affiliations if not populated
@@ -1679,6 +1821,15 @@ class Executor:
 
             with ThreadPoolExecutor(max_workers=digest_workers) as pool:
                 list(pool.map(process_paper_digest, reranked_papers))
+
+            # Calibrate daily ranking & tier assignment using 4D rubric composite scores
+            if as_bool(self.research_cfg.get("rerank_by_rubric", True)):
+                deep_quota = int(self.research_cfg.get("deep_read_quota", 3))
+                reranked_papers = rerank_by_composite_score(reranked_papers, deep_read_quota=deep_quota)
+                deep_read_papers = [p for p in reranked_papers if getattr(p, "recommendation_tier", "deep_read") == "deep_read"]
+                quick_radar_papers = [p for p in reranked_papers if getattr(p, "recommendation_tier", None) == "quick_radar"]
+
+            self.write_trace(ranked, reranked_papers, funnel)
 
             # Extract baseline library links for deep-read papers
             if deep_read_papers and bool(self.research_cfg.get("baselines", True)):
@@ -1779,6 +1930,53 @@ class Executor:
         attempted_channels = 0
         today_str = datetime.now().date().isoformat()
 
+        # Optional MP3 Audio Podcast / Morning Briefing Generation
+        audio_bundle = None
+        audio_cfg = self.config.get("audio") or {}
+        if as_bool(audio_cfg.get("enabled", False)) and (reranked_papers or trending_items):
+            try:
+                from .channels.audio import generate_daily_audio_bundle
+
+                audio_bundle = generate_daily_audio_bundle(
+                    reranked_papers,
+                    self.config,
+                    question_briefs=self.question_briefs,
+                    trending_items=trending_items,
+                    router=self.router,
+                )
+            except Exception as exc:
+                logger.warning(f"Optional audio bundle generation failed: {exc}")
+
+        feishu_audio_path = (
+            str(audio_bundle.mp3_path)
+            if audio_bundle and as_bool(audio_cfg.get("attach_feishu", True))
+            else None
+        )
+        email_attachments = (
+            [str(audio_bundle.mp3_path)]
+            if audio_bundle and as_bool(audio_cfg.get("attach_email", True))
+            else None
+        )
+        wechat_voice_path = (
+            str(audio_bundle.wechat_mp3_path)
+            if audio_bundle and audio_bundle.wechat_mp3_path and as_bool(audio_cfg.get("upload_wechat_voice", True))
+            else None
+        )
+        telegram_audio_path = (
+            str(audio_bundle.mp3_path)
+            if audio_bundle and as_bool(audio_cfg.get("attach_telegram", True))
+            else None
+        )
+
+        # Write suggested follow-up questions back to whichever console provider (Feishu/Obsidian/Notion) is active
+        if self.suggested_questions:
+            try:
+                from .console import append_suggested_questions_to_console
+
+                append_suggested_questions_to_console(self.config, self.suggested_questions)
+            except Exception as exc:
+                logger.warning(f"Could not write suggested questions to console: {exc}")
+
         # 1. Feishu Delivery (if configured)
         feishu_cfg = self.config.get("feishu")
         is_feishu_dry_run = feishu_cfg.get("dry_run", False) if feishu_cfg else False
@@ -1796,14 +1994,8 @@ class Executor:
                     trending_items=trending_items,
                     question_briefs=self.question_briefs,
                     corpus=corpus,
+                    audio_path=feishu_audio_path,
                 )
-                if self.suggested_questions and self.config.get("console", {}).get("node_token"):
-                    try:
-                        client.append_suggested_questions(
-                            str(self.config.console.node_token), self.suggested_questions
-                        )
-                    except Exception as exc:
-                        logger.warning(f"Could not write suggested questions to console: {exc}")
                 logger.info(f"Feishu daily report updated successfully: {doc_url}")
                 self.paper_store.mark_channel_delivered("feishu", today_str)
                 delivered = True
@@ -1825,7 +2017,7 @@ class Executor:
                 else:
                     report = build_daily_report(reranked_papers, self.question_briefs, trending_items=trending_items)
                     logger.info(f"Sending daily report email to {receiver_val} via {email_cfg.get('smtp_server', 'smtp.qq.com')}...")
-                    send_email(self.config, report.html, report.title)
+                    send_email(self.config, report.html, report.title, attachments=email_attachments)
                     logger.info(f"Daily report email sent successfully to {receiver_val}")
                     self.paper_store.mark_channel_delivered("email", today_str)
                     delivered = True
@@ -1849,17 +2041,53 @@ class Executor:
                     logger.info(f"WeChat daily report draft already created today ({today_str}); skipping.")
                     delivered = True
                 else:
-                    from .wechat import create_draft
+                    from .channels.wechat import publish_wechat_drafts
 
-                    report = build_daily_report(
-                        reranked_papers, self.question_briefs, max_chars=19000, trending_items=trending_items
+                    media_id = publish_wechat_drafts(
+                        wechat_cfg,
+                        reranked_papers,
+                        question_briefs=self.question_briefs,
+                        trending_items=trending_items,
+                        router=self.router,
+                        voice_mp3_path=wechat_voice_path,
                     )
-                    create_draft(wechat_cfg, report)
-                    logger.info("WeChat daily report draft created successfully")
+                    logger.info(f"WeChat daily report draft(s) created successfully (media_id={media_id})")
                     self.paper_store.mark_channel_delivered("wechat", today_str)
                     delivered = True
             except Exception as exc:
                 logger.error(f"Failed to create WeChat daily report draft: {exc}")
+
+        # 4. Independent Telegram Bot delivery
+        telegram_cfg = self.config.get("telegram")
+        telegram_enabled = as_bool(telegram_cfg.get("enabled", False)) if telegram_cfg else False
+        if (
+            telegram_cfg
+            and telegram_enabled
+            and telegram_cfg.get("bot_token")
+            and telegram_cfg.get("chat_id")
+        ):
+            attempted_channels += 1
+            try:
+                if self.paper_store.is_channel_delivered("telegram", today_str) and not force_today and not reranked_papers:
+                    logger.info(f"Telegram daily report already sent today ({today_str}); skipping.")
+                    delivered = True
+                else:
+                    from .telegram import send_telegram_daily_report
+
+                    send_telegram_daily_report(
+                        telegram_cfg,
+                        reranked_papers,
+                        question_briefs=self.question_briefs,
+                        trending_items=trending_items,
+                        audio_path=telegram_audio_path,
+                        audio_title=audio_bundle.title if audio_bundle else None,
+                        audio_duration=audio_bundle.duration_seconds if audio_bundle else None,
+                    )
+                    logger.info("Telegram daily report sent successfully")
+                    self.paper_store.mark_channel_delivered("telegram", today_str)
+                    delivered = True
+            except Exception as exc:
+                logger.error(f"Failed to send Telegram daily report: {exc}")
 
         if attempted_channels and not delivered:
             # Let the scheduled run turn red instead of silently losing the report

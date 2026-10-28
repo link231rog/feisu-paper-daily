@@ -24,14 +24,12 @@ import {
 
 const SECTIONS = [
   { id: 'hero', label: '概览' },
-  { id: 'triggers', label: '接入与触发' },
-  { id: 'console', label: '控制台与规则' },
-  { id: 'sources', label: '信源与打分' },
-  { id: 'digest', label: '审稿级评价' },
-  { id: 'tracking', label: '问题追踪' },
-  { id: 'library', label: '文献库直连' },
+  { id: 'console', label: '控制台与规则定义' },
+  { id: 'recommend', label: '文献推荐系统' },
+  { id: 'digest-tracking', label: '深度精读与问题追踪' },
+  { id: 'library', label: '文献库与 Agent 直连' },
   { id: 'delivery', label: '日报推送' },
-  { id: 'deploy', label: '部署步骤' },
+  { id: 'deploy', label: '接入触发与部署' },
 ] as const;
 
 function BrandIcon({ name }: { name: string }) {
@@ -159,7 +157,7 @@ const sectionReveal = {
 };
 
 export default function App() {
-  const [copied, setCopied] = useState(false);
+  const [copiedCmd, setCopiedCmd] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string>('hero');
 
   const { scrollYProgress } = useScroll();
@@ -169,6 +167,7 @@ export default function App() {
     restDelta: 0.001,
   });
 
+  const initCommand = `uv run paper-daily init`;
   const cliCommand = `uv run paper-library search "memory gap"`;
 
   useEffect(() => {
@@ -195,10 +194,10 @@ export default function App() {
     }
   };
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(cliCommand);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1800);
+  const handleCopy = (cmd: string, key: string) => {
+    navigator.clipboard.writeText(cmd);
+    setCopiedCmd(key);
+    setTimeout(() => setCopiedCmd(null), 1800);
   };
 
   return (
@@ -248,7 +247,7 @@ export default function App() {
 
       {/* Main Layout with Sticky Side TOC */}
       <div className="max-w-7xl mx-auto px-6 lg:grid lg:grid-cols-[240px_1fr] lg:border-x lg:border-neutral-800">
-        {/* Sticky Side TOC matching image-1.png indicator style */}
+        {/* Sticky Side TOC */}
         <aside className="hidden lg:block border-r border-neutral-800 py-12 pr-6">
           <div className="sticky top-28">
             <nav className="flex flex-col gap-4 py-2">
@@ -301,7 +300,7 @@ export default function App() {
 
         {/* Content Column */}
         <main className="divide-y divide-neutral-800">
-          {/* Hero */}
+          {/* 00 · 概览 */}
           <motion.section
             id="hero"
             initial="hidden"
@@ -318,15 +317,15 @@ export default function App() {
               Paper Daily
             </h1>
             <p className="mt-5 text-xl md:text-2xl text-neutral-300 font-normal">
-              自动化文献审稿、问题追踪与知识库直连
+              自动化文献推荐、问题追踪与文献库沉淀
             </p>
 
             <div className="mt-8 flex flex-wrap gap-2.5">
               {[
                 'GitHub Actions 免服运行',
-                '审稿级精读',
-                '多知识库同步',
-                'Agent 批注还原',
+                '多维度文献推荐',
+                '问题追踪与精读',
+                '文献库与 Agent 直连',
               ].map((tag) => (
                 <span
                   key={tag}
@@ -358,45 +357,7 @@ export default function App() {
             </div>
           </motion.section>
 
-          {/* 接入与触发 */}
-          <motion.section
-            id="triggers"
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, amount: 0.2 }}
-            variants={sectionReveal}
-            className="py-16 lg:px-10 scroll-mt-16"
-          >
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-              <h2 className="text-2xl md:text-3xl font-bold tracking-tight">接入与触发</h2>
-              <div className="flex flex-wrap gap-2">
-                {['GitHub Actions', 'OpenClaw', 'Hermes', 'Grok Bot', 'Webhook'].map((item) => (
-                  <PlatformPill key={item} name={item} />
-                ))}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 border-t border-l border-neutral-800">
-              <GridCard
-                title="GitHub Actions"
-                desc="Fork 仓库填好密钥即可定时运行，无需服务器。"
-              />
-              <GridCard
-                title="OpenClaw"
-                desc="通过本地 CLI 或 Tool 协议直接检索文献与批注。"
-              />
-              <GridCard
-                title="Hermes"
-                desc="支持云端 Agent 定时或按事件触发。"
-              />
-              <GridCard
-                title="Grok Bot / Webhook"
-                desc="单条 POST 请求触发运行，动态注入临时问题与过滤规则。"
-              />
-            </div>
-          </motion.section>
-
-          {/* 控制台与规则配置 */}
+          {/* 01 · 控制台与规则定义 */}
           <motion.section
             id="console"
             initial="hidden"
@@ -406,9 +367,9 @@ export default function App() {
             className="py-16 lg:px-10 scroll-mt-16"
           >
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-              <h2 className="text-2xl md:text-3xl font-bold tracking-tight">控制台与规则配置</h2>
+              <h2 className="text-2xl md:text-3xl font-bold tracking-tight">控制台与规则定义</h2>
               <div className="flex flex-wrap gap-2">
-                {['飞书控制台', 'Obsidian', 'Notion', '自定义 Skill', '范例模板'].map((item) => (
+                {['飞书', 'Obsidian', 'Notion', '自定义 Skill', '范例模板'].map((item) => (
                   <PlatformPill key={item} name={item} />
                 ))}
               </div>
@@ -416,32 +377,19 @@ export default function App() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 border-t border-l border-neutral-800">
               <GridCard
-                title="文档即配置中心"
-                desc="在飞书、Obsidian 或 Notion 文档中直接维护纯文本规则，无需修改代码或环境变量。"
+                title="轻量化配置"
+                desc="直接在日常文档中维护关注标签、研究问题与过滤词，无需改代码。"
               />
               <GridCard
-                title="每次抓取自动热更新"
-                desc="编辑文档即刻生效，GitHub Actions 或云端 Agent 每次执行前自动同步最新规则。"
-              />
-              <GridCard
-                title="自定义 Skill 导入"
-                desc="支持挂载个性化审稿 Prompt 与分析 Skill，覆盖或叠加系统默认评价逻辑。"
-              />
-              <GridCard
-                title="Example 文献模板导入"
-                desc="可指定自定义 Example 笔记模板，按个人偏好结构生成章节总结、架构图谱与批注区。"
-              />
-              <GridCard
-                title="多维细粒度规则过滤"
-                desc="自由增删关注标签、核心研究问题、必含核心锚点、屏蔽关键词与优先机构实验室。"
-                className="md:col-span-2"
+                title="自定义模板"
+                desc="支持导入个人审稿 Skill 与笔记模板，按习惯生成总结。"
               />
             </div>
           </motion.section>
 
-          {/* 信源与打分 */}
+          {/* 02 · 文献推荐系统 */}
           <motion.section
-            id="sources"
+            id="recommend"
             initial="hidden"
             whileInView="visible"
             viewport={{ once: true, amount: 0.2 }}
@@ -449,7 +397,7 @@ export default function App() {
             className="py-16 lg:px-10 scroll-mt-16"
           >
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-              <h2 className="text-2xl md:text-3xl font-bold tracking-tight">信源与打分</h2>
+              <h2 className="text-2xl md:text-3xl font-bold tracking-tight">文献推荐系统</h2>
               <div className="flex flex-wrap gap-2">
                 {['arXiv', 'HuggingFace', 'OpenReview', 'Semantic Scholar', 'GitHub', 'DBLP'].map(
                   (item) => (
@@ -459,94 +407,56 @@ export default function App() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 border-t border-l border-neutral-800">
-              <GridCard
-                title="十源并发抓取"
-                desc="arXiv、Semantic Scholar、OpenReview、HuggingFace、DBLP、Crossref、bioRxiv、medRxiv、GitHub Trending、AI News。"
-              />
-              <GridCard
-                title="重排与机构加权"
-                desc="TF-IDF 与 Embedding 混合初筛，叠加顶会与核心实验室权重。"
-              />
-              <GridCard
-                title="硬性门槛截断"
-                desc="实验扎实度 1–5 分制，QA < 6 直接剔除，不凑数。"
-              />
-              <GridCard
-                title="双层日报分层"
-                desc="高分论文进「精读必看」，其余进「速览雷达」。"
-              />
-            </div>
-          </motion.section>
-
-          {/* 审稿级 LLM 评价 */}
-          <motion.section
-            id="digest"
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, amount: 0.2 }}
-            variants={sectionReveal}
-            className="py-16 lg:px-10 scroll-mt-16"
-          >
-            <h2 className="text-2xl md:text-3xl font-bold tracking-tight mb-8">审稿级 LLM 评价</h2>
-
             <div className="grid grid-cols-1 md:grid-cols-3 border-t border-l border-neutral-800">
               <GridCard
-                title="核心增量"
-                desc="一句话对齐基线，指出本文唯一改动变量。"
+                title="多信源抓取"
+                desc="支持 arXiv、HuggingFace、OpenReview、Semantic Scholar 等主流信源。"
               />
               <GridCard
-                title="方法与公式"
-                desc="单行模块链路、核心 LaTeX 公式、符号释义。"
+                title="相关性打分"
+                desc="结合关注标签、文献库偏好与追踪问题进行关联打分。"
               />
               <GridCard
-                title="实验与代价"
-                desc="核对正文表格，列出真实涨点、算力开销与失效边界。"
-              />
-              <GridCard
-                title="三维评级折算"
-                desc="按证据支撑、可复用度、基线公平度代码算分，自动标记存疑论文。"
-                className="md:col-span-2"
-              />
-              <GridCard
-                title="摘要原位批注"
-                desc="在英文摘要中直接高亮基线、核心发现与审阅批判。"
+                title="质量过滤"
+                desc="剔除低分论文，按评分分为「精读必看」与「速览雷达」。"
               />
             </div>
           </motion.section>
 
-          {/* 问题追踪 */}
+          {/* 03 · 深度精读与问题追踪 */}
           <motion.section
-            id="tracking"
+            id="digest-tracking"
             initial="hidden"
             whileInView="visible"
             viewport={{ once: true, amount: 0.2 }}
             variants={sectionReveal}
             className="py-16 lg:px-10 scroll-mt-16"
           >
-            <h2 className="text-2xl md:text-3xl font-bold tracking-tight mb-8">问题追踪</h2>
+            <h2 className="text-2xl md:text-3xl font-bold tracking-tight mb-8">
+              深度精读与问题追踪
+            </h2>
 
             <div className="grid grid-cols-1 md:grid-cols-2 border-t border-l border-neutral-800">
               <GridCard
-                title="问题级证据链综合"
-                desc="针对每个追踪问题跨文献梳理核心证据链、量化指标增量与当前研究盲区。"
+                title="方法与公式"
+                desc="一句话对齐基线指出核心变量，提炼模块链路与关键公式。"
               />
               <GridCard
-                title="正反双向检索"
-                desc="每个问题同步检索支持证据与反例。"
+                title="实验核查"
+                desc="核对正文图表，列出真实涨点、算力开销与失效边界。"
               />
               <GridCard
-                title="假设四态流转"
-                desc="按累计证据自动更新「探索期 · 争议交锋 · 已收敛 · 已证伪」。"
+                title="问题追踪"
+                desc="针对关注问题跨文献梳理支持证据、反例与研究盲区。"
               />
               <GridCard
-                title="子问题派生"
-                desc="旧问题收敛或出现证据缺口时，自动生成追问。"
+                title="子问题追问"
+                desc="当旧问题收敛或出现证据缺口时，自动生成后续追问。"
               />
             </div>
           </motion.section>
 
-          {/* 文献库与 Agent 直连 */}
+          {/* 04 · 文献库与 Agent 直连 */}
           <motion.section
             id="library"
             initial="hidden"
@@ -568,21 +478,21 @@ export default function App() {
 
             <div className="grid grid-cols-1 md:grid-cols-3 border-t border-l border-neutral-800">
               <GridCard
-                title="四端原生读写"
-                desc="支持飞书知识库、Obsidian、Notion、Zotero 双向同步。"
+                title="原生文献库"
+                desc="直接基于所选平台（飞书、Obsidian、Notion 或 Zotero）构建个人文献库。"
               />
               <GridCard
-                title="勾选入库精读"
-                desc="日报中勾选论文，后台抓取正文方法与实验，生成双语笔记与双链索引。"
+                title="入库与批注"
+                desc="勾选论文沉淀入库，自动抓取正文生成精读笔记并进行细节批注。"
               />
               <GridCard
-                title="个人批注还原"
-                desc="paper-library CLI 直读四端高亮与个人批注，自动附上所属章节与中英段落，供本地 Agent 调用。"
+                title="Agent 直连"
+                desc="paper-library CLI 直接读取文献库中的高亮与批注，供本地 Agent 调用。"
               />
             </div>
           </motion.section>
 
-          {/* 日报推送渠道 */}
+          {/* 05 · 日报推送 */}
           <motion.section
             id="delivery"
             initial="hidden"
@@ -592,7 +502,7 @@ export default function App() {
             className="py-16 lg:px-10 scroll-mt-16"
           >
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-              <h2 className="text-2xl md:text-3xl font-bold tracking-tight">日报推送渠道</h2>
+              <h2 className="text-2xl md:text-3xl font-bold tracking-tight">日报推送</h2>
               <div className="flex flex-wrap gap-2">
                 {['飞书', 'Email', '微信公众号', 'Telegram'].map((item) => (
                   <PlatformPill key={item} name={item} />
@@ -601,14 +511,14 @@ export default function App() {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 border-t border-l border-neutral-800">
-              <GridCard title="飞书" desc="生成知识库云文档并推送群卡片。" />
-              <GridCard title="邮件" desc="SMTP SSL 推送 HTML 日报。" />
+              <GridCard title="飞书" desc="生成飞书云文档日报与阅读待办。" />
+              <GridCard title="邮件" desc="SMTP 推送 HTML 日报。" />
               <GridCard title="微信公众号" desc="自动排版并写入草稿箱。" />
               <GridCard title="Telegram" desc="Bot 实时推送摘要与评分。" />
             </div>
           </motion.section>
 
-          {/* 部署步骤 */}
+          {/* 06 · 接入触发与部署 */}
           <motion.section
             id="deploy"
             initial="hidden"
@@ -617,34 +527,86 @@ export default function App() {
             variants={sectionReveal}
             className="py-16 lg:px-10 scroll-mt-16"
           >
-            <h2 className="text-2xl md:text-3xl font-bold tracking-tight mb-8">部署步骤</h2>
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+              <h2 className="text-2xl md:text-3xl font-bold tracking-tight">接入触发与部署</h2>
+              <div className="flex flex-wrap gap-2">
+                {['GitHub Actions', 'OpenClaw', 'Hermes', 'Grok Bot', 'Webhook'].map((item) => (
+                  <PlatformPill key={item} name={item} />
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 border-t border-l border-neutral-800 mb-8">
+              <GridCard
+                title="GitHub Actions"
+                desc="Fork 仓库填好密钥即可定时运行，无需服务器。"
+              />
+              <GridCard
+                title="Agent 检索"
+                desc="支持 OpenClaw、Hermes 等通过 CLI 或 Tool 协议直接调用。"
+              />
+              <GridCard
+                title="Webhook 触发"
+                desc="单条请求触发运行，动态传入临时问题与过滤规则。"
+              />
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 border-t border-l border-neutral-800 mb-8">
               <div className="p-6 border-r border-b border-neutral-800 flex items-center gap-3">
                 <GitPullRequest className="w-5 h-5 text-white shrink-0" />
-                <span className="text-lg font-semibold">Fork 仓库</span>
+                <div>
+                  <div className="text-lg font-semibold">Fork 仓库</div>
+                  <div className="text-sm text-neutral-400 mt-1">克隆或 Fork 项目仓库</div>
+                </div>
               </div>
               <div className="p-6 border-r border-b border-neutral-800 flex items-center gap-3">
                 <ShieldCheck className="w-5 h-5 text-white shrink-0" />
-                <span className="text-lg font-semibold">配置密钥</span>
+                <div>
+                  <div className="text-lg font-semibold">Agent / CLI 引导初始化</div>
+                  <div className="text-sm text-neutral-400 mt-1">多选勾选信源与渠道，按需填入对应 Key</div>
+                </div>
               </div>
               <div className="p-6 border-r border-b border-neutral-800 flex items-center gap-3">
                 <Send className="w-5 h-5 text-white shrink-0" />
-                <span className="text-lg font-semibold">连接文献库与推送端</span>
+                <div>
+                  <div className="text-lg font-semibold">生成配置与控制台</div>
+                  <div className="text-sm text-neutral-400 mt-1">自动写入配置、密钥与初始控制台文档</div>
+                </div>
               </div>
             </div>
 
-            <div className="border border-neutral-800 bg-neutral-950 p-5 flex items-center justify-between gap-4">
-              <code className="text-base font-mono text-white overflow-x-auto">
-                $ {cliCommand}
-              </code>
-              <button
-                onClick={handleCopy}
-                className="inline-flex items-center gap-2 px-4 py-2 border border-neutral-700 bg-black text-white text-sm font-medium hover:border-white transition-colors shrink-0 cursor-pointer"
-              >
-                {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                <span>{copied ? '已复制' : '复制'}</span>
-              </button>
+            <div className="grid grid-cols-1 md:grid-cols-2 border-t border-l border-neutral-800">
+              <div className="border-r border-b border-neutral-800 bg-neutral-950 p-5 flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="text-xs text-neutral-400 mb-1">交互式多选引导与渠道密钥初始化</div>
+                  <code className="text-base font-mono text-white block overflow-x-auto">
+                    $ {initCommand}
+                  </code>
+                </div>
+                <button
+                  onClick={() => handleCopy(initCommand, 'init')}
+                  className="inline-flex items-center gap-2 px-4 py-2 border border-neutral-700 bg-black text-white text-sm font-medium hover:border-white transition-colors shrink-0 cursor-pointer"
+                >
+                  {copiedCmd === 'init' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  <span>{copiedCmd === 'init' ? '已复制' : '复制'}</span>
+                </button>
+              </div>
+
+              <div className="border-r border-b border-neutral-800 bg-neutral-950 p-5 flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="text-xs text-neutral-400 mb-1">Agent 直连检索文献库与个人批注</div>
+                  <code className="text-base font-mono text-white block overflow-x-auto">
+                    $ {cliCommand}
+                  </code>
+                </div>
+                <button
+                  onClick={() => handleCopy(cliCommand, 'search')}
+                  className="inline-flex items-center gap-2 px-4 py-2 border border-neutral-700 bg-black text-white text-sm font-medium hover:border-white transition-colors shrink-0 cursor-pointer"
+                >
+                  {copiedCmd === 'search' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  <span>{copiedCmd === 'search' ? '已复制' : '复制'}</span>
+                </button>
+              </div>
             </div>
           </motion.section>
 

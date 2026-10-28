@@ -42,7 +42,14 @@ wechat:
   thumb_media_id: ${oc.env:WECHAT_THUMB_MEDIA_ID,null}
   cover_path: ${oc.env:WECHAT_COVER_PATH,null}
   author: ${oc.env:WECHAT_AUTHOR,Feishu Paper Daily}
+  article_modes: ["digest", "deep_read", "topic_review"]
   content_source_url: ${oc.env:WECHAT_CONTENT_SOURCE_URL,null}
+
+telegram:
+  enabled: ${oc.env:TELEGRAM_ENABLED,false}
+  bot_token: ${oc.env:TELEGRAM_BOT_TOKEN,null}
+  chat_id: ${oc.env:TELEGRAM_CHAT_ID,null}
+  message_thread_id: ${oc.env:TELEGRAM_MESSAGE_THREAD_ID,null}
 
 llm:
   api:
@@ -96,6 +103,18 @@ source:
     limit_per_query: 10
     seed_limit: 8
     api_key: ${oc.env:SEMANTIC_SCHOLAR_API_KEY,null}
+  openreview:
+    queries:
+      - "agent memory"
+      - "multi-agent reinforcement learning"
+      - "test-time compute reasoning"
+    limit_per_query: 10
+  dblp:
+    queries:
+      - "agent memory"
+      - "multi-agent system"
+    limit_per_query: 10
+    min_year: 2025
 
 feishu:
   app_id: ${oc.env:FEISHU_APP_ID,null}
@@ -104,13 +123,9 @@ feishu:
   notes_folder_token: ${oc.env:FEISHU_NOTES_FOLDER_TOKEN,null}
   wiki_space_id: ${oc.env:FEISHU_WIKI_SPACE_ID,null}
   daily_parent_node_token: ${oc.env:FEISHU_DAILY_PARENT_NODE_TOKEN,null}
-  candidate_node_token: ${oc.env:FEISHU_CANDIDATE_NODE_TOKEN,null}
   notes_parent_node_token: ${oc.env:FEISHU_NOTES_PARENT_NODE_TOKEN,null}
   master_index_node_token: ${oc.env:FEISHU_MASTER_INDEX_NODE_TOKEN,null}
   tag_graph_node_token: ${oc.env:FEISHU_TAG_GRAPH_NODE_TOKEN,null}
-  idea_parent_node_token: ${oc.env:FEISHU_IDEA_PARENT_NODE_TOKEN,null}
-  experiment_parent_node_token: ${oc.env:FEISHU_EXPERIMENT_PARENT_NODE_TOKEN,null}
-  synthesis_parent_node_token: ${oc.env:FEISHU_SYNTHESIS_PARENT_NODE_TOKEN,null}
   engineering_parent_node_token: ${oc.env:FEISHU_ENGINEERING_PARENT_NODE_TOKEN,null}
   dry_run: false
 
@@ -118,6 +133,8 @@ console:
   enabled: true
   provider: ${oc.env:CONSOLE_PROVIDER,auto}
   node_token: ${oc.env:FEISHU_CONSOLE_NODE_TOKEN,null}
+  skill_path: ${oc.env:CONSOLE_SKILL_PATH,null}
+  template_path: ${oc.env:CONSOLE_TEMPLATE_PATH,null}
   tags: []
   questions: []
 
@@ -125,6 +142,7 @@ obsidian:
   enabled: ${oc.env:OBSIDIAN_ENABLED,false}
   vault_path: ${oc.env:OBSIDIAN_VAULT_PATH,null}
   include_folders: null
+  notes_folder: ${oc.env:OBSIDIAN_NOTES_FOLDER,Literature}
   console_path: ${oc.env:OBSIDIAN_CONSOLE_PATH,null}
 
 notion:
@@ -192,8 +210,6 @@ research:
   adversarial_queries: ${oc.env:RESEARCH_ADVERSARIAL_QUERIES,true}
   full_text_ar5iv: ${oc.env:RESEARCH_FULL_TEXT_AR5IV,false}
   state_path: "data/research_state.json"
-  converge_min_support: ${oc.env:RESEARCH_CONVERGE_MIN_SUPPORT,6}
-  falsify_min_counter: ${oc.env:RESEARCH_FALSIFY_MIN_COUNTER,3}
   negative_similarity: ${oc.env:RESEARCH_NEGATIVE_SIMILARITY,0.6}
   negative_penalty: ${oc.env:RESEARCH_NEGATIVE_PENALTY,1.0}
   judge_weight: ${oc.env:RESEARCH_JUDGE_WEIGHT,0.6}

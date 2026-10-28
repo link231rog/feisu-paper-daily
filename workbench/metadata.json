@@ -1,6 +1,6 @@
 {
-  "name": "Feishu Paper Daily 2.0 Architecture Workbench",
-  "description": "深度架构诊断与代码重构交互式看板：涵盖 AI 主动问题状态机、ar5iv 全文章节靶向批注、飞书/Zotero/Notion/Obsidian 四端统一双向适配器与纯 GitHub Actions 零污染工作流。",
+  "name": "Paper Daily & DeepResearch Framework",
+  "description": "自动化文献审稿、问题追踪与知识库直连工作台：涵盖 4 层 DeepResearch 闭环、AI 主动假设状态机、论文原位三色批注、四端知识库双向互联与无服务器自动化流水线。",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -20,6 +20,7 @@ source:
   huggingface:
     date: null # Target date (YYYY-MM-DD), null for latest
     limit: 50 # Maximum papers to fetch from Hugging Face
+    enrich_daily_signals: true # Cross-enrich arXiv candidates with HF Daily Papers upvotes and code links
   semantic_scholar:
     queries: null # List of search queries. Example: ["large language models", "agent alignment"]
     seed_papers: null # List of seed paper identifiers (DOI, ArXiv ID, or S2 paperId)
@@ -27,6 +28,14 @@ source:
     limit_per_query: 15
     seed_limit: 10
     api_key: null # Semantic Scholar API key (optional, avoids 429 rate limit)
+  openreview:
+    queries: null # Optional search terms on OpenReview API v2
+    venues: null # Optional venue IDs e.g. ["ICLR.cc/2025/Conference", "NeurIPS.cc/2025/Conference"]
+    limit_per_query: 15
+  dblp:
+    queries: null # Optional search terms on DBLP Publication API
+    limit_per_query: 15
+    min_year: 2025
 
 email:
   enabled: true
@@ -37,13 +46,42 @@ email:
   sender_password: null
 
 wechat:
-  enabled: false # Create a draft for review; never auto-publish
+  enabled: false # Create drafts in WeChat Official Account draft box; never auto-publish
   app_id: null
   app_secret: null
-  thumb_media_id: null # Existing permanent image material ID; avoids repeated uploads
-  cover_path: null # Used only when thumb_media_id is not configured
-  author: "Feishu Paper Daily"
+  thumb_media_id: null # Optional existing permanent image material ID; auto-generated if empty
+  cover_path: null # Optional local cover path; auto-generates academic cover if empty
+  author: "Paper Daily"
+  article_modes: ["digest", "deep_read", "topic_review"] # Supported modes: digest | deep_read | topic_review
   content_source_url: null # Public URL only; do not expose private Feishu documents
+
+telegram:
+  enabled: false
+  bot_token: null
+  chat_id: null
+  message_thread_id: null
+  api_base: "https://api.telegram.org"
+
+audio:
+  enabled: false # Generate optional MP3 podcast / academic morning briefing
+  mode: "dialogue" # "dialogue" (NotebookLM-style two-speaker podcast) | "briefing" (single-speaker morning briefing)
+  use_llm_script: true # Use LLM to polish conversational script when available (falls back to structured template)
+  engine: "edge-tts" # "edge-tts" (free neural voices) | "openai" (OpenAI /v1/audio/speech or openai-edge-tts)
+  host_voice: "zh-CN-XiaoxiaoNeural"
+  guest_voice: "zh-CN-YunxiNeural"
+  speech_rate: "+5%"
+  turn_pause_ms: 320
+  openai_model: "tts-1"
+  openai_host_voice: "nova"
+  openai_guest_voice: "onyx"
+  openai_base_url: null
+  openai_api_key: null
+  max_papers: 5
+  output_dir: "data/audio"
+  attach_telegram: true # Send native Telegram audio player message
+  attach_email: true # Attach MP3 file to daily report email
+  attach_feishu: true # Upload and mount MP3 file block at top of Feishu daily report
+  upload_wechat_voice: true # Generate <=60s condensed voice guide and upload to WeChat Official Account voice library
 
 llm:
   api:
@@ -58,9 +96,16 @@ llm:
   language: Chinese # Preferred language for the TL;DR. Example: Chinese
 
 reranker:
+  max_sim_alpha: 0.45 # Blend weight between Max single-anchor similarity and Top-K/Time-Decay mean
+  top_k_anchors: 5 # Number of top corpus matches for multi-peak similarity
+  rocchio_beta: 0.35 # Penalty weight for Rocchio negative prototype feedback
+  rocchio_neg_threshold: 0.18 # Minimum similarity to negative prototypes before penalty applies
+  mmr_lambda: 0.75 # Maximal Marginal Relevance trade-off (1.0 = pure relevance, 0.0 = pure diversity)
   recency_boost: 0.5 # Bonus for papers in recency_years
   venue_boost: 0.5 # Bonus for top venues
   citation_boost_max: 1.0 # Cap for log-scaled citation bonus
+  code_boost: 0.4 # Bonus for papers releasing open-source code repositories
+  hf_boost_max: 0.8 # Cap for log-scaled Hugging Face Daily Papers community upvotes bonus
   recency_years: null # Defaults to [current year, current year - 1]
   local:
     model: jinaai/jina-embeddings-v5-text-nano-retrieval
@@ -81,13 +126,9 @@ feishu:
   notes_folder_token: null
   wiki_space_id: null
   daily_parent_node_token: null
-  candidate_node_token: null
   notes_parent_node_token: null
   master_index_node_token: null
   tag_graph_node_token: null
-  idea_parent_node_token: null
-  experiment_parent_node_token: null
-  synthesis_parent_node_token: null
   engineering_parent_node_token: null
   dry_run: false
   create_tasks: true
@@ -96,13 +137,18 @@ console:
   enabled: true
   provider: auto # auto | feishu | obsidian | notion | zotero | config
   node_token: null # Feishu Wiki node of the recommendation console document
+  skill_path: null # Optional path to external custom review Skill (.md)
+  template_path: null # Optional path to external custom reading note template (.md)
   tags: null # Active research tags, overridden by the console provider when set
   questions: null # Tracked questions, overridden by the console provider when set
+  custom_rules: null
+  note_template: null
 
 obsidian:
   enabled: false
   vault_path: null # Local Obsidian vault directory
   include_folders: null # Optional list of vault-relative folders to read
+  notes_folder: "Literature" # Vault-relative folder where ingested reading notes are saved
   console_path: null # Vault-relative note used as the console, e.g. "Console.md"
 
 notion:
@@ -401,19 +447,18 @@ research:
   exploration_slots: 2 # Reserve slots for strong library matches no question asked for
   # Baseline extraction, attribution, and bi-directional linking
   baselines: true
-  baseline_workers: 4
   auto_backlink: true
   # In-line paragraph highlights, baseline tags, and review critiques
   inline_annotations: true
-  annotation_workers: 4
-  # Active hypothesis and adversarial querying
+  # Active adversarial querying
   adversarial_queries: true
   full_text_ar5iv: false # Abstract only for daily report; method/experiments analyzed upon ingestion
-  # Evidence accumulation thresholds and discarded-paper negative feedback
-  converge_min_support: 6
-  falsify_min_counter: 3
+  # Discarded-paper negative feedback & MMR diversity
   negative_similarity: 0.6
   negative_penalty: 1.0
+  mmr_diversity: true
+  mmr_lambda: 0.75
+  rerank_by_rubric: true
   min_qa_score: 6
   deep_read_min_qa: 7
   deep_read_quota: 3

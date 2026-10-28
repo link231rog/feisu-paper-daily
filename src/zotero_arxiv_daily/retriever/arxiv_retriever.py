@@ -1,7 +1,7 @@
 from .base import BaseRetriever, register_retriever
 from arxiv import Result as ArxivResult
 from ..protocol import Paper, extract_venue_from_text
-from ..utils import extract_markdown_from_pdf, extract_tex_code_from_tar
+from ..utils import extract_markdown_from_pdf
 import calendar
 from datetime import datetime, timezone
 import multiprocessing
@@ -20,7 +20,6 @@ T = TypeVar("T")
 
 DOWNLOAD_TIMEOUT = (10, 60)
 PDF_EXTRACT_TIMEOUT = 180
-TAR_EXTRACT_TIMEOUT = 180
 
 HTML_TAG_PATTERN = re.compile(
     r"</?(?:p|a|span|div|b|i|strong|em|br|hr|h[1-6]|ul|ol|li|sub|sup|table|tr|td|th)\b(?:\s+[^>]*)?/?>",
@@ -150,16 +149,6 @@ def _extract_text_and_affiliations_from_html_worker(html_url: str) -> dict[str, 
 def _extract_text_from_html_worker(html_url: str) -> str | None:
     res = _extract_text_and_affiliations_from_html_worker(html_url)
     return res.get("text")
-
-
-def _extract_text_from_tar_worker(source_url: str, paper_id: str, paper_title: str | None = None) -> str | None:
-    with TemporaryDirectory() as temp_dir:
-        path = os.path.join(temp_dir, "paper.tar.gz")
-        _download_file(source_url, path)
-        file_contents = extract_tex_code_from_tar(path, paper_id, paper_title=paper_title)
-        if not file_contents or "all" not in file_contents:
-            raise ValueError("Main tex file not found.")
-        return file_contents["all"]
 
 
 def _clean_abstract(summary_raw: str) -> str:
@@ -331,8 +320,6 @@ class ArxivRetriever(BaseRetriever):
             full_text, parsed_affils = extract_text_and_affiliations_from_html(raw_paper)
             if full_text is None:
                 full_text = extract_text_from_pdf(raw_paper)
-            if full_text is None:
-                full_text = extract_text_from_tar(raw_paper)
             if parsed_affils:
                 affiliations = parsed_affils
         arxiv_id = raw_paper.entry_id.split("/abs/")[-1].strip() if "/abs/" in raw_paper.entry_id else None
@@ -340,6 +327,10 @@ class ArxivRetriever(BaseRetriever):
             extract_venue_from_text(getattr(raw_paper, "comment", None))
             or extract_venue_from_text(getattr(raw_paper, "journal_ref", None))
             or extract_venue_from_text(abstract)
+        )
+        from ..protocol import extract_paper_artifacts
+        artifacts = extract_paper_artifacts(
+            f"{getattr(raw_paper, 'comment', '') or ''}\n{abstract or ''}\n{full_text[:2000] if full_text else ''}"
         )
         return Paper(
             source=self.name,
@@ -355,6 +346,8 @@ class ArxivRetriever(BaseRetriever):
             sources=[self.name],
             published_date=raw_paper.published,
             venue=venue,
+            code_url=artifacts.get("code_url"),
+            project_url=artifacts.get("project_url"),
         )
 
 
@@ -385,16 +378,3 @@ def extract_text_from_pdf(paper: ArxivResult) -> str | None:
         paper_title=paper.title,
     )
 
-
-def extract_text_from_tar(paper: ArxivResult) -> str | None:
-    source_url = paper.source_url()
-    if source_url is None:
-        logger.warning(f"No source URL available for {paper.title}")
-        return None
-    return _run_with_hard_timeout(
-        _extract_text_from_tar_worker,
-        (source_url, paper.entry_id, paper.title),
-        timeout=TAR_EXTRACT_TIMEOUT,
-        operation="Tar extraction",
-        paper_title=paper.title,
-    )

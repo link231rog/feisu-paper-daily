@@ -21,10 +21,14 @@ from urllib.parse import quote
 
 import requests
 from loguru import logger
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
+try:
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.metrics.pairwise import cosine_similarity
+except ImportError:
+    TfidfVectorizer = None  # type: ignore[assignment,misc]
+    cosine_similarity = None  # type: ignore[assignment,misc]
 
-from .protocol import CorpusPaper
+from ..protocol import CorpusPaper
 
 NOTION_VERSION = "2022-06-28"
 DEFAULT_CACHE_PATH = "data/library_cache.json"
@@ -659,7 +663,7 @@ def sync_library_notes(
 
     for prov in target_providers:
         if prov == "feishu":
-            from .feishu import FeishuClient
+            from ..channels.feishu import FeishuClient
 
             client = FeishuClient(config.feishu)
             notes = [cp for cp in client.fetch_reading_notes() if cp.obj_token]
@@ -1040,16 +1044,344 @@ def trigger_pipeline_dispatch(
     if resp.status_code in (200, 204):
         return {
             "status": "success",
+            "repo": repo,
+            "event_type": event_type,
             "message": f"Successfully triggered '{event_type}' on GitHub Actions ({repo})",
             "client_payload": payload,
         }
     raise RuntimeError(f"GitHub API returned {resp.status_code}: {resp.text}")
 
 
+# ---------------------------------------------------------------------------
+# 6. Multi-Platform Reading Note Ingestion & Detail Annotation Writers
+# ---------------------------------------------------------------------------
+
+_STANDARD_SECTION_TITLES = (
+    ("core_summary", "一、核心一句话总结"),
+    ("motivation", "二、研究动机与问题背景"),
+    ("method", "三、核心架构与机制设计"),
+    ("experiments", "四、关键实验与结论"),
+    ("takeaways", "五、落地启示与思考"),
+)
+
+
+def apply_inline_annotations_to_markdown(
+    text: str,
+    inline_annotations: list[dict[str, Any]] | None = None,
+) -> str:
+    """Applies detail annotations in-place using ==quote==^[comment] syntax."""
+    if not text or not inline_annotations:
+        return text
+    annotated = text
+    for ann in inline_annotations:
+        quote_str = str(ann.get("quote") or ann.get("exact_quote") or "").strip()
+        comment_str = str(ann.get("comment") or "").strip().replace("]", ")")
+        ann_type = str(ann.get("type") or "note").strip()
+        if not quote_str or len(quote_str) < 4:
+            continue
+        replacement = f"=={quote_str}==^[({ann_type}) {comment_str}]" if comment_str else f"=={quote_str}=="
+        if quote_str in annotated and f"=={quote_str}==" not in annotated:
+            annotated = annotated.replace(quote_str, replacement, 1)
+    return annotated
+
+
+def write_obsidian_reading_note(
+    obsidian_cfg: Any,
+    paper: Any,
+    sections: dict[str, str],
+    tags: list[str],
+    full_text_markdown: str | None = None,
+    inline_annotations: list[dict[str, Any]] | None = None,
+) -> str | None:
+    """Writes a structured deep-reading note with detail annotations into an Obsidian vault."""
+    if not obsidian_cfg or not obsidian_cfg.get("vault_path"):
+        return None
+    vault_root = Path(str(obsidian_cfg.get("vault_path"))).expanduser()
+    if not vault_root.is_dir():
+        return None
+
+    notes_folder = str(obsidian_cfg.get("notes_folder") or "Literature").strip("/")
+    target_dir = vault_root / notes_folder if notes_folder else vault_root
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    safe_title = re.sub(r'[\\/:*?"<>|]+', "_", (paper.title or "Untitled")).strip()[:120]
+    note_path = target_dir / f"{safe_title}.md"
+
+    anns = inline_annotations if inline_annotations is not None else (getattr(paper, "inline_annotations", None) or [])
+    tag_list = ", ".join(tags or ["Research"])
+    lines = [
+        "---",
+        f'title: "{(paper.title or "").replace(chr(34), chr(39))}"',
+        f'url: "{paper.url or ""}"',
+        f"tags: [{tag_list}]",
+        f'venue: "{getattr(paper, "venue", "") or ""}"',
+        'status: "⏳ 待精读"',
+        f'date: "{datetime.now().strftime("%Y-%m-%d")}"',
+        "---",
+        "",
+        f"# {paper.title}",
+        "",
+        f"- **原文链接**: {paper.url or 'N/A'}",
+        f"- **发表会议/期刊**: {getattr(paper, 'venue', None) or 'Preprint'}",
+        "",
+    ]
+
+    # Standard + custom template sections
+    rendered_keys: set[str] = set()
+    for key, label in _STANDARD_SECTION_TITLES:
+        if sections.get(key):
+            lines.extend([f"## {label}", "", str(sections[key]).strip(), ""])
+            rendered_keys.add(key)
+
+    for key, val in (sections or {}).items():
+        if key not in rendered_keys and val:
+            lines.extend([f"## {key}", "", str(val).strip(), ""])
+
+    # Detail annotations section
+    if anns:
+        lines.extend(["## 细节批注与审稿核查", ""])
+        for ann in anns:
+            q_str = str(ann.get("quote") or ann.get("exact_quote") or "").strip()
+            c_str = str(ann.get("comment") or "").strip()
+            t_str = str(ann.get("type") or "claim").strip()
+            if q_str:
+                lines.append(f"- =={q_str}==^[{c_str}]")
+                if c_str:
+                    lines.append(f"  > [{t_str}] {c_str}")
+        lines.append("")
+
+    # Reflections template for user & Agent bridge
+    lines.extend(
+        [
+            "## Reading Notes & Reflections",
+            "",
+            "### Key Insights",
+            "可在研读后直接划词批注或记录关键洞察",
+            "",
+            "### Critique",
+            "记录论文假设漏洞、对比缺陷或未解决的边界条件",
+            "",
+        ]
+    )
+
+    if full_text_markdown:
+        annotated_body = apply_inline_annotations_to_markdown(full_text_markdown, anns)
+        lines.extend(["## 论文完整原文与逐节研读区", "", annotated_body.strip(), ""])
+    elif getattr(paper, "abstract", None):
+        annotated_abs = apply_inline_annotations_to_markdown(paper.abstract, anns)
+        lines.extend(["## 摘要批注原文", "", annotated_abs.strip(), ""])
+
+    note_path.write_text("\n".join(lines), encoding="utf-8")
+    rel = note_path.relative_to(vault_root).as_posix()
+    return f"obsidian://open?vault={quote(vault_root.name)}&file={quote(rel)}"
+
+
+def write_notion_reading_note(
+    notion_cfg: Any,
+    paper: Any,
+    sections: dict[str, str],
+    tags: list[str],
+    full_text_markdown: str | None = None,
+    inline_annotations: list[dict[str, Any]] | None = None,
+) -> str | None:
+    """Creates a structured deep-reading note page in a Notion database."""
+    if not notion_cfg or not notion_cfg.get("token") or not notion_cfg.get("database_id"):
+        return None
+    token = str(notion_cfg.get("token")).strip()
+    database_id = str(notion_cfg.get("database_id")).strip()
+    anns = inline_annotations if inline_annotations is not None else (getattr(paper, "inline_annotations", None) or [])
+
+    children: list[dict[str, Any]] = []
+    if paper.url:
+        children.append(
+            {
+                "object": "block",
+                "type": "paragraph",
+                "paragraph": {
+                    "rich_text": [{"type": "text", "text": {"content": f"原文直达: {paper.url}"}}]
+                },
+            }
+        )
+
+    rendered_keys: set[str] = set()
+    for key, label in _STANDARD_SECTION_TITLES:
+        if sections.get(key):
+            children.append(
+                {
+                    "object": "block",
+                    "type": "heading_2",
+                    "heading_2": {"rich_text": [{"type": "text", "text": {"content": label}}]},
+                }
+            )
+            children.append(
+                {
+                    "object": "block",
+                    "type": "paragraph",
+                    "paragraph": {
+                        "rich_text": [{"type": "text", "text": {"content": str(sections[key])[:1900]}}]
+                    },
+                }
+            )
+            rendered_keys.add(key)
+
+    for key, val in (sections or {}).items():
+        if key not in rendered_keys and val:
+            children.append(
+                {
+                    "object": "block",
+                    "type": "heading_2",
+                    "heading_2": {"rich_text": [{"type": "text", "text": {"content": str(key)[:100]}}]},
+                }
+            )
+            children.append(
+                {
+                    "object": "block",
+                    "type": "paragraph",
+                    "paragraph": {"rich_text": [{"type": "text", "text": {"content": str(val)[:1900]}}]},
+                }
+            )
+
+    if anns:
+        children.append(
+            {
+                "object": "block",
+                "type": "heading_2",
+                "heading_2": {"rich_text": [{"type": "text", "text": {"content": "细节批注与审稿核查"}}]},
+            }
+        )
+        for ann in anns[:15]:
+            q_str = str(ann.get("quote") or ann.get("exact_quote") or "").strip()
+            c_str = str(ann.get("comment") or "").strip()
+            t_str = str(ann.get("type") or "claim").strip()
+            color = {"baseline": "blue_background", "claim": "green_background", "critique": "orange_background"}.get(
+                t_str, "yellow_background"
+            )
+            children.append(
+                {
+                    "object": "block",
+                    "type": "quote",
+                    "quote": {
+                        "rich_text": [
+                            {
+                                "type": "text",
+                                "text": {"content": q_str[:900]},
+                                "annotations": {"color": color},
+                            },
+                            {
+                                "type": "text",
+                                "text": {"content": f" — [{t_str}] {c_str}"[:900]},
+                            },
+                        ]
+                    },
+                }
+            )
+
+    payload = {
+        "parent": {"database_id": database_id},
+        "properties": {
+            "Name": {"title": [{"text": {"content": (paper.title or "Untitled")[:200]}}]},
+        },
+        "children": children[:95],
+    }
+    resp = requests.post(
+        "https://api.notion.com/v1/pages",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Notion-Version": NOTION_VERSION,
+            "Content-Type": "application/json",
+        },
+        json=payload,
+        timeout=30,
+    )
+    if resp.status_code in (200, 201):
+        data = resp.json()
+        return data.get("url") or f"https://www.notion.so/{data.get('id', '').replace('-', '')}"
+    logger.warning(f"Notion page creation failed ({resp.status_code}): {resp.text[:200]}")
+    return None
+
+
+def write_zotero_reading_note(
+    zotero_cfg: Any,
+    paper: Any,
+    sections: dict[str, str],
+    tags: list[str],
+    inline_annotations: list[dict[str, Any]] | None = None,
+) -> str | None:
+    """Creates a paper item and structured child note in Zotero."""
+    uid = zotero_cfg.get("user_id") or zotero_cfg.get("id") if zotero_cfg else None
+    api_key = zotero_cfg.get("api_key") or zotero_cfg.get("key") if zotero_cfg else None
+    if not uid or not api_key or str(uid) == "???":
+        return None
+    try:
+        from pyzotero import zotero as pyzotero
+        import html
+
+        zot = pyzotero.Zotero(str(uid), "user", str(api_key))
+        template = zot.item_template("preprint")
+        template["title"] = paper.title or "Untitled"
+        template["url"] = paper.url or ""
+        template["abstractNote"] = getattr(paper, "abstract", "") or ""
+        template["tags"] = [{"tag": t} for t in (tags or [])]
+        created = zot.create_items([template])
+        item_key = ""
+        if isinstance(created, dict) and created.get("successful"):
+            first = next(iter(created["successful"].values()))
+            item_key = first.get("key") or first.get("data", {}).get("key", "")
+
+        anns = inline_annotations if inline_annotations is not None else (getattr(paper, "inline_annotations", None) or [])
+        html_parts = [f"<h1>{html.escape(paper.title or '')}</h1>"]
+        for key, label in _STANDARD_SECTION_TITLES:
+            if sections.get(key):
+                html_parts.append(f"<h2>{html.escape(label)}</h2><p>{html.escape(str(sections[key]))}</p>")
+        if anns:
+            html_parts.append("<h2>细节批注与审稿核查</h2><ul>")
+            for ann in anns:
+                q_str = html.escape(str(ann.get("quote") or ann.get("exact_quote") or ""))
+                c_str = html.escape(str(ann.get("comment") or ""))
+                html_parts.append(f"<li><mark>{q_str}</mark>: <strong>{c_str}</strong></li>")
+            html_parts.append("</ul>")
+
+        note_item = zot.item_template("note")
+        note_item["note"] = "\n".join(html_parts)
+        if item_key:
+            note_item["parentItem"] = item_key
+        zot.create_items([note_item])
+        return f"zotero://select/library/items/{item_key}" if item_key else "zotero://select/library"
+    except Exception as exc:
+        logger.warning(f"Failed to write Zotero reading note: {exc}")
+        return None
+
+
+def fetch_checked_papers_from_obsidian(obsidian_cfg: Any) -> list[dict[str, Any]]:
+    """Scans Obsidian vault markdown files for checked paper tasks `- [x] [Title](url)`."""
+    if not obsidian_cfg or not obsidian_cfg.get("vault_path"):
+        return []
+    root = Path(str(obsidian_cfg.get("vault_path"))).expanduser()
+    if not root.is_dir():
+        return []
+
+    task_re = re.compile(r"^-\s*\[[xX]\]\s*\[([^\]]+)\]\((https?://[^\s)]+)\)(.*)$")
+    checked: list[dict[str, Any]] = []
+    for md in root.rglob("*.md"):
+        if any(part.startswith(".") for part in md.relative_to(root).parts):
+            continue
+        try:
+            lines = md.read_text(encoding="utf-8", errors="ignore").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            m = task_re.match(line.strip())
+            if m:
+                title, url, tail = m.group(1).strip(), m.group(2).strip(), m.group(3).strip()
+                action = "delete" if any(k in tail.lower() for k in ("删除", "屏蔽", "discard", "delete")) else "ingest"
+                checked.append({"title": title, "url": url, "action": action, "tldr": tail.lstrip("-: ")})
+    return checked
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="paper-library",
-        description="Direct CLI bridge for AI agents to inspect & restore annotations from Feishu, Obsidian, or Zotero.",
+        description="Direct CLI bridge for AI agents to inspect & restore annotations from Feishu, Obsidian, Notion, or Zotero.",
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
@@ -1087,7 +1419,28 @@ def main() -> None:
     p_trig.add_argument("--tag", action="append", dest="tags", help="Ad-hoc topic tag to append for this run")
     p_trig.add_argument("--json", action="store_true", help="Output raw JSON")
 
+    p_init = sub.add_parser("init", help="Interactive multi-select & Agent Skill initialization wizard")
+    p_init.add_argument("--schema", action="store_true", help="Output JSON schema of multi-select questions for AI Agents")
+    p_init.add_argument("--print-skill", action="store_true", help="Print the Agent SKILL.md definition")
+    p_init.add_argument("--from-json", default=None, help="Apply configuration from JSON string or file path")
+    p_init.add_argument("--config-out", default="config/custom.yaml", help="Target path for generated custom.yaml")
+    p_init.add_argument("--env-out", default=".env", help="Target path for generated .env file")
+
     args = parser.parse_args()
+    if args.cmd == "init":
+        from ..init_wizard import handle_init_cli
+
+        init_argv: list[str] = []
+        if args.schema:
+            init_argv.append("--schema")
+        if args.print_skill:
+            init_argv.append("--print-skill")
+        if args.from_json:
+            init_argv.extend(["--from-json", args.from_json])
+        init_argv.extend(["--config-out", args.config_out, "--env-out", args.env_out])
+        handle_init_cli(init_argv)
+        return
+
     cfg = _load_runtime_config()
 
     if args.cmd == "sync":

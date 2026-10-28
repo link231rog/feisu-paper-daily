@@ -12,7 +12,7 @@ if "HF_ENDPOINT" not in os.environ and "GITHUB_ACTIONS" not in os.environ:
 dotenv.load_dotenv()
 
 @hydra.main(version_base=None, config_path="../../config", config_name="default")
-def main(config:DictConfig):
+def _hydra_main(config:DictConfig):
     # Configure loguru log level based on config
     log_level = "DEBUG" if config.executor.debug else "INFO"
     logger.remove()  # Remove default handler
@@ -32,6 +32,16 @@ def main(config:DictConfig):
     
     executor = Executor(config)
     executor.run()
+
+
+def main():
+    if len(sys.argv) > 1 and sys.argv[1] in ("init", "--init"):
+        from zotero_arxiv_daily.init_wizard import handle_init_cli
+
+        handle_init_cli(sys.argv[2:])
+        return
+    _hydra_main()
+
 
 if __name__ == '__main__':
     main()
