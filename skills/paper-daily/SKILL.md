@@ -94,11 +94,16 @@ Confirm the run has started with `gh run list -R <repo> -L 1`.
 
 When the user wants to temporarily track a new question, test a custom rule, or inject an exclusion keyword without modifying configs:
 ```bash
-gh api repos/<repo>/dispatches \
-  -f event_type=paper-daily \
-  -f client_payload[force_today]=true \
-  -f client_payload[questions][]="How to achieve zero-shot instance sizing?" \
-  -f client_payload[custom_rules][]="Focus on training-free methods"
+gh api repos/<repo>/dispatches --input - <<'JSON'
+{
+  "event_type": "paper-daily",
+  "client_payload": {
+    "force_today": true,
+    "questions": ["How to achieve zero-shot instance sizing?"],
+    "custom_rules": ["Focus on training-free methods"]
+  }
+}
+JSON
 ```
 
 ---
