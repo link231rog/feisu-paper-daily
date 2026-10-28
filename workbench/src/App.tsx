@@ -23,19 +23,11 @@ import {
   Headphones,
   Volume2,
   Presentation,
-  Video,
+  Sun,
+  Moon,
 } from 'lucide-react';
 
-const SECTIONS = [
-  { id: 'hero', label: '概览' },
-  { id: 'console', label: '控制台与规则定义' },
-  { id: 'recommend', label: '文献推荐系统' },
-  { id: 'digest-tracking', label: '深度精读与问题追踪' },
-  { id: 'multimedia', label: '多媒体衍生呈现' },
-  { id: 'library', label: '文献库与 Agent 直连' },
-  { id: 'delivery', label: '日报推送' },
-  { id: 'deploy', label: '接入触发与部署' },
-] as const;
+import { locales, type Language, type Theme } from './locales';
 
 const README_URL = 'https://github.com/link231rog/feisu-paper-daily#readme';
 const README_ARCH = 'https://github.com/link231rog/feisu-paper-daily#一-核心架构与目录组织';
@@ -57,6 +49,8 @@ function BrandIcon({ name }: { name: string }) {
       );
     case '飞书':
     case '飞书控制台':
+    case 'Feishu':
+    case 'Feishu / Lark':
       return (
         <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current" aria-hidden="true">
           <path d="M3.5 5.5L11 2l9.5 6.5-5.5 4.5L3.5 5.5zm0 6.5l11.5 2.5-4.5 7.5L2 16.5 3.5 12zm12.2 2.2L22 10l-2.5 9.5-3.8-5.3z" />
@@ -81,6 +75,7 @@ function BrandIcon({ name }: { name: string }) {
         </svg>
       );
     case '微信公众号':
+    case 'WeChat Official Account':
       return (
         <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current" aria-hidden="true">
           <path d="M9.5 4C5.36 4 2 6.91 2 10.5c0 1.98 1.03 3.75 2.66 4.95L4 18l2.72-1.36c.88.23 1.81.36 2.78.36.34 0 .68-.02 1.01-.06-.2-.63-.31-1.3-.31-1.99 0-3.87 3.58-7 8-7 .34 0 .67.02 1 .06C18.36 5.69 14.34 4 9.5 4zm-2.75 4.25a1 1 0 110 2 1 1 0 010-2zm5.5 0a1 1 0 110 2 1 1 0 010-2zM16.5 10c-3.59 0-6.5 2.46-6.5 5.5S12.91 21 16.5 21c.78 0 1.53-.12 2.22-.34L21 22l-.55-2.15C21.99 18.84 23 17.28 23 15.5c0-3.04-2.91-5.5-6.5-5.5zm-2.25 3.5a.88.88 0 110 1.75.88.88 0 010-1.75zm4.5 0a.88.88 0 110 1.75.88.88 0 010-1.75z" />
@@ -103,8 +98,10 @@ function BrandIcon({ name }: { name: string }) {
     case 'Webhook':
       return <Webhook className="w-5 h-5" />;
     case '自定义 Skill':
+    case 'Custom Skills':
       return <Sparkles className="w-5 h-5" />;
     case '范例模板':
+    case 'Exemplar Templates':
       return <FileText className="w-5 h-5" />;
     case 'arXiv':
       return <BookOpen className="w-5 h-5" />;
@@ -125,8 +122,10 @@ function BrandIcon({ name }: { name: string }) {
       return <Newspaper className="w-5 h-5" />;
     case 'Edge-TTS':
     case 'MP3 播客':
+    case 'MP3 Podcast':
       return <Headphones className="w-5 h-5" />;
     case '微信语音':
+    case 'WeChat Audio':
       return <Volume2 className="w-5 h-5" />;
     case 'PPTX':
       return <Presentation className="w-5 h-5" />;
@@ -138,7 +137,7 @@ function BrandIcon({ name }: { name: string }) {
 }
 
 const PLATFORM_URLS: Record<string, string> = {
-  // 信源官网
+  // Sources
   arXiv: 'https://arxiv.org',
   HuggingFace: 'https://huggingface.co/papers',
   OpenReview: 'https://openreview.net',
@@ -150,28 +149,34 @@ const PLATFORM_URLS: Record<string, string> = {
   medRxiv: 'https://www.medrxiv.org',
   'AI News': 'https://news.ycombinator.com',
 
-  // 控制台与文献库
+  // Console & Libraries
   飞书: 'https://www.feishu.cn',
   飞书控制台: 'https://www.feishu.cn',
+  'Feishu / Lark': 'https://www.feishu.cn',
   Obsidian: 'https://obsidian.md',
   Notion: 'https://www.notion.so',
   Zotero: 'https://www.zotero.org',
   '自定义 Skill': 'https://github.com/link231rog/feisu-paper-daily#readme',
+  'Custom Skills': 'https://github.com/link231rog/feisu-paper-daily#readme',
   范例模板: 'https://github.com/link231rog/feisu-paper-daily#readme',
+  'Exemplar Templates': 'https://github.com/link231rog/feisu-paper-daily#readme',
 
-  // 多媒体
+  // Multimedia
   'Edge-TTS': 'https://github.com/rany2/edge-tts',
   'MP3 播客': 'https://github.com/link231rog/feisu-paper-daily#3-可选-mp3-音频播客与多渠道语音推送',
+  'MP3 Podcast': 'https://github.com/link231rog/feisu-paper-daily#3-可选-mp3-音频播客与多渠道语音推送',
   微信语音: 'https://mp.weixin.qq.com',
+  'WeChat Audio': 'https://mp.weixin.qq.com',
   PPTX: 'https://github.com/link231rog/feisu-paper-daily#readme',
   HTML5: 'https://developer.mozilla.org/zh-CN/docs/Web/HTML',
 
-  // 渠道
+  // Channels
   Email: 'https://github.com/link231rog/feisu-paper-daily#readme',
   微信公众号: 'https://mp.weixin.qq.com',
+  'WeChat Official Account': 'https://mp.weixin.qq.com',
   Telegram: 'https://telegram.org',
 
-  // 部署
+  // Deploy
   'GitHub Actions': 'https://github.com/features/actions',
   OpenClaw: 'https://github.com/link231rog/feisu-paper-daily#readme',
   Hermes: 'https://github.com/link231rog/feisu-paper-daily#readme',
@@ -185,12 +190,12 @@ function PlatformPill({ name, href }: { name: string; href?: string }) {
     <>
       <BrandIcon name={name} />
       <span>{name}</span>
-      <ArrowUpRight className="w-3.5 h-3.5 text-neutral-500 group-hover:text-white transition-colors" />
+      <ArrowUpRight className="w-3.5 h-3.5 text-neutral-400 dark:text-neutral-500 group-hover:text-black dark:group-hover:text-white transition-colors" />
     </>
   );
 
   const className =
-    "group inline-flex items-center gap-2 px-3 py-1.5 border border-neutral-800 bg-neutral-950 text-white text-sm font-medium hover:border-neutral-500 hover:bg-neutral-900 transition-all cursor-pointer";
+    "group inline-flex items-center gap-2 px-3 py-1.5 border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-white text-sm font-medium hover:border-neutral-400 dark:hover:border-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-900 transition-all cursor-pointer";
 
   if (targetUrl) {
     return (
@@ -198,10 +203,10 @@ function PlatformPill({ name, href }: { name: string; href?: string }) {
         href={targetUrl}
         target="_blank"
         rel="noreferrer"
-        whileHover={{ y: -2, borderColor: '#ffffff' }}
+        whileHover={{ y: -2 }}
         transition={{ duration: 0.16, ease: 'easeOut' }}
         className={className}
-        aria-label={`前往 ${name} 官网`}
+        aria-label={`Open ${name} official website`}
       >
         {content}
       </motion.a>
@@ -210,7 +215,7 @@ function PlatformPill({ name, href }: { name: string; href?: string }) {
 
   return (
     <motion.div
-      whileHover={{ y: -2, borderColor: '#ffffff' }}
+      whileHover={{ y: -2 }}
       transition={{ duration: 0.16, ease: 'easeOut' }}
       className={className}
     >
@@ -236,30 +241,40 @@ function GridCard({
     <>
       <span
         className={`pointer-events-none absolute top-0 left-0 h-px w-0 transition-all duration-300 ${
-          dimmed ? 'bg-neutral-600 group-hover:w-full' : 'bg-white group-hover:w-full'
+          dimmed
+            ? 'bg-neutral-400 dark:bg-neutral-600 group-hover:w-full'
+            : 'bg-black dark:bg-white group-hover:w-full'
         }`}
       />
       <div className="flex items-start justify-between gap-2">
-        <h3 className={`text-lg font-semibold ${dimmed ? 'text-neutral-500' : 'text-white'}`}>
+        <h3
+          className={`text-lg font-semibold ${
+            dimmed ? 'text-neutral-400 dark:text-neutral-500' : 'text-neutral-900 dark:text-white'
+          }`}
+        >
           {title}
         </h3>
         {href && (
           <ArrowUpRight
             className={`w-4 h-4 shrink-0 transition-colors ${
               dimmed
-                ? 'text-neutral-700 group-hover:text-neutral-500'
-                : 'text-neutral-600 group-hover:text-white'
+                ? 'text-neutral-300 dark:text-neutral-700 group-hover:text-neutral-500'
+                : 'text-neutral-400 dark:text-neutral-600 group-hover:text-black dark:group-hover:text-white'
             }`}
           />
         )}
       </div>
-      <p className={`mt-2 text-base ${dimmed ? 'text-neutral-600' : 'text-neutral-300'}`}>
+      <p
+        className={`mt-2 text-base leading-relaxed ${
+          dimmed ? 'text-neutral-400 dark:text-neutral-600' : 'text-neutral-600 dark:text-neutral-300'
+        }`}
+      >
         {desc}
       </p>
     </>
   );
 
-  const containerClasses = `group relative p-6 border-r border-b border-neutral-800 bg-black hover:bg-neutral-950 transition-colors duration-200 block text-left ${className}`;
+  const containerClasses = `group relative p-6 border-r border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-black hover:bg-neutral-50 dark:hover:bg-neutral-950 transition-colors duration-200 block text-left ${className}`;
 
   if (href) {
     return (
@@ -268,7 +283,7 @@ function GridCard({
         target="_blank"
         rel="noreferrer"
         className={containerClasses}
-        aria-label={`查看 ${title} 功能文档`}
+        aria-label={`View ${title} documentation`}
       >
         {content}
       </a>
@@ -288,6 +303,25 @@ const sectionReveal = {
 };
 
 export default function App() {
+  const [theme, setTheme] = useState<Theme>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('paper-daily-theme');
+      if (saved === 'light' || saved === 'dark') return saved;
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'dark';
+    }
+    return 'dark';
+  });
+
+  const [lang, setLang] = useState<Language>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('paper-daily-lang');
+      if (saved === 'zh' || saved === 'en') return saved;
+      const navLang = navigator.language.toLowerCase();
+      if (navLang.startsWith('en')) return 'en';
+    }
+    return 'zh';
+  });
+
   const [copiedCmd, setCopiedCmd] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string>('hero');
 
@@ -298,16 +332,43 @@ export default function App() {
     restDelta: 0.001,
   });
 
+  const t = locales[lang];
+
+  const sections = [
+    { id: 'hero', label: t.sections.hero },
+    { id: 'console', label: t.sections.console },
+    { id: 'recommend', label: t.sections.recommend },
+    { id: 'digest-tracking', label: t.sections.digestTracking },
+    { id: 'multimedia', label: t.sections.multimedia },
+    { id: 'library', label: t.sections.library },
+    { id: 'delivery', label: t.sections.delivery },
+    { id: 'deploy', label: t.sections.deploy },
+  ] as const;
+
   const initCommand = `uv run paper-daily init`;
   const cliCommand = `uv run paper-library search "memory gap"`;
 
   useEffect(() => {
+    const root = document.documentElement;
+    if (theme === 'dark') {
+      root.classList.add('dark');
+    } else {
+      root.classList.remove('dark');
+    }
+    localStorage.setItem('paper-daily-theme', theme);
+  }, [theme]);
+
+  useEffect(() => {
+    localStorage.setItem('paper-daily-lang', lang);
+  }, [lang]);
+
+  useEffect(() => {
     const handleScroll = () => {
       const scrollPos = window.scrollY + 160;
-      for (let i = SECTIONS.length - 1; i >= 0; i--) {
-        const el = document.getElementById(SECTIONS[i].id);
+      for (let i = sections.length - 1; i >= 0; i--) {
+        const el = document.getElementById(sections[i].id);
         if (el && el.offsetTop <= scrollPos) {
-          setActiveId(SECTIONS[i].id);
+          setActiveId(sections[i].id);
           break;
         }
       }
@@ -316,7 +377,7 @@ export default function App() {
     window.addEventListener('scroll', handleScroll, { passive: true });
     handleScroll();
     return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
+  }, [sections]);
 
   const scrollToSection = (id: string) => {
     const el = document.getElementById(id);
@@ -331,45 +392,73 @@ export default function App() {
     setTimeout(() => setCopiedCmd(null), 1800);
   };
 
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  };
+
+  const toggleLanguage = () => {
+    setLang((prev) => (prev === 'zh' ? 'en' : 'zh'));
+  };
+
   return (
-    <div className="min-h-screen bg-black text-white selection:bg-white selection:text-black">
+    <div className="min-h-screen bg-white dark:bg-black text-neutral-900 dark:text-white transition-colors duration-200 selection:bg-black selection:text-white dark:selection:bg-white dark:selection:text-black">
       {/* Top Progress Line */}
       <motion.div
         style={{ scaleX }}
-        className="fixed top-0 left-0 right-0 h-0.5 bg-white origin-left z-50"
+        className="fixed top-0 left-0 right-0 h-0.5 bg-black dark:bg-white origin-left z-50"
       />
 
       {/* Top Bar */}
-      <header className="border-b border-neutral-800 bg-black/90 backdrop-blur sticky top-0 z-40">
+      <header className="border-b border-neutral-200 dark:border-neutral-800 bg-white/90 dark:bg-black/90 backdrop-blur sticky top-0 z-40 transition-colors">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <button
               onClick={() => scrollToSection('hero')}
               className="flex items-center gap-3 cursor-pointer"
             >
-              <div className="w-3 h-3 bg-white" />
-              <span className="font-semibold tracking-tight text-lg">Paper Daily</span>
+              <div className="w-3 h-3 bg-black dark:bg-white transition-colors" />
+              <span className="font-semibold tracking-tight text-lg text-neutral-900 dark:text-white">
+                Paper Daily
+              </span>
             </button>
-            <span className="text-neutral-700">/</span>
+            <span className="text-neutral-300 dark:text-neutral-700">/</span>
             <a
               href={AUTHOR_HOMEPAGE_URL}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-2 text-sm font-mono text-neutral-300 hover:text-white transition-colors"
+              className="inline-flex items-center gap-2 text-sm font-mono text-neutral-600 dark:text-neutral-300 hover:text-black dark:hover:text-white transition-colors"
             >
-              <span>Zixuan Huang (@link231rog)</span>
+              <span>{t.header.author}</span>
             </a>
           </div>
 
-          <nav className="flex items-center gap-6">
+          <nav className="flex items-center gap-3 md:gap-5">
+            {/* Language Switch */}
+            <button
+              onClick={toggleLanguage}
+              className="px-2.5 py-1 text-xs font-mono font-semibold border border-neutral-200 dark:border-neutral-800 bg-neutral-100 dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 hover:border-neutral-400 dark:hover:border-neutral-600 hover:text-black dark:hover:text-white transition-all cursor-pointer rounded-sm"
+              aria-label={lang === 'zh' ? 'Switch to English' : '切换为中文'}
+            >
+              {lang === 'zh' ? 'EN' : '中文'}
+            </button>
+
+            {/* Theme Switch */}
+            <button
+              onClick={toggleTheme}
+              className="p-1.5 border border-neutral-200 dark:border-neutral-800 bg-neutral-100 dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 hover:border-neutral-400 dark:hover:border-neutral-600 hover:text-black dark:hover:text-white transition-all cursor-pointer rounded-sm"
+              aria-label={t.header.toggleTheme}
+            >
+              {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </button>
+
             <a
               href="https://github.com/link231rog/feisu-paper-daily"
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-300 hover:text-white transition-colors"
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-700 dark:text-neutral-300 hover:text-black dark:hover:text-white transition-colors"
             >
               <BrandIcon name="GitHub" />
-              <span>GitHub</span>
+              <span className="hidden sm:inline">{t.header.github}</span>
               <ArrowUpRight className="w-4 h-4" />
             </a>
           </nav>
@@ -377,32 +466,32 @@ export default function App() {
       </header>
 
       {/* Main Layout with Sticky Side TOC */}
-      <div className="max-w-7xl mx-auto px-6 lg:grid lg:grid-cols-[240px_1fr] lg:border-x lg:border-neutral-800">
+      <div className="max-w-7xl mx-auto px-6 lg:grid lg:grid-cols-[240px_1fr] lg:border-x lg:border-neutral-200 dark:lg:border-neutral-800 transition-colors">
         {/* Sticky Side TOC */}
-        <aside className="hidden lg:block border-r border-neutral-800 py-12 pr-6">
+        <aside className="hidden lg:block border-r border-neutral-200 dark:border-neutral-800 py-12 pr-6 transition-colors">
           <div className="sticky top-28">
             <nav className="flex flex-col gap-4 py-2">
-              {SECTIONS.map(({ id, label }) => {
+              {sections.map(({ id, label }) => {
                 const isActive = activeId === id;
                 return (
                   <button
                     key={id}
                     onClick={() => scrollToSection(id)}
                     className="group flex items-center gap-3.5 text-left py-1 cursor-pointer focus:outline-none"
-                    aria-label={`跳转到${label}`}
+                    aria-label={`Jump to ${label}`}
                   >
                     <span
                       className={`h-[2px] transition-all duration-300 ease-out shrink-0 ${
                         isActive
-                          ? 'w-14 bg-white'
-                          : 'w-6 bg-neutral-600 group-hover:w-9 group-hover:bg-neutral-400'
+                          ? 'w-14 bg-black dark:bg-white'
+                          : 'w-6 bg-neutral-300 dark:bg-neutral-600 group-hover:w-9 group-hover:bg-neutral-500 dark:group-hover:bg-neutral-400'
                       }`}
                     />
                     <span
                       className={`transition-all duration-300 tracking-tight select-none ${
                         isActive
-                          ? 'text-white font-bold text-base'
-                          : 'text-neutral-500 font-medium text-sm group-hover:text-neutral-300'
+                          ? 'text-neutral-900 dark:text-white font-bold text-base'
+                          : 'text-neutral-400 dark:text-neutral-500 font-medium text-sm group-hover:text-neutral-700 dark:group-hover:text-neutral-300'
                       }`}
                     >
                       {label}
@@ -413,25 +502,29 @@ export default function App() {
             </nav>
 
             {/* Author Identity Card in Sidebar */}
-            <div className="mt-12 pt-6 border-t border-neutral-800">
-              <div className="text-xs font-mono text-neutral-500 uppercase tracking-wider">作者</div>
+            <div className="mt-12 pt-6 border-t border-neutral-200 dark:border-neutral-800 transition-colors">
+              <div className="text-xs font-mono text-neutral-400 dark:text-neutral-500 uppercase tracking-wider">
+                {lang === 'zh' ? '作者' : 'Author'}
+              </div>
               <a
                 href={AUTHOR_HOMEPAGE_URL}
                 target="_blank"
                 rel="noreferrer"
-                className="mt-2 inline-flex items-center gap-1.5 text-sm font-semibold text-white hover:underline"
+                className="mt-2 inline-flex items-center gap-1.5 text-sm font-semibold text-neutral-900 dark:text-white hover:underline"
               >
                 <span>Zixuan Huang</span>
                 <ArrowUpRight className="w-3.5 h-3.5" />
               </a>
-              <div className="mt-0.5 text-xs font-mono text-neutral-500">@link231rog</div>
+              <div className="mt-0.5 text-xs font-mono text-neutral-400 dark:text-neutral-500">
+                @link231rog
+              </div>
             </div>
           </div>
         </aside>
 
         {/* Content Column */}
-        <main className="divide-y divide-neutral-800">
-          {/* 00 · 概览 */}
+        <main className="divide-y divide-neutral-200 dark:divide-neutral-800 transition-colors">
+          {/* 00 · Hero */}
           <motion.section
             id="hero"
             initial="hidden"
@@ -444,29 +537,24 @@ export default function App() {
               href={AUTHOR_HOMEPAGE_URL}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-2 px-3 py-1 border border-neutral-800 bg-neutral-950 text-sm font-mono text-neutral-300 hover:text-white hover:border-neutral-700 transition-colors mb-6 cursor-pointer"
+              className="inline-flex items-center gap-2 px-3 py-1 border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 text-sm font-mono text-neutral-700 dark:text-neutral-300 hover:text-black dark:hover:text-white hover:border-neutral-400 dark:hover:border-neutral-700 transition-colors mb-6 cursor-pointer"
             >
-              <span>Built by Zixuan Huang (@link231rog)</span>
-              <ArrowUpRight className="w-3.5 h-3.5 text-neutral-500" />
+              <span>{t.hero.badge}</span>
+              <ArrowUpRight className="w-3.5 h-3.5 text-neutral-400 dark:text-neutral-500" />
             </a>
 
-            <h1 className="text-5xl md:text-7xl font-bold tracking-tight text-white">
-              Paper Daily
+            <h1 className="text-5xl md:text-7xl font-bold tracking-tight text-neutral-900 dark:text-white">
+              {t.hero.title}
             </h1>
-            <p className="mt-5 text-xl md:text-2xl text-neutral-300 font-normal">
-              自动化文献推荐、问题追踪与文献库沉淀
+            <p className="mt-5 text-xl md:text-2xl text-neutral-600 dark:text-neutral-300 font-normal">
+              {t.hero.subtitle}
             </p>
 
             <div className="mt-8 flex flex-wrap gap-2.5">
-              {[
-                'GitHub Actions 免服运行',
-                '多维度文献推荐',
-                '问题追踪与精读',
-                '文献库与 Agent 直连',
-              ].map((tag) => (
+              {t.hero.tags.map((tag) => (
                 <span
                   key={tag}
-                  className="px-3.5 py-1.5 border border-neutral-800 bg-neutral-950 text-neutral-200 text-sm font-mono"
+                  className="px-3.5 py-1.5 border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 text-neutral-800 dark:text-neutral-200 text-sm font-mono"
                 >
                   {tag}
                 </span>
@@ -478,23 +566,23 @@ export default function App() {
                 href="https://github.com/link231rog/feisu-paper-daily/fork"
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-2 px-6 py-3 bg-white text-black font-semibold text-base hover:bg-neutral-200 transition-colors"
+                className="inline-flex items-center gap-2 px-6 py-3 bg-black dark:bg-white text-white dark:text-black font-semibold text-base hover:bg-neutral-800 dark:hover:bg-neutral-200 transition-colors"
               >
-                <span>GitHub 部署</span>
+                <span>{t.hero.btnDeploy}</span>
                 <ArrowUpRight className="w-4 h-4" />
               </a>
               <a
                 href="https://github.com/link231rog/feisu-paper-daily#readme"
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-2 px-6 py-3 border border-neutral-700 bg-black text-white font-semibold text-base hover:border-white transition-colors"
+                className="inline-flex items-center gap-2 px-6 py-3 border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-black text-neutral-900 dark:text-white font-semibold text-base hover:border-black dark:hover:border-white transition-colors"
               >
-                <span>架构文档</span>
+                <span>{t.hero.btnDocs}</span>
               </a>
             </div>
           </motion.section>
 
-          {/* 01 · 控制台与规则定义 */}
+          {/* 01 · Console & Custom Rules */}
           <motion.section
             id="console"
             initial="hidden"
@@ -504,29 +592,31 @@ export default function App() {
             className="py-16 lg:px-10 scroll-mt-16"
           >
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-              <h2 className="text-2xl md:text-3xl font-bold tracking-tight">控制台与规则定义</h2>
+              <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-neutral-900 dark:text-white">
+                {t.console.title}
+              </h2>
               <div className="flex flex-wrap gap-2">
-                {['飞书', 'Obsidian', 'Notion', '自定义 Skill', '范例模板'].map((item) => (
+                {t.console.pills.map((item) => (
                   <PlatformPill key={item} name={item} />
                 ))}
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 border-t border-l border-neutral-800">
+            <div className="grid grid-cols-1 md:grid-cols-2 border-t border-l border-neutral-200 dark:border-neutral-800">
               <GridCard
-                title="轻量化配置"
-                desc="直接在日常文档中维护关注标签、研究问题与过滤词，无需改代码。"
+                title={t.console.cards.lightweight.title}
+                desc={t.console.cards.lightweight.desc}
                 href={README_URL}
               />
               <GridCard
-                title="自定义模板"
-                desc="支持导入个人审稿 Skill 与笔记模板，按习惯生成总结。"
+                title={t.console.cards.templates.title}
+                desc={t.console.cards.templates.desc}
                 href={README_URL}
               />
             </div>
           </motion.section>
 
-          {/* 02 · 文献推荐系统 */}
+          {/* 02 · Recommendation System */}
           <motion.section
             id="recommend"
             initial="hidden"
@@ -536,36 +626,36 @@ export default function App() {
             className="py-16 lg:px-10 scroll-mt-16"
           >
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-              <h2 className="text-2xl md:text-3xl font-bold tracking-tight">文献推荐系统</h2>
+              <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-neutral-900 dark:text-white">
+                {t.recommend.title}
+              </h2>
               <div className="flex flex-wrap gap-2">
-                {['arXiv', 'HuggingFace', 'OpenReview', 'Semantic Scholar', 'GitHub', 'DBLP'].map(
-                  (item) => (
-                    <PlatformPill key={item} name={item} />
-                  )
-                )}
+                {t.recommend.pills.map((item) => (
+                  <PlatformPill key={item} name={item} />
+                ))}
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 border-t border-l border-neutral-800">
+            <div className="grid grid-cols-1 md:grid-cols-3 border-t border-l border-neutral-200 dark:border-neutral-800">
               <GridCard
-                title="多信源抓取"
-                desc="支持 arXiv、HuggingFace、OpenReview、Semantic Scholar 等主流信源。"
+                title={t.recommend.cards.sources.title}
+                desc={t.recommend.cards.sources.desc}
                 href={README_ARCH}
               />
               <GridCard
-                title="相关性打分"
-                desc="结合关注标签、文献库偏好与追踪问题进行关联打分。"
+                title={t.recommend.cards.scoring.title}
+                desc={t.recommend.cards.scoring.desc}
                 href={README_RERANK}
               />
               <GridCard
-                title="质量过滤"
-                desc="剔除低分论文，按评分分为「精读必看」与「速览雷达」。"
+                title={t.recommend.cards.filtering.title}
+                desc={t.recommend.cards.filtering.desc}
                 href={README_RUBRIC}
               />
             </div>
           </motion.section>
 
-          {/* 03 · 深度精读与问题追踪 */}
+          {/* 03 · Critical Digest & Hypothesis Tracking */}
           <motion.section
             id="digest-tracking"
             initial="hidden"
@@ -574,35 +664,35 @@ export default function App() {
             variants={sectionReveal}
             className="py-16 lg:px-10 scroll-mt-16"
           >
-            <h2 className="text-2xl md:text-3xl font-bold tracking-tight mb-8">
-              深度精读与问题追踪
+            <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-neutral-900 dark:text-white mb-8">
+              {t.digestTracking.title}
             </h2>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 border-t border-l border-neutral-800">
+            <div className="grid grid-cols-1 md:grid-cols-2 border-t border-l border-neutral-200 dark:border-neutral-800">
               <GridCard
-                title="方法与公式"
-                desc="一句话对齐基线指出核心变量，提炼模块链路与关键公式。"
+                title={t.digestTracking.cards.methodFormula.title}
+                desc={t.digestTracking.cards.methodFormula.desc}
                 href={README_RUBRIC}
               />
               <GridCard
-                title="实验核查"
-                desc="核对正文图表，列出真实涨点、算力开销与失效边界。"
+                title={t.digestTracking.cards.experimentAudit.title}
+                desc={t.digestTracking.cards.experimentAudit.desc}
                 href={README_RUBRIC}
               />
               <GridCard
-                title="问题追踪"
-                desc="针对关注问题跨文献梳理支持证据、反例与研究盲区。"
+                title={t.digestTracking.cards.questionTracking.title}
+                desc={t.digestTracking.cards.questionTracking.desc}
                 href={README_ARCH}
               />
               <GridCard
-                title="子问题追问"
-                desc="当旧问题收敛或出现证据缺口时，自动生成后续追问。"
+                title={t.digestTracking.cards.subQuestions.title}
+                desc={t.digestTracking.cards.subQuestions.desc}
                 href={README_ARCH}
               />
             </div>
           </motion.section>
 
-          {/* 04 · 多媒体衍生呈现 */}
+          {/* 04 · Multimedia Presentations */}
           <motion.section
             id="multimedia"
             initial="hidden"
@@ -612,41 +702,43 @@ export default function App() {
             className="py-16 lg:px-10 scroll-mt-16"
           >
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-              <h2 className="text-2xl md:text-3xl font-bold tracking-tight">多媒体衍生呈现</h2>
+              <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-neutral-900 dark:text-white">
+                {t.multimedia.title}
+              </h2>
               <div className="flex flex-wrap gap-2">
-                {['Edge-TTS', 'MP3 播客', '微信语音', 'PPTX', 'HTML5'].map((item) => (
+                {t.multimedia.pills.map((item) => (
                   <PlatformPill key={item} name={item} />
                 ))}
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 border-t border-l border-neutral-800">
+            <div className="grid grid-cols-1 md:grid-cols-2 border-t border-l border-neutral-200 dark:border-neutral-800">
               <GridCard
-                title="双人对话播客"
-                desc="基于 Edge-TTS 生成双人对谈音频，自动提炼核心增量与公式推演。"
+                title={t.multimedia.cards.podcast.title}
+                desc={t.multimedia.cards.podcast.desc}
                 href={README_AUDIO}
               />
               <GridCard
-                title="60 秒语音简报"
-                desc="提炼单篇文献核心结论，自动生成短音频并写入微信语音素材库。"
+                title={t.multimedia.cards.briefing.title}
+                desc={t.multimedia.cards.briefing.desc}
                 href={README_AUDIO}
               />
               <GridCard
                 dimmed
-                title="PPT 演示文稿"
-                desc="提取方法流程与实验图表，自动输出可编辑的学术汇报幻灯片。"
+                title={t.multimedia.cards.pptx.title}
+                desc={t.multimedia.cards.pptx.desc}
                 href={README_URL}
               />
               <GridCard
                 dimmed
-                title="视频与交互海报"
-                desc="基于切片素材生成动态视频解说流与轻量交互式 HTML 展板。"
+                title={t.multimedia.cards.videoPoster.title}
+                desc={t.multimedia.cards.videoPoster.desc}
                 href={README_URL}
               />
             </div>
           </motion.section>
 
-          {/* 05 · 文献库与 Agent 直连 */}
+          {/* 05 · Library & Agent Bridge */}
           <motion.section
             id="library"
             initial="hidden"
@@ -656,36 +748,36 @@ export default function App() {
             className="py-16 lg:px-10 scroll-mt-16"
           >
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-              <h2 className="text-2xl md:text-3xl font-bold tracking-tight">
-                文献库与 Agent 直连
+              <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-neutral-900 dark:text-white">
+                {t.library.title}
               </h2>
               <div className="flex flex-wrap gap-2">
-                {['飞书', 'Obsidian', 'Notion', 'Zotero'].map((item) => (
+                {t.library.pills.map((item) => (
                   <PlatformPill key={item} name={item} />
                 ))}
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 border-t border-l border-neutral-800">
+            <div className="grid grid-cols-1 md:grid-cols-3 border-t border-l border-neutral-200 dark:border-neutral-800">
               <GridCard
-                title="原生文献库"
-                desc="直接基于所选平台（飞书、Obsidian、Notion 或 Zotero）构建个人文献库。"
+                title={t.library.cards.nativeLibrary.title}
+                desc={t.library.cards.nativeLibrary.desc}
                 href={README_URL}
               />
               <GridCard
-                title="入库与批注"
-                desc="勾选论文沉淀入库，自动抓取正文生成精读笔记并进行细节批注。"
+                title={t.library.cards.ingestionNotes.title}
+                desc={t.library.cards.ingestionNotes.desc}
                 href={README_URL}
               />
               <GridCard
-                title="Agent 直连"
-                desc="paper-library CLI 直接读取文献库中的高亮与批注，供本地 Agent 调用。"
+                title={t.library.cards.agentBridge.title}
+                desc={t.library.cards.agentBridge.desc}
                 href={README_URL}
               />
             </div>
           </motion.section>
 
-          {/* 06 · 日报推送 */}
+          {/* 06 · Daily Delivery */}
           <motion.section
             id="delivery"
             initial="hidden"
@@ -695,23 +787,41 @@ export default function App() {
             className="py-16 lg:px-10 scroll-mt-16"
           >
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-              <h2 className="text-2xl md:text-3xl font-bold tracking-tight">日报推送</h2>
+              <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-neutral-900 dark:text-white">
+                {t.delivery.title}
+              </h2>
               <div className="flex flex-wrap gap-2">
-                {['飞书', 'Email', '微信公众号', 'Telegram'].map((item) => (
+                {t.delivery.pills.map((item) => (
                   <PlatformPill key={item} name={item} />
                 ))}
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 border-t border-l border-neutral-800">
-              <GridCard title="飞书" desc="生成飞书云文档日报与阅读待办。" href={README_ARCH} />
-              <GridCard title="邮件" desc="SMTP 推送 HTML 日报。" href={README_ARCH} />
-              <GridCard title="微信公众号" desc="自动排版并写入草稿箱。" href={README_WECHAT} />
-              <GridCard title="Telegram" desc="Bot 实时推送摘要与评分。" href={README_AUDIO} />
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 border-t border-l border-neutral-200 dark:border-neutral-800">
+              <GridCard
+                title={t.delivery.cards.feishu.title}
+                desc={t.delivery.cards.feishu.desc}
+                href={README_ARCH}
+              />
+              <GridCard
+                title={t.delivery.cards.email.title}
+                desc={t.delivery.cards.email.desc}
+                href={README_ARCH}
+              />
+              <GridCard
+                title={t.delivery.cards.wechat.title}
+                desc={t.delivery.cards.wechat.desc}
+                href={README_WECHAT}
+              />
+              <GridCard
+                title={t.delivery.cards.telegram.title}
+                desc={t.delivery.cards.telegram.desc}
+                href={README_AUDIO}
+              />
             </div>
           </motion.section>
 
-          {/* 07 · 接入触发与部署 */}
+          {/* 07 · Deployment & Triggers */}
           <motion.section
             id="deploy"
             initial="hidden"
@@ -721,110 +831,140 @@ export default function App() {
             className="py-16 lg:px-10 scroll-mt-16"
           >
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-              <h2 className="text-2xl md:text-3xl font-bold tracking-tight">接入触发与部署</h2>
+              <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-neutral-900 dark:text-white">
+                {t.deploy.title}
+              </h2>
               <div className="flex flex-wrap gap-2">
-                {['GitHub Actions', 'OpenClaw', 'Hermes', 'Grok Bot', 'Webhook'].map((item) => (
+                {t.deploy.pills.map((item) => (
                   <PlatformPill key={item} name={item} />
                 ))}
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 border-t border-l border-neutral-800 mb-8">
+            <div className="grid grid-cols-1 md:grid-cols-3 border-t border-l border-neutral-200 dark:border-neutral-800 mb-8">
               <GridCard
-                title="GitHub Actions"
-                desc="Fork 仓库填好密钥即可定时运行，无需服务器。"
+                title={t.deploy.cards.githubActions.title}
+                desc={t.deploy.cards.githubActions.desc}
                 href={README_URL}
               />
               <GridCard
-                title="Agent 检索"
-                desc="支持 OpenClaw、Hermes 等通过 CLI 或 Tool 协议直接调用。"
+                title={t.deploy.cards.agentRetrieval.title}
+                desc={t.deploy.cards.agentRetrieval.desc}
                 href={README_URL}
               />
               <GridCard
-                title="Webhook 触发"
-                desc="单条请求触发运行，动态传入临时问题与过滤规则。"
+                title={t.deploy.cards.webhook.title}
+                desc={t.deploy.cards.webhook.desc}
                 href={README_URL}
               />
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 border-t border-l border-neutral-800 mb-8">
+            <div className="grid grid-cols-1 md:grid-cols-3 border-t border-l border-neutral-200 dark:border-neutral-800 mb-8">
               <a
                 href="https://github.com/link231rog/feisu-paper-daily/fork"
                 target="_blank"
                 rel="noreferrer"
-                className="group p-6 border-r border-b border-neutral-800 flex items-center justify-between gap-3 bg-black hover:bg-neutral-950 transition-colors"
+                className="group p-6 border-r border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between gap-3 bg-white dark:bg-black hover:bg-neutral-50 dark:hover:bg-neutral-950 transition-colors"
               >
                 <div className="flex items-center gap-3">
-                  <GitPullRequest className="w-5 h-5 text-white shrink-0" />
+                  <GitPullRequest className="w-5 h-5 text-neutral-900 dark:text-white shrink-0" />
                   <div>
-                    <div className="text-lg font-semibold text-white">Fork 仓库</div>
-                    <div className="text-sm text-neutral-400 mt-1">克隆或 Fork 项目仓库</div>
+                    <div className="text-lg font-semibold text-neutral-900 dark:text-white">
+                      {t.deploy.steps.fork.title}
+                    </div>
+                    <div className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
+                      {t.deploy.steps.fork.desc}
+                    </div>
                   </div>
                 </div>
-                <ArrowUpRight className="w-4 h-4 text-neutral-600 group-hover:text-white transition-colors shrink-0" />
+                <ArrowUpRight className="w-4 h-4 text-neutral-400 dark:text-neutral-600 group-hover:text-black dark:group-hover:text-white transition-colors shrink-0" />
               </a>
               <a
                 href={README_INIT}
                 target="_blank"
                 rel="noreferrer"
-                className="group p-6 border-r border-b border-neutral-800 flex items-center justify-between gap-3 bg-black hover:bg-neutral-950 transition-colors"
+                className="group p-6 border-r border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between gap-3 bg-white dark:bg-black hover:bg-neutral-50 dark:hover:bg-neutral-950 transition-colors"
               >
                 <div className="flex items-center gap-3">
-                  <ShieldCheck className="w-5 h-5 text-white shrink-0" />
+                  <ShieldCheck className="w-5 h-5 text-neutral-900 dark:text-white shrink-0" />
                   <div>
-                    <div className="text-lg font-semibold text-white">Agent / CLI 引导初始化</div>
-                    <div className="text-sm text-neutral-400 mt-1">多选勾选信源与渠道，按需填入对应 Key</div>
+                    <div className="text-lg font-semibold text-neutral-900 dark:text-white">
+                      {t.deploy.steps.wizard.title}
+                    </div>
+                    <div className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
+                      {t.deploy.steps.wizard.desc}
+                    </div>
                   </div>
                 </div>
-                <ArrowUpRight className="w-4 h-4 text-neutral-600 group-hover:text-white transition-colors shrink-0" />
+                <ArrowUpRight className="w-4 h-4 text-neutral-400 dark:text-neutral-600 group-hover:text-black dark:group-hover:text-white transition-colors shrink-0" />
               </a>
               <a
                 href={README_INIT}
                 target="_blank"
                 rel="noreferrer"
-                className="group p-6 border-r border-b border-neutral-800 flex items-center justify-between gap-3 bg-black hover:bg-neutral-950 transition-colors"
+                className="group p-6 border-r border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between gap-3 bg-white dark:bg-black hover:bg-neutral-50 dark:hover:bg-neutral-950 transition-colors"
               >
                 <div className="flex items-center gap-3">
-                  <Send className="w-5 h-5 text-white shrink-0" />
+                  <Send className="w-5 h-5 text-neutral-900 dark:text-white shrink-0" />
                   <div>
-                    <div className="text-lg font-semibold text-white">生成配置与控制台</div>
-                    <div className="text-sm text-neutral-400 mt-1">自动写入配置、密钥与初始控制台文档</div>
+                    <div className="text-lg font-semibold text-neutral-900 dark:text-white">
+                      {t.deploy.steps.generate.title}
+                    </div>
+                    <div className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
+                      {t.deploy.steps.generate.desc}
+                    </div>
                   </div>
                 </div>
-                <ArrowUpRight className="w-4 h-4 text-neutral-600 group-hover:text-white transition-colors shrink-0" />
+                <ArrowUpRight className="w-4 h-4 text-neutral-400 dark:text-neutral-600 group-hover:text-black dark:group-hover:text-white transition-colors shrink-0" />
               </a>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 border-t border-l border-neutral-800">
-              <div className="border-r border-b border-neutral-800 bg-neutral-950 p-5 flex items-center justify-between gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 border-t border-l border-neutral-200 dark:border-neutral-800">
+              <div className="border-r border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 p-5 flex items-center justify-between gap-4 transition-colors">
                 <div className="min-w-0">
-                  <div className="text-xs text-neutral-400 mb-1">交互式多选引导与渠道密钥初始化</div>
-                  <code className="text-base font-mono text-white block overflow-x-auto">
+                  <div className="text-xs text-neutral-500 dark:text-neutral-400 mb-1">
+                    {t.deploy.terminal.initDesc}
+                  </div>
+                  <code className="text-base font-mono text-neutral-900 dark:text-white block overflow-x-auto">
                     $ {initCommand}
                   </code>
                 </div>
                 <button
                   onClick={() => handleCopy(initCommand, 'init')}
-                  className="inline-flex items-center gap-2 px-4 py-2 border border-neutral-700 bg-black text-white text-sm font-medium hover:border-white transition-colors shrink-0 cursor-pointer"
+                  className="inline-flex items-center gap-2 px-4 py-2 border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-black text-neutral-900 dark:text-white text-sm font-medium hover:border-black dark:hover:border-white transition-colors shrink-0 cursor-pointer"
                 >
-                  {copiedCmd === 'init' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                  <span>{copiedCmd === 'init' ? '已复制' : '复制'}</span>
+                  {copiedCmd === 'init' ? (
+                    <Check className="w-4 h-4 text-emerald-500" />
+                  ) : (
+                    <Copy className="w-4 h-4" />
+                  )}
+                  <span>
+                    {copiedCmd === 'init' ? t.deploy.terminal.copied : t.deploy.terminal.copy}
+                  </span>
                 </button>
               </div>
 
-              <div className="border-r border-b border-neutral-800 bg-neutral-950 p-5 flex items-center justify-between gap-4">
+              <div className="border-r border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 p-5 flex items-center justify-between gap-4 transition-colors">
                 <div className="min-w-0">
-                  <div className="text-xs text-neutral-400 mb-1">Agent 直连检索文献库与个人批注</div>
-                  <code className="text-base font-mono text-white block overflow-x-auto">
+                  <div className="text-xs text-neutral-500 dark:text-neutral-400 mb-1">
+                    {t.deploy.terminal.searchDesc}
+                  </div>
+                  <code className="text-base font-mono text-neutral-900 dark:text-white block overflow-x-auto">
                     $ {cliCommand}
                   </code>
                 </div>
                 <button
                   onClick={() => handleCopy(cliCommand, 'search')}
-                  className="inline-flex items-center gap-2 px-4 py-2 border border-neutral-700 bg-black text-white text-sm font-medium hover:border-white transition-colors shrink-0 cursor-pointer"
+                  className="inline-flex items-center gap-2 px-4 py-2 border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-black text-neutral-900 dark:text-white text-sm font-medium hover:border-black dark:hover:border-white transition-colors shrink-0 cursor-pointer"
                 >
-                  {copiedCmd === 'search' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                  <span>{copiedCmd === 'search' ? '已复制' : '复制'}</span>
+                  {copiedCmd === 'search' ? (
+                    <Check className="w-4 h-4 text-emerald-500" />
+                  ) : (
+                    <Copy className="w-4 h-4" />
+                  )}
+                  <span>
+                    {copiedCmd === 'search' ? t.deploy.terminal.copied : t.deploy.terminal.copy}
+                  </span>
                 </button>
               </div>
             </div>
@@ -833,16 +973,18 @@ export default function App() {
           {/* Author Footer */}
           <footer className="py-10 lg:px-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="w-2.5 h-2.5 bg-white" />
-              <span className="text-base font-semibold text-white">Paper Daily</span>
-              <span className="text-neutral-700">·</span>
+              <div className="w-2.5 h-2.5 bg-black dark:bg-white transition-colors" />
+              <span className="text-base font-semibold text-neutral-900 dark:text-white">
+                Paper Daily
+              </span>
+              <span className="text-neutral-300 dark:text-neutral-700">·</span>
               <a
                 href={AUTHOR_HOMEPAGE_URL}
                 target="_blank"
                 rel="noreferrer"
-                className="text-base text-neutral-300 hover:text-white transition-colors"
+                className="text-base text-neutral-600 dark:text-neutral-300 hover:text-black dark:hover:text-white transition-colors"
               >
-                Zixuan Huang (@link231rog)
+                {t.footer.author}
               </a>
             </div>
             <div className="flex items-center gap-6">
@@ -850,9 +992,9 @@ export default function App() {
                 href="https://github.com/link231rog/feisu-paper-daily"
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1.5 text-sm font-mono text-neutral-300 hover:text-white transition-colors"
+                className="inline-flex items-center gap-1.5 text-sm font-mono text-neutral-600 dark:text-neutral-300 hover:text-black dark:hover:text-white transition-colors"
               >
-                <span>github.com/link231rog/feisu-paper-daily</span>
+                <span>{t.footer.repo}</span>
                 <ArrowUpRight className="w-4 h-4" />
               </a>
             </div>

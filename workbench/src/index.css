@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @layer base {
   :root {
     --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -8,10 +10,17 @@
 
   body {
     font-family: var(--font-sans);
-    background-color: #000000;
-    color: #ffffff;
+    background-color: #ffffff;
+    color: #0a0a0a;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+
+  .dark body,
+  html.dark body {
+    background-color: #000000;
+    color: #ffffff;
   }
 
   code, pre, .font-mono {
