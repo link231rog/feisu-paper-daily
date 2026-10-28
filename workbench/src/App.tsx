@@ -20,6 +20,10 @@ import {
   GitPullRequest,
   Globe,
   Newspaper,
+  Headphones,
+  Volume2,
+  Presentation,
+  Video,
 } from 'lucide-react';
 
 const SECTIONS = [
@@ -27,6 +31,7 @@ const SECTIONS = [
   { id: 'console', label: '控制台与规则定义' },
   { id: 'recommend', label: '文献推荐系统' },
   { id: 'digest-tracking', label: '深度精读与问题追踪' },
+  { id: 'multimedia', label: '多媒体衍生呈现' },
   { id: 'library', label: '文献库与 Agent 直连' },
   { id: 'delivery', label: '日报推送' },
   { id: 'deploy', label: '接入触发与部署' },
@@ -109,6 +114,15 @@ function BrandIcon({ name }: { name: string }) {
       return <FileText className="w-5 h-5" />;
     case 'AI News':
       return <Newspaper className="w-5 h-5" />;
+    case 'Edge-TTS':
+    case 'MP3 播客':
+      return <Headphones className="w-5 h-5" />;
+    case '微信语音':
+      return <Volume2 className="w-5 h-5" />;
+    case 'PPTX':
+      return <Presentation className="w-5 h-5" />;
+    case 'HTML5':
+      return <Globe className="w-5 h-5" />;
     default:
       return <Globe className="w-5 h-5" />;
   }
@@ -130,19 +144,29 @@ function PlatformPill({ name }: { name: string }) {
 function GridCard({
   title,
   desc,
+  dimmed = false,
   className = '',
 }: {
   title: string;
   desc: string;
+  dimmed?: boolean;
   className?: string;
 }) {
   return (
     <div
       className={`group relative p-6 border-r border-b border-neutral-800 bg-black hover:bg-neutral-950 transition-colors duration-200 ${className}`}
     >
-      <span className="pointer-events-none absolute top-0 left-0 h-px w-0 bg-white transition-all duration-300 group-hover:w-full" />
-      <h3 className="text-lg font-semibold text-white">{title}</h3>
-      <p className="mt-2 text-base text-neutral-300">{desc}</p>
+      <span
+        className={`pointer-events-none absolute top-0 left-0 h-px w-0 transition-all duration-300 ${
+          dimmed ? 'bg-neutral-600 group-hover:w-full' : 'bg-white group-hover:w-full'
+        }`}
+      />
+      <h3 className={`text-lg font-semibold ${dimmed ? 'text-neutral-500' : 'text-white'}`}>
+        {title}
+      </h3>
+      <p className={`mt-2 text-base ${dimmed ? 'text-neutral-600' : 'text-neutral-300'}`}>
+        {desc}
+      </p>
     </div>
   );
 }
@@ -456,7 +480,47 @@ export default function App() {
             </div>
           </motion.section>
 
-          {/* 04 · 文献库与 Agent 直连 */}
+          {/* 04 · 多媒体衍生呈现 */}
+          <motion.section
+            id="multimedia"
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, amount: 0.2 }}
+            variants={sectionReveal}
+            className="py-16 lg:px-10 scroll-mt-16"
+          >
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+              <h2 className="text-2xl md:text-3xl font-bold tracking-tight">多媒体衍生呈现</h2>
+              <div className="flex flex-wrap gap-2">
+                {['Edge-TTS', 'MP3 播客', '微信语音', 'PPTX', 'HTML5'].map((item) => (
+                  <PlatformPill key={item} name={item} />
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 border-t border-l border-neutral-800">
+              <GridCard
+                title="双人对话播客"
+                desc="基于 Edge-TTS 生成双人对谈音频，自动提炼核心增量与公式推演。"
+              />
+              <GridCard
+                title="60 秒语音简报"
+                desc="提炼单篇文献核心结论，自动生成短音频并写入微信语音素材库。"
+              />
+              <GridCard
+                dimmed
+                title="PPT 演示文稿"
+                desc="提取方法流程与实验图表，自动输出可编辑的学术汇报幻灯片。"
+              />
+              <GridCard
+                dimmed
+                title="视频与交互海报"
+                desc="基于切片素材生成动态视频解说流与轻量交互式 HTML 展板。"
+              />
+            </div>
+          </motion.section>
+
+          {/* 05 · 文献库与 Agent 直连 */}
           <motion.section
             id="library"
             initial="hidden"
@@ -492,7 +556,7 @@ export default function App() {
             </div>
           </motion.section>
 
-          {/* 05 · 日报推送 */}
+          {/* 06 · 日报推送 */}
           <motion.section
             id="delivery"
             initial="hidden"
@@ -518,7 +582,7 @@ export default function App() {
             </div>
           </motion.section>
 
-          {/* 06 · 接入触发与部署 */}
+          {/* 07 · 接入触发与部署 */}
           <motion.section
             id="deploy"
             initial="hidden"
