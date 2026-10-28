@@ -44,6 +44,7 @@ const README_RUBRIC = 'https://github.com/link231rog/feisu-paper-daily#2-审稿�
 const README_AUDIO = 'https://github.com/link231rog/feisu-paper-daily#3-可选-mp3-音频播客与多渠道语音推送';
 const README_WECHAT = 'https://github.com/link231rog/feisu-paper-daily#4-微信公众号排版封面生成与草稿箱发布';
 const README_INIT = 'https://github.com/link231rog/feisu-paper-daily#2-交互式初始化向导';
+const AUTHOR_HOMEPAGE_URL = 'https://link231rog.github.io/Poster/';
 
 function BrandIcon({ name }: { name: string }) {
   switch (name) {
@@ -351,7 +352,7 @@ export default function App() {
             </button>
             <span className="text-neutral-700">/</span>
             <a
-              href="https://github.com/link231rog"
+              href={AUTHOR_HOMEPAGE_URL}
               target="_blank"
               rel="noreferrer"
               className="inline-flex items-center gap-2 text-sm font-mono text-neutral-300 hover:text-white transition-colors"
@@ -415,7 +416,7 @@ export default function App() {
             <div className="mt-12 pt-6 border-t border-neutral-800">
               <div className="text-xs font-mono text-neutral-500 uppercase tracking-wider">作者</div>
               <a
-                href="https://github.com/link231rog"
+                href={AUTHOR_HOMEPAGE_URL}
                 target="_blank"
                 rel="noreferrer"
                 className="mt-2 inline-flex items-center gap-1.5 text-sm font-semibold text-white hover:underline"
@@ -439,9 +440,15 @@ export default function App() {
             variants={sectionReveal}
             className="py-20 md:py-24 lg:px-10 scroll-mt-16"
           >
-            <div className="inline-flex items-center gap-2 px-3 py-1 border border-neutral-800 bg-neutral-950 text-sm font-mono text-neutral-300 mb-6">
+            <a
+              href={AUTHOR_HOMEPAGE_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-2 px-3 py-1 border border-neutral-800 bg-neutral-950 text-sm font-mono text-neutral-300 hover:text-white hover:border-neutral-700 transition-colors mb-6 cursor-pointer"
+            >
               <span>Built by Zixuan Huang (@link231rog)</span>
-            </div>
+              <ArrowUpRight className="w-3.5 h-3.5 text-neutral-500" />
+            </a>
 
             <h1 className="text-5xl md:text-7xl font-bold tracking-tight text-white">
               Paper Daily
@@ -830,7 +837,7 @@ export default function App() {
               <span className="text-base font-semibold text-white">Paper Daily</span>
               <span className="text-neutral-700">·</span>
               <a
-                href="https://github.com/link231rog"
+                href={AUTHOR_HOMEPAGE_URL}
                 target="_blank"
                 rel="noreferrer"
                 className="text-base text-neutral-300 hover:text-white transition-colors"
