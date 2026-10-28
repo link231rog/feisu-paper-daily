@@ -1322,6 +1322,22 @@ wheels = [
 ]
 
 [[package]]
+name = "notebooklm-py"
+version = "0.8.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "click" },
+    { name = "filelock" },
+    { name = "httpx" },
+    { name = "idna" },
+    { name = "rich" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/4f/5a/74ed63c67e5478401aef13a678af73c351c5fec820d8006eb637119a5eef/notebooklm_py-0.8.5.tar.gz", hash = "sha256:965e0ad77dfd3f93714b6a304f5c66f70248c88979d5dfbfd9d73a0270b7a46a", size = 8982064, upload-time = "2026-10-13T00:11:08.799Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/90/86/056e0fb28f2aaefa43c867dd73f5ed36a7d5de8d7db0876e8bc9a37568cc/notebooklm_py-0.8.5-py3-none-any.whl", hash = "sha256:18c96d31ad0ea538c1811f177dcfe86cc9c5319c8bdc4c99e5298c520b86d011", size = 2090188, upload-time = "2026-10-13T00:11:05.694Z" },
+]
+
+[[package]]
 name = "numpy"
 version = "2.4.3"
 source = { registry = "https://pypi.org/simple" }
@@ -2770,6 +2786,7 @@ dependencies = [
     { name = "loguru" },
     { name = "lxml" },
     { name = "markdown" },
+    { name = "notebooklm-py" },
     { name = "numpy" },
     { name = "openai" },
     { name = "premailer" },
@@ -2802,6 +2819,7 @@ requires-dist = [
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "lxml", specifier = ">=5.0.0" },
     { name = "markdown", specifier = ">=3.6" },
+    { name = "notebooklm-py", specifier = ">=0.8.5" },
     { name = "numpy", specifier = ">=1.26.0" },
     { name = "openai", specifier = ">=2.24.0" },
     { name = "premailer", specifier = ">=3.10.0" },

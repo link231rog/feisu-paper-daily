@@ -122,6 +122,8 @@ function BrandIcon({ name }: { name: string }) {
     case 'AI News':
       return <Newspaper className="w-5 h-5" />;
     case 'Edge-TTS':
+    case 'NotebookLM':
+      return <BookOpen className="w-5 h-5" />;
     case 'MP3 播客':
     case 'MP3 Podcast':
       return <Headphones className="w-5 h-5" />;
@@ -163,6 +165,7 @@ const PLATFORM_URLS: Record<string, string> = {
   'Exemplar Templates': 'https://github.com/link231rog/feisu-paper-daily#readme',
 
   // Multimedia
+  NotebookLM: 'https://notebooklm.google.com',
   'Edge-TTS': 'https://github.com/rany2/edge-tts',
   'MP3 播客': 'https://github.com/link231rog/feisu-paper-daily#3-可选-mp3-音频播客与多渠道语音推送',
   'MP3 Podcast': 'https://github.com/link231rog/feisu-paper-daily#3-可选-mp3-音频播客与多渠道语音推送',

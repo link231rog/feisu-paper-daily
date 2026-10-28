@@ -1138,6 +1138,149 @@ def test_biorxiv_medrxiv_chemrxiv_retrievers(monkeypatch):
     assert "Carol White" in p_chem.authors
 
 
+def test_notebooklm_pipeline_and_dual_mode_topics(tmp_path, monkeypatch):
+    """Verify NotebookLM topic grouping, persistent auto-volume split, daily mode, and dual-track audio."""
+    import datetime
+    from pathlib import Path
+    from zotero_arxiv_daily.channels.notebooklm import (
+        _resolve_auth_json,
+        group_papers_by_topic,
+        run_notebooklm_pipeline,
+    )
+    from zotero_arxiv_daily.protocol import Paper
+
+    # 1. Topic grouping
+    p1 = Paper(source="arxiv", title="Episodic Memory Agents", authors=["A"], abstract="abs", url="http://1", matched_anchor_title="Agent Memory")
+    p2 = Paper(source="arxiv", title="Reinforcement Learning on Graphs", authors=["B"], abstract="abs", url="http://2")
+    p2.tags = ["RL", "Reasoning"]
+    p3 = Paper(source="arxiv", title="General LLM Reasoning Benchmark", authors=["C"], abstract="abs", url="http://3")
+    p3.tags = ["Reasoning"]
+
+    grouped = group_papers_by_topic([p1, p2, p3], configured_topics=["RL", "Reasoning"])
+    assert "Agent Memory" in grouped
+    assert "RL" in grouped
+    assert grouped["Agent Memory"][0].title == "Episodic Memory Agents"
+
+    # 2. Auth resolution from cookies string and JSON
+    monkeypatch.setenv("NOTEBOOKLM_COOKIES", "SID=secret_sid_123; HSID=secret_hsid_456")
+    resolved_json = _resolve_auth_json()
+    assert resolved_json is not None
+    assert "secret_sid_123" in resolved_json
+    assert "secret_hsid_456" in resolved_json
+
+    # 3. Mock NotebookLMClient to test persistent volume split & daily mode
+    created_notebooks = []
+    created_sources = []
+    generated_tasks = []
+
+    class DummyNotebook:
+        def __init__(self, nb_id, title, sources_count=0):
+            self.id = nb_id
+            self.title = title
+            self.sources_count = sources_count
+
+    class MockNotebooksNS:
+        def __init__(self):
+            # Simulate an existing Vol.1 that reached 45 sources
+            self._nbs = [DummyNotebook("nb_vol1", "[Topic] Agent Memory", sources_count=45)]
+
+        async def list(self):
+            return list(self._nbs)
+
+        async def create(self, title):
+            nb_id = f"nb_{len(created_notebooks) + 1}"
+            nb = DummyNotebook(nb_id, title, sources_count=0)
+            self._nbs.append(nb)
+            created_notebooks.append((nb_id, title))
+            return nb
+
+    class MockSourcesNS:
+        async def list(self, nb_id):
+            return []
+
+        async def add_url(self, nb_id, url, title=None, wait=True, wait_timeout=60.0):
+            created_sources.append(("url", nb_id, url, title))
+            return None
+
+        async def add_text(self, nb_id, text, title=None):
+            created_sources.append(("text", nb_id, title))
+            return None
+
+    class MockArtifactsNS:
+        async def generate_audio(self, nb_id, **kwargs):
+            generated_tasks.append((nb_id, kwargs))
+            class Status:
+                task_id = "task_999"
+            return Status()
+
+        async def wait_for_completion(self, nb_id, task_id, timeout=300.0):
+            class Status:
+                state = "COMPLETED"
+            return Status()
+
+        async def download_audio(self, nb_id, output_path):
+            p = Path(output_path)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_bytes(b"\xff\xfb\x90\x64" * 10)  # Dummy MP3
+            return str(p)
+
+    class MockClientContext:
+        def __init__(self):
+            self.notebooks = MockNotebooksNS()
+            self.sources = MockSourcesNS()
+            self.artifacts = MockArtifactsNS()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            pass
+
+    import notebooklm
+    monkeypatch.setattr(notebooklm.NotebookLMClient, "from_storage", lambda *args, **kwargs: MockClientContext())
+
+    out_dir = tmp_path / "nblm_audio"
+    cfg = OmegaConf.create({
+        "notebooklm": {
+            "enabled": True,
+            "notebook_mode": "persistent",
+            "max_sources_per_notebook": 45,
+            "generate_audio": True,
+            "audio_language": "zh",
+            "audio_format": "deep_dive",
+            "audio_length": "default",
+            "max_topics": 1,
+            "output_dir": str(out_dir),
+        }
+    })
+
+    # Run pipeline in persistent mode: Vol.1 is full (45 sources), so it should auto-split into Vol.2!
+    bundles = run_notebooklm_pipeline([p1], cfg)
+    assert len(bundles) == 1
+    assert bundles[0].engine == "notebooklm"
+    assert "NotebookLM 深度播客" in bundles[0].title
+    assert bundles[0].mp3_path.is_file()
+
+    # Verify Vol.2 was created due to auto-volume split threshold
+    assert any("Vol.2" in title for _, title in created_notebooks)
+    assert any(url == p1.url for kind, _, url, _ in created_sources if kind == "url")
+
+    # Run pipeline in daily mode
+    cfg_daily = OmegaConf.create({
+        "notebooklm": {
+            "enabled": True,
+            "notebook_mode": "daily",
+            "generate_audio": True,
+            "output_dir": str(out_dir),
+        }
+    })
+    created_notebooks.clear()
+    bundles_daily = run_notebooklm_pipeline([p1], cfg_daily)
+    assert len(bundles_daily) == 1
+    today_str = datetime.datetime.now().strftime("%Y-%m-%d")
+    assert any(today_str in title for _, title in created_notebooks)
+
+
 
 
 

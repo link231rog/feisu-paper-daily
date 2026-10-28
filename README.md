@@ -77,21 +77,24 @@ src/zotero_arxiv_daily/
 - **综合校准总分与二次重排（`composite_score`）**：
   由 4D Rubric 加权映射至 0–10 分，并对「证据存疑/基线较弱」论文执行封顶惩罚（`<= 5.8`），在精读生成后自动重排「精读必看」与「速览雷达」层级。
 
-### 3. 可选 MP3 音频播客与多渠道语音推送
-支持将每日精选论文与追踪问题综述自动合成为 MP3 音频，作为可选推送材料分发：
-- **三种音频内容形态**：
+### 3. 可选多模态音频播客与 Google NotebookLM 专题沉淀
+支持将每日精选论文与追踪问题综述自动合成为音频播客，并支持 **Edge-TTS** 与 **Google NotebookLM** 独立双轨并行输出：
+- **Edge-TTS 引擎（极速轻量免密）**：
   - **`dialogue`（双人对谈播客模式，NotebookLM 风格）**：由女声主持（`zh-CN-XiaoxiaoNeural` / `nova`）抛出研究痛点与批判追问，男声学者（`zh-CN-YunxiNeural` / `onyx`）拆解核心增量、四维评分与开源复现价值，男女声交替对谈。
   - **`briefing`（单人高密度学术早报模式）**：单人主播 3~5 分钟快速串讲今日问题进展与精选论文核心结论。
   - **`wechat_60s`（微信公众号 60 秒语音导读）**：严格控制在 210 字以内（时长 ≤ 55 秒、体积 ≤ 2MB），适配微信公众号永久语音素材限制。
-- **双语音合成引擎与免 `ffmpeg` 纯 Python 拼接**：
-  - 默认集成开源免费的 **`edge-tts`**，并兼容 **OpenAI `/v1/audio/speech`** 接口（含自建 `openai-edge-tts`）。
   - 逐轮语音合成后在纯 Python 内剥离次段 ID3v2 标签头并注入 MPEG-1 Layer 3 静音帧间隔拼接，无需宿主机安装 `ffmpeg`。
-- **多渠道音频投递**：
-  - **本地归档**：保存至 `data/audio/daily_podcast_YYYY-MM-DD.mp3` 与 `.script.json`。
-  - **Telegram**：调用 Bot API `/sendAudio` 直接推送原生可拖拽音频播放器。
-  - **邮件**：通过 `MIMEMultipart("mixed")` 将 `.mp3` 作为邮件附件发送。
-  - **飞书日报文档**：通过飞书云空间媒体上传接口（`parent_type="docx_file"`）与 Docx 文件块（`block_type=23`）将音频直接挂载在日报文档顶部。
-  - **微信公众号**：通过 `/cgi-bin/material/add_material?type=voice` 上传 60 秒浓缩版语音导读至公众号永久素材库，并在草稿顶部提示 `Media ID`。
+- **Google NotebookLM 引擎（专题知识库与官方原生 Audio Overview 播客）**：
+  - 基于 [`teng-lin/notebooklm-py`](https://github.com/teng-lin/notebooklm-py) 官方逆向 API 实现，支持按 Topic 标签自动投喂：
+    - **`persistent` 模式（默认，长效沉淀）**：每个研究专题（如 `[Topic] Agent Memory`）维护专属长效笔记本，新文献自动追加；当单本容量接近 50 篇限额时（阈值 45 篇），系统自动滚动开启 `Vol.2`、`Vol.3` 分卷继续累积。
+    - **`daily` 模式（单期隔离）**：每日按 Topic 独立建本（如 `2026-10-28 [Topic] Agent Memory`），完全聚焦当日新论文对比。
+  - 调用 Google Gemini 官方双人播客生成引擎（具有真实的换气声、语气起伏与自然打断），直接下载为高质量音频并推送到各渠道。
+- **全渠道双轨独立投递**：
+  - **本地归档**：分别保存至 `data/audio/daily_podcast_YYYY-MM-DD.mp3` 与 `data/audio/notebooklm/`。
+  - **Telegram**：通过 Bot API 分别推送 `[Edge-TTS 版]` 与 `[NotebookLM 深度版]` 专属原生播放器。
+  - **邮件**：通过 `MIMEMultipart("mixed")` 将两份音频作为独立附件发送。
+  - **飞书日报文档**：通过飞书云空间媒体上传接口将两份音频分别挂载在日报文档顶部，供读者自主挑选试听。
+  - **微信公众号**：自动将 60 秒浓缩语音导读上传至公众号永久素材库。
 
 ---
 
@@ -183,6 +186,8 @@ uv run pytest tests/test_smoke.py
   *引用说明*：接入了 Hugging Face 每日论文公开接口以获取社区实时热度（`hf_upvotes`），并结合正文代码链接提取实现新发表预印本的冷启动信号加成。
 
 ### 3. MP3 语音合成与双人学术播客生成
+- **[`teng-lin/notebooklm-py`](https://github.com/teng-lin/notebooklm-py)**  
+  *引用说明*：官方 Google Gemini Notebook / NotebookLM 非官方 Python API 与代理技能，为本项目提供了按 Topic 标签自动投喂专属长效笔记本、自动分卷（Vol.N）以及生成 Google 原生高保真双人对谈 Audio Overview 播客的核心桥梁。
 - **[`rany2/edge-tts`](https://github.com/rany2/edge-tts)**  
   *引用说明*：直接集成为默认的免配置神经网络语音合成底座，调用微软 Edge Neural TTS 接口生成中文多角色对谈与早报音频。
 - **[`souzatharsis/podcastfy`](https://github.com/souzatharsis/podcastfy)**  

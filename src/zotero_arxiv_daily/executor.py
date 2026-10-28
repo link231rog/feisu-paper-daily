@@ -1931,7 +1931,7 @@ class Executor:
         attempted_channels = 0
         today_str = datetime.now().date().isoformat()
 
-        # Optional MP3 Audio Podcast / Morning Briefing Generation
+        # Optional MP3 Audio Podcast / Morning Briefing Generation (Edge-TTS)
         audio_bundle = None
         audio_cfg = self.config.get("audio") or {}
         if as_bool(audio_cfg.get("enabled", False)) and (reranked_papers or trending_items):
@@ -1948,26 +1948,49 @@ class Executor:
             except Exception as exc:
                 logger.warning(f"Optional audio bundle generation failed: {exc}")
 
-        feishu_audio_path = (
-            str(audio_bundle.mp3_path)
-            if audio_bundle and as_bool(audio_cfg.get("attach_feishu", True))
-            else None
-        )
-        email_attachments = (
-            [str(audio_bundle.mp3_path)]
-            if audio_bundle and as_bool(audio_cfg.get("attach_email", True))
-            else None
-        )
+        # Optional Google NotebookLM Topic Ingestion & Audio Overview Generation
+        notebooklm_bundles = []
+        notebooklm_cfg = self.config.get("notebooklm") or {}
+        if as_bool(notebooklm_cfg.get("enabled", False)) and reranked_papers:
+            try:
+                from .channels.notebooklm import run_notebooklm_pipeline
+
+                notebooklm_bundles = run_notebooklm_pipeline(
+                    reranked_papers,
+                    self.config,
+                )
+            except Exception as exc:
+                logger.warning(f"Optional NotebookLM topic pipeline failed: {exc}")
+
+        feishu_audio_paths: list[str] = []
+        if audio_bundle and as_bool(audio_cfg.get("attach_feishu", True)):
+            feishu_audio_paths.append(str(audio_bundle.mp3_path))
+        if as_bool(notebooklm_cfg.get("attach_feishu", True)):
+            for nb_b in notebooklm_bundles:
+                if nb_b.mp3_path and nb_b.mp3_path.is_file():
+                    feishu_audio_paths.append(str(nb_b.mp3_path))
+
+        email_attachments: list[str] = []
+        if audio_bundle and as_bool(audio_cfg.get("attach_email", True)):
+            email_attachments.append(str(audio_bundle.mp3_path))
+        if as_bool(notebooklm_cfg.get("attach_email", True)):
+            for nb_b in notebooklm_bundles:
+                if nb_b.mp3_path and nb_b.mp3_path.is_file():
+                    email_attachments.append(str(nb_b.mp3_path))
+
         wechat_voice_path = (
             str(audio_bundle.wechat_mp3_path)
             if audio_bundle and audio_bundle.wechat_mp3_path and as_bool(audio_cfg.get("upload_wechat_voice", True))
             else None
         )
-        telegram_audio_path = (
-            str(audio_bundle.mp3_path)
-            if audio_bundle and as_bool(audio_cfg.get("attach_telegram", True))
-            else None
-        )
+
+        telegram_audio_items: list[Any] = []
+        if audio_bundle and as_bool(audio_cfg.get("attach_telegram", True)):
+            telegram_audio_items.append(audio_bundle)
+        if as_bool(notebooklm_cfg.get("attach_telegram", True)):
+            for nb_b in notebooklm_bundles:
+                if nb_b.mp3_path and nb_b.mp3_path.is_file():
+                    telegram_audio_items.append(nb_b)
 
         # Write suggested follow-up questions back to whichever console provider (Feishu/Obsidian/Notion) is active
         if self.suggested_questions:
@@ -1995,7 +2018,7 @@ class Executor:
                     trending_items=trending_items,
                     question_briefs=self.question_briefs,
                     corpus=corpus,
-                    audio_path=feishu_audio_path,
+                    audio_path=feishu_audio_paths if feishu_audio_paths else None,
                 )
                 logger.info(f"Feishu daily report updated successfully: {doc_url}")
                 self.paper_store.mark_channel_delivered("feishu", today_str)
@@ -2080,7 +2103,7 @@ class Executor:
                         reranked_papers,
                         question_briefs=self.question_briefs,
                         trending_items=trending_items,
-                        audio_path=telegram_audio_path,
+                        audio_path=telegram_audio_items if telegram_audio_items else None,
                         audio_title=audio_bundle.title if audio_bundle else None,
                         audio_duration=audio_bundle.duration_seconds if audio_bundle else None,
                     )

@@ -680,6 +680,7 @@ class FeishuClient:
         document_id: str,
         audio_path: str,
         index: int = 0,
+        allow_multiple: bool = False,
     ) -> Optional[str]:
         """Uploads an MP3 audio file to Feishu Drive and mounts it as a playable File Block at the top of a Docx document."""
         if self.dry_run or not audio_path or not os.path.isfile(audio_path):
@@ -687,8 +688,12 @@ class FeishuClient:
 
         try:
             existing_blocks = self.get_document_blocks(document_id)
-            if any(b.get("block_type") == 23 for b in existing_blocks):
+            audio_blocks = [b for b in existing_blocks if b.get("block_type") == 23]
+            if not allow_multiple and audio_blocks:
                 logger.info(f"Audio file block already mounted in Feishu document {document_id}; skipping.")
+                return None
+            if allow_multiple and len(audio_blocks) >= 3:
+                logger.info(f"Maximum audio blocks (3) already mounted in Feishu document {document_id}; skipping.")
                 return None
 
             create_res = self._call_api(
@@ -792,7 +797,10 @@ class FeishuClient:
         self._ensure_doc_permissions(doc_id)
 
         if audio_path:
-            self.upload_and_mount_audio(doc_id, str(audio_path), index=0)
+            audio_list = [audio_path] if isinstance(audio_path, (str, os.PathLike)) else list(audio_path)
+            for a_idx, a_path in enumerate(audio_list):
+                if a_path and os.path.isfile(str(a_path)):
+                    self.upload_and_mount_audio(doc_id, str(a_path), index=a_idx, allow_multiple=len(audio_list) > 1)
 
         # 2. Inspect existing blocks in the document to prevent duplicates and detect sections
         root_children = self._get_root_children(doc_id)

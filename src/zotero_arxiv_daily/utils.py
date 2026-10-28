@@ -78,6 +78,8 @@ def send_email(
                 maintype, subtype = mime_type.split("/", 1)
             elif file_path.suffix.lower() == ".mp3":
                 maintype, subtype = "audio", "mpeg"
+            elif file_path.suffix.lower() == ".m4a":
+                maintype, subtype = "audio", "mp4"
             else:
                 maintype, subtype = "application", "octet-stream"
             part = MIMEBase(maintype, subtype)

@@ -12,6 +12,7 @@ from .audio import (
 )
 from .daily_report import DailyReport, build_daily_report
 from .feishu import FeishuClient, normalize_reading_status
+from .notebooklm import NotebookLMBundle, group_papers_by_topic, run_notebooklm_pipeline
 from .telegram import format_telegram_messages, send_telegram_audio, send_telegram_daily_report
 from .wechat import (
     build_digest_wechat_article,
@@ -31,6 +32,7 @@ __all__ = [
     "AudioSegment",
     "DailyReport",
     "FeishuClient",
+    "NotebookLMBundle",
     "build_audio_script",
     "build_daily_report",
     "build_digest_wechat_article",
@@ -45,9 +47,11 @@ __all__ = [
     "format_telegram_messages",
     "generate_academic_cover",
     "generate_daily_audio_bundle",
+    "group_papers_by_topic",
     "markdown_to_wechat_html",
     "normalize_reading_status",
     "publish_wechat_drafts",
+    "run_notebooklm_pipeline",
     "send_telegram_audio",
     "send_telegram_daily_report",
     "synthesize_segments_to_mp3",

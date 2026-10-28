@@ -209,17 +209,33 @@ def send_telegram_daily_report(
     endpoint = f"{api_base}/bot{bot_token}/sendMessage"
 
     if audio_path:
-        try:
-            audio_mid = send_telegram_audio(
-                telegram_cfg,
-                audio_path=audio_path,
-                title=audio_title,
-                duration=audio_duration,
-            )
-            if audio_mid is not None:
-                message_ids.append(audio_mid)
-        except Exception as exc:
-            logger.warning(f"Failed to send Telegram audio attachment: {exc}")
+        audio_items = audio_path if isinstance(audio_path, list) else [audio_path]
+        for a_item in audio_items:
+            if hasattr(a_item, "mp3_path"):
+                a_file = getattr(a_item, "mp3_path")
+                a_title = getattr(a_item, "title", audio_title)
+                a_dur = getattr(a_item, "duration_seconds", audio_duration)
+                a_engine = getattr(a_item, "engine", "audio")
+                tag_label = "Edge-TTS 简报" if a_engine == "edge-tts" else "NotebookLM 深度播客"
+                a_caption = f"[{tag_label}] {a_title}"
+            else:
+                a_file = a_item
+                a_title = audio_title
+                a_dur = audio_duration
+                a_caption = None
+
+            try:
+                audio_mid = send_telegram_audio(
+                    telegram_cfg,
+                    audio_path=a_file,
+                    title=a_title,
+                    caption=a_caption,
+                    duration=a_dur,
+                )
+                if audio_mid is not None:
+                    message_ids.append(audio_mid)
+            except Exception as exc:
+                logger.warning(f"Failed to send Telegram audio attachment ({a_file}): {exc}")
 
     for chunk in messages:
         payload: dict[str, Any] = {

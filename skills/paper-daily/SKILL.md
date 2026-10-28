@@ -56,6 +56,10 @@ Ask the user in chat (or using `question` / `AskUserQuestion` tool):
      - `TELEGRAM_BOT_TOKEN` (from @BotFather), `TELEGRAM_CHAT_ID`
    - **WeChat Official Account (微信公众号)**:
      - `WECHAT_APP_ID`, `WECHAT_APP_SECRET`
+   - **Google NotebookLM (可选专题文献库与双人播客)**:
+     - `NOTEBOOKLM_ENABLED` (`true` / `false`)
+     - `NOTEBOOKLM_AUTH_JSON` (或 `NOTEBOOKLM_COOKIES`)
+     - `NOTEBOOKLM_MODE` (`persistent` 长效专题自动分卷 | `daily` 每日专题)
 3. **Initial Research Tags & Questions**:
    - Tags (e.g. `LLM Agents, Memory, Reinforcement Learning`)
    - 1~2 core questions (e.g. `How to compress episodic memory with bounded tokens?`)

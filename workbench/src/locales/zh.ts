@@ -85,11 +85,11 @@ export const zh: Locale = {
   },
   multimedia: {
     title: '多媒体衍生呈现',
-    pills: ['Edge-TTS', 'MP3 播客', '微信语音', 'PPTX', 'HTML5'],
+    pills: ['NotebookLM', 'Edge-TTS', 'MP3 播客', '微信语音', 'PPTX', 'HTML5'],
     cards: {
       podcast: {
-        title: '双人对话播客',
-        desc: '基于 Edge-TTS 生成双人对谈音频，自动提炼核心增量与公式推演。',
+        title: '双轨学术播客',
+        desc: '支持 Google NotebookLM 原生双人对谈与 Edge-TTS 语音，提炼核心增量与公式。',
       },
       briefing: {
         title: '60 秒语音简报',

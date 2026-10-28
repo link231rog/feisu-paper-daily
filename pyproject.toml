@@ -16,6 +16,7 @@ dependencies = [
     "loguru>=0.7.3",
     "lxml>=5.0.0",
     "markdown>=3.6",
+    "notebooklm-py>=0.8.5",
     "numpy>=1.26.0",
     "openai>=2.24.0",
     "premailer>=3.10.0",

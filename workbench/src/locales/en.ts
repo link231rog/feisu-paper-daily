@@ -85,11 +85,11 @@ export const en: Locale = {
   },
   multimedia: {
     title: 'Multimedia Presentations',
-    pills: ['Edge-TTS', 'MP3 Podcast', 'WeChat Audio', 'PPTX', 'HTML5'],
+    pills: ['NotebookLM', 'Edge-TTS', 'MP3 Podcast', 'WeChat Audio', 'PPTX', 'HTML5'],
     cards: {
       podcast: {
-        title: 'Two-Voice Dialogue Podcast',
-        desc: 'Generates NotebookLM-style dialogue audio via Edge-TTS, synthesizing core deltas and mathematical intuition.',
+        title: 'Dual-Track Academic Podcasts',
+        desc: 'Generates Google NotebookLM official dual-host dialogues or Edge-TTS audio overviews.',
       },
       briefing: {
         title: '60-Second Audio Briefing',

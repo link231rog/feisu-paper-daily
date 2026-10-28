@@ -87,6 +87,11 @@ jobs:
           TELEGRAM_ENABLED: ${{ vars.TELEGRAM_ENABLED || 'false' }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          NOTEBOOKLM_ENABLED: ${{ vars.NOTEBOOKLM_ENABLED || 'false' }}
+          NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
+          NOTEBOOKLM_COOKIES: ${{ secrets.NOTEBOOKLM_COOKIES }}
+          NOTEBOOKLM_MODE: ${{ vars.NOTEBOOKLM_MODE || 'persistent' }}
+          NOTEBOOKLM_AUDIO_LANGUAGE: ${{ vars.NOTEBOOKLM_AUDIO_LANGUAGE || 'zh' }}
         run: |
           if [ -n "$CUSTOM_CONFIG" ]; then
             printf "%s\n" "$CUSTOM_CONFIG" > config/custom.yaml

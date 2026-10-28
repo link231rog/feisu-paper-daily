@@ -83,6 +83,20 @@ audio:
   attach_feishu: true # Upload and mount MP3 file block at top of Feishu daily report
   upload_wechat_voice: true # Generate <=60s condensed voice guide and upload to WeChat Official Account voice library
 
+notebooklm:
+  enabled: false # Optional Google NotebookLM topic-based library ingestion and native dual-host podcast
+  notebook_mode: "persistent" # "persistent" (topic notebook with auto-volume split) | "daily" (daily topic notebook)
+  max_sources_per_notebook: 45 # Auto-split threshold before Google's 50-source cap
+  generate_audio: true # Automatically generate Google official deep-dive audio overview
+  audio_language: "zh" # Language for audio overview (e.g. "zh", "en")
+  audio_format: "deep_dive" # "deep_dive" | "brief" | "critique" | "debate"
+  audio_length: "default" # "short" | "default" | "long"
+  max_topics: 1 # Number of topics to generate audio for per day (conserves Google daily quota)
+  output_dir: "data/audio/notebooklm"
+  attach_feishu: true
+  attach_email: true
+  attach_telegram: true
+
 llm:
   api:
     key: null # API Key of your LLM API. Example: sk-xxx

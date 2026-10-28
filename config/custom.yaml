@@ -51,6 +51,28 @@ telegram:
   chat_id: ${oc.env:TELEGRAM_CHAT_ID,null}
   message_thread_id: ${oc.env:TELEGRAM_MESSAGE_THREAD_ID,null}
 
+audio:
+  enabled: ${oc.env:AUDIO_ENABLED,false}
+  mode: ${oc.env:AUDIO_MODE,"dialogue"}
+  engine: ${oc.env:AUDIO_ENGINE,"edge-tts"}
+  attach_feishu: ${oc.env:AUDIO_ATTACH_FEISHU,true}
+  attach_email: ${oc.env:AUDIO_ATTACH_EMAIL,true}
+  attach_telegram: ${oc.env:AUDIO_ATTACH_TELEGRAM,true}
+  upload_wechat_voice: ${oc.env:AUDIO_UPLOAD_WECHAT_VOICE,true}
+
+notebooklm:
+  enabled: ${oc.env:NOTEBOOKLM_ENABLED,false}
+  notebook_mode: ${oc.env:NOTEBOOKLM_MODE,"persistent"}
+  max_sources_per_notebook: ${oc.env:NOTEBOOKLM_MAX_SOURCES,45}
+  generate_audio: ${oc.env:NOTEBOOKLM_GENERATE_AUDIO,true}
+  audio_language: ${oc.env:NOTEBOOKLM_AUDIO_LANGUAGE,"zh"}
+  audio_format: ${oc.env:NOTEBOOKLM_AUDIO_FORMAT,"deep_dive"}
+  audio_length: ${oc.env:NOTEBOOKLM_AUDIO_LENGTH,"default"}
+  max_topics: ${oc.env:NOTEBOOKLM_MAX_TOPICS,1}
+  attach_feishu: ${oc.env:NOTEBOOKLM_ATTACH_FEISHU,true}
+  attach_email: ${oc.env:NOTEBOOKLM_ATTACH_EMAIL,true}
+  attach_telegram: ${oc.env:NOTEBOOKLM_ATTACH_TELEGRAM,true}
+
 llm:
   api:
     key: ${oc.env:OPENAI_API_KEY,null}
