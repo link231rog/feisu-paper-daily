@@ -37,6 +37,14 @@ const SECTIONS = [
   { id: 'deploy', label: '接入触发与部署' },
 ] as const;
 
+const README_URL = 'https://github.com/link231rog/feisu-paper-daily#readme';
+const README_ARCH = 'https://github.com/link231rog/feisu-paper-daily#一-核心架构与目录组织';
+const README_RERANK = 'https://github.com/link231rog/feisu-paper-daily#1-文献推荐与粗排重排算法';
+const README_RUBRIC = 'https://github.com/link231rog/feisu-paper-daily#2-审稿级精读摘要与四维量化评分4d-openreview-rubric';
+const README_AUDIO = 'https://github.com/link231rog/feisu-paper-daily#3-可选-mp3-音频播客与多渠道语音推送';
+const README_WECHAT = 'https://github.com/link231rog/feisu-paper-daily#4-微信公众号排版封面生成与草稿箱发布';
+const README_INIT = 'https://github.com/link231rog/feisu-paper-daily#2-交互式初始化向导';
+
 function BrandIcon({ name }: { name: string }) {
   switch (name) {
     case 'GitHub Actions':
@@ -128,15 +136,84 @@ function BrandIcon({ name }: { name: string }) {
   }
 }
 
-function PlatformPill({ name }: { name: string }) {
+const PLATFORM_URLS: Record<string, string> = {
+  // 信源官网
+  arXiv: 'https://arxiv.org',
+  HuggingFace: 'https://huggingface.co/papers',
+  OpenReview: 'https://openreview.net',
+  'Semantic Scholar': 'https://www.semanticscholar.org',
+  GitHub: 'https://github.com',
+  DBLP: 'https://dblp.org',
+  Crossref: 'https://www.crossref.org',
+  bioRxiv: 'https://www.biorxiv.org',
+  medRxiv: 'https://www.medrxiv.org',
+  'AI News': 'https://news.ycombinator.com',
+
+  // 控制台与文献库
+  飞书: 'https://www.feishu.cn',
+  飞书控制台: 'https://www.feishu.cn',
+  Obsidian: 'https://obsidian.md',
+  Notion: 'https://www.notion.so',
+  Zotero: 'https://www.zotero.org',
+  '自定义 Skill': 'https://github.com/link231rog/feisu-paper-daily#readme',
+  范例模板: 'https://github.com/link231rog/feisu-paper-daily#readme',
+
+  // 多媒体
+  'Edge-TTS': 'https://github.com/rany2/edge-tts',
+  'MP3 播客': 'https://github.com/link231rog/feisu-paper-daily#3-可选-mp3-音频播客与多渠道语音推送',
+  微信语音: 'https://mp.weixin.qq.com',
+  PPTX: 'https://github.com/link231rog/feisu-paper-daily#readme',
+  HTML5: 'https://developer.mozilla.org/zh-CN/docs/Web/HTML',
+
+  // 渠道
+  Email: 'https://github.com/link231rog/feisu-paper-daily#readme',
+  微信公众号: 'https://mp.weixin.qq.com',
+  Telegram: 'https://telegram.org',
+
+  // 部署
+  'GitHub Actions': 'https://github.com/features/actions',
+  OpenClaw: 'https://github.com/link231rog/feisu-paper-daily#readme',
+  Hermes: 'https://github.com/link231rog/feisu-paper-daily#readme',
+  'Grok Bot': 'https://x.ai',
+  Webhook: 'https://github.com/link231rog/feisu-paper-daily#readme',
+};
+
+function PlatformPill({ name, href }: { name: string; href?: string }) {
+  const targetUrl = href || PLATFORM_URLS[name];
+  const content = (
+    <>
+      <BrandIcon name={name} />
+      <span>{name}</span>
+      <ArrowUpRight className="w-3.5 h-3.5 text-neutral-500 group-hover:text-white transition-colors" />
+    </>
+  );
+
+  const className =
+    "group inline-flex items-center gap-2 px-3 py-1.5 border border-neutral-800 bg-neutral-950 text-white text-sm font-medium hover:border-neutral-500 hover:bg-neutral-900 transition-all cursor-pointer";
+
+  if (targetUrl) {
+    return (
+      <motion.a
+        href={targetUrl}
+        target="_blank"
+        rel="noreferrer"
+        whileHover={{ y: -2, borderColor: '#ffffff' }}
+        transition={{ duration: 0.16, ease: 'easeOut' }}
+        className={className}
+        aria-label={`前往 ${name} 官网`}
+      >
+        {content}
+      </motion.a>
+    );
+  }
+
   return (
     <motion.div
       whileHover={{ y: -2, borderColor: '#ffffff' }}
       transition={{ duration: 0.16, ease: 'easeOut' }}
-      className="inline-flex items-center gap-2.5 px-3.5 py-2 border border-neutral-800 bg-neutral-950 text-white text-sm font-medium transition-colors"
+      className={className}
     >
-      <BrandIcon name={name} />
-      <span>{name}</span>
+      {content}
     </motion.div>
   );
 }
@@ -144,31 +221,60 @@ function PlatformPill({ name }: { name: string }) {
 function GridCard({
   title,
   desc,
+  href,
   dimmed = false,
   className = '',
 }: {
   title: string;
   desc: string;
+  href?: string;
   dimmed?: boolean;
   className?: string;
 }) {
-  return (
-    <div
-      className={`group relative p-6 border-r border-b border-neutral-800 bg-black hover:bg-neutral-950 transition-colors duration-200 ${className}`}
-    >
+  const content = (
+    <>
       <span
         className={`pointer-events-none absolute top-0 left-0 h-px w-0 transition-all duration-300 ${
           dimmed ? 'bg-neutral-600 group-hover:w-full' : 'bg-white group-hover:w-full'
         }`}
       />
-      <h3 className={`text-lg font-semibold ${dimmed ? 'text-neutral-500' : 'text-white'}`}>
-        {title}
-      </h3>
+      <div className="flex items-start justify-between gap-2">
+        <h3 className={`text-lg font-semibold ${dimmed ? 'text-neutral-500' : 'text-white'}`}>
+          {title}
+        </h3>
+        {href && (
+          <ArrowUpRight
+            className={`w-4 h-4 shrink-0 transition-colors ${
+              dimmed
+                ? 'text-neutral-700 group-hover:text-neutral-500'
+                : 'text-neutral-600 group-hover:text-white'
+            }`}
+          />
+        )}
+      </div>
       <p className={`mt-2 text-base ${dimmed ? 'text-neutral-600' : 'text-neutral-300'}`}>
         {desc}
       </p>
-    </div>
+    </>
   );
+
+  const containerClasses = `group relative p-6 border-r border-b border-neutral-800 bg-black hover:bg-neutral-950 transition-colors duration-200 block text-left ${className}`;
+
+  if (href) {
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        className={containerClasses}
+        aria-label={`查看 ${title} 功能文档`}
+      >
+        {content}
+      </a>
+    );
+  }
+
+  return <div className={containerClasses}>{content}</div>;
 }
 
 const sectionReveal = {
@@ -403,10 +509,12 @@ export default function App() {
               <GridCard
                 title="轻量化配置"
                 desc="直接在日常文档中维护关注标签、研究问题与过滤词，无需改代码。"
+                href={README_URL}
               />
               <GridCard
                 title="自定义模板"
                 desc="支持导入个人审稿 Skill 与笔记模板，按习惯生成总结。"
+                href={README_URL}
               />
             </div>
           </motion.section>
@@ -435,14 +543,17 @@ export default function App() {
               <GridCard
                 title="多信源抓取"
                 desc="支持 arXiv、HuggingFace、OpenReview、Semantic Scholar 等主流信源。"
+                href={README_ARCH}
               />
               <GridCard
                 title="相关性打分"
                 desc="结合关注标签、文献库偏好与追踪问题进行关联打分。"
+                href={README_RERANK}
               />
               <GridCard
                 title="质量过滤"
                 desc="剔除低分论文，按评分分为「精读必看」与「速览雷达」。"
+                href={README_RUBRIC}
               />
             </div>
           </motion.section>
@@ -464,18 +575,22 @@ export default function App() {
               <GridCard
                 title="方法与公式"
                 desc="一句话对齐基线指出核心变量，提炼模块链路与关键公式。"
+                href={README_RUBRIC}
               />
               <GridCard
                 title="实验核查"
                 desc="核对正文图表，列出真实涨点、算力开销与失效边界。"
+                href={README_RUBRIC}
               />
               <GridCard
                 title="问题追踪"
                 desc="针对关注问题跨文献梳理支持证据、反例与研究盲区。"
+                href={README_ARCH}
               />
               <GridCard
                 title="子问题追问"
                 desc="当旧问题收敛或出现证据缺口时，自动生成后续追问。"
+                href={README_ARCH}
               />
             </div>
           </motion.section>
@@ -502,20 +617,24 @@ export default function App() {
               <GridCard
                 title="双人对话播客"
                 desc="基于 Edge-TTS 生成双人对谈音频，自动提炼核心增量与公式推演。"
+                href={README_AUDIO}
               />
               <GridCard
                 title="60 秒语音简报"
                 desc="提炼单篇文献核心结论，自动生成短音频并写入微信语音素材库。"
+                href={README_AUDIO}
               />
               <GridCard
                 dimmed
                 title="PPT 演示文稿"
                 desc="提取方法流程与实验图表，自动输出可编辑的学术汇报幻灯片。"
+                href={README_URL}
               />
               <GridCard
                 dimmed
                 title="视频与交互海报"
                 desc="基于切片素材生成动态视频解说流与轻量交互式 HTML 展板。"
+                href={README_URL}
               />
             </div>
           </motion.section>
@@ -544,14 +663,17 @@ export default function App() {
               <GridCard
                 title="原生文献库"
                 desc="直接基于所选平台（飞书、Obsidian、Notion 或 Zotero）构建个人文献库。"
+                href={README_URL}
               />
               <GridCard
                 title="入库与批注"
                 desc="勾选论文沉淀入库，自动抓取正文生成精读笔记并进行细节批注。"
+                href={README_URL}
               />
               <GridCard
                 title="Agent 直连"
                 desc="paper-library CLI 直接读取文献库中的高亮与批注，供本地 Agent 调用。"
+                href={README_URL}
               />
             </div>
           </motion.section>
@@ -575,10 +697,10 @@ export default function App() {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 border-t border-l border-neutral-800">
-              <GridCard title="飞书" desc="生成飞书云文档日报与阅读待办。" />
-              <GridCard title="邮件" desc="SMTP 推送 HTML 日报。" />
-              <GridCard title="微信公众号" desc="自动排版并写入草稿箱。" />
-              <GridCard title="Telegram" desc="Bot 实时推送摘要与评分。" />
+              <GridCard title="飞书" desc="生成飞书云文档日报与阅读待办。" href={README_ARCH} />
+              <GridCard title="邮件" desc="SMTP 推送 HTML 日报。" href={README_ARCH} />
+              <GridCard title="微信公众号" desc="自动排版并写入草稿箱。" href={README_WECHAT} />
+              <GridCard title="Telegram" desc="Bot 实时推送摘要与评分。" href={README_AUDIO} />
             </div>
           </motion.section>
 
@@ -604,39 +726,66 @@ export default function App() {
               <GridCard
                 title="GitHub Actions"
                 desc="Fork 仓库填好密钥即可定时运行，无需服务器。"
+                href={README_URL}
               />
               <GridCard
                 title="Agent 检索"
                 desc="支持 OpenClaw、Hermes 等通过 CLI 或 Tool 协议直接调用。"
+                href={README_URL}
               />
               <GridCard
                 title="Webhook 触发"
                 desc="单条请求触发运行，动态传入临时问题与过滤规则。"
+                href={README_URL}
               />
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 border-t border-l border-neutral-800 mb-8">
-              <div className="p-6 border-r border-b border-neutral-800 flex items-center gap-3">
-                <GitPullRequest className="w-5 h-5 text-white shrink-0" />
-                <div>
-                  <div className="text-lg font-semibold">Fork 仓库</div>
-                  <div className="text-sm text-neutral-400 mt-1">克隆或 Fork 项目仓库</div>
+              <a
+                href="https://github.com/link231rog/feisu-paper-daily/fork"
+                target="_blank"
+                rel="noreferrer"
+                className="group p-6 border-r border-b border-neutral-800 flex items-center justify-between gap-3 bg-black hover:bg-neutral-950 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <GitPullRequest className="w-5 h-5 text-white shrink-0" />
+                  <div>
+                    <div className="text-lg font-semibold text-white">Fork 仓库</div>
+                    <div className="text-sm text-neutral-400 mt-1">克隆或 Fork 项目仓库</div>
+                  </div>
                 </div>
-              </div>
-              <div className="p-6 border-r border-b border-neutral-800 flex items-center gap-3">
-                <ShieldCheck className="w-5 h-5 text-white shrink-0" />
-                <div>
-                  <div className="text-lg font-semibold">Agent / CLI 引导初始化</div>
-                  <div className="text-sm text-neutral-400 mt-1">多选勾选信源与渠道，按需填入对应 Key</div>
+                <ArrowUpRight className="w-4 h-4 text-neutral-600 group-hover:text-white transition-colors shrink-0" />
+              </a>
+              <a
+                href={README_INIT}
+                target="_blank"
+                rel="noreferrer"
+                className="group p-6 border-r border-b border-neutral-800 flex items-center justify-between gap-3 bg-black hover:bg-neutral-950 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <ShieldCheck className="w-5 h-5 text-white shrink-0" />
+                  <div>
+                    <div className="text-lg font-semibold text-white">Agent / CLI 引导初始化</div>
+                    <div className="text-sm text-neutral-400 mt-1">多选勾选信源与渠道，按需填入对应 Key</div>
+                  </div>
                 </div>
-              </div>
-              <div className="p-6 border-r border-b border-neutral-800 flex items-center gap-3">
-                <Send className="w-5 h-5 text-white shrink-0" />
-                <div>
-                  <div className="text-lg font-semibold">生成配置与控制台</div>
-                  <div className="text-sm text-neutral-400 mt-1">自动写入配置、密钥与初始控制台文档</div>
+                <ArrowUpRight className="w-4 h-4 text-neutral-600 group-hover:text-white transition-colors shrink-0" />
+              </a>
+              <a
+                href={README_INIT}
+                target="_blank"
+                rel="noreferrer"
+                className="group p-6 border-r border-b border-neutral-800 flex items-center justify-between gap-3 bg-black hover:bg-neutral-950 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <Send className="w-5 h-5 text-white shrink-0" />
+                  <div>
+                    <div className="text-lg font-semibold text-white">生成配置与控制台</div>
+                    <div className="text-sm text-neutral-400 mt-1">自动写入配置、密钥与初始控制台文档</div>
+                  </div>
                 </div>
-              </div>
+                <ArrowUpRight className="w-4 h-4 text-neutral-600 group-hover:text-white transition-colors shrink-0" />
+              </a>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 border-t border-l border-neutral-800">
