@@ -382,39 +382,13 @@ def get_agent_skill_schema() -> dict[str, Any]:
 
 def export_agent_skill_markdown() -> str:
     """Returns the SKILL.md instruction text for Claude Code / OpenClaw / Cursor / Hermes."""
+    skill_file = Path(__file__).resolve().parents[2] / "skills" / "paper-daily" / "SKILL.md"
+    if skill_file.is_file():
+        return skill_file.read_text(encoding="utf-8")
     return """---
-name: paper-daily-init
-description: Guides the user through initializing Paper Daily via multi-select questions and conditional channel credential setup (Feishu, Obsidian, Notion, Zotero, Email, WeChat, Telegram).
+name: paper-daily
+description: Zero-install cloud literature pipeline running 100% serverless on GitHub Actions.
 ---
-
-# Paper Daily Initialization Skill (`paper-daily-init`)
-
-When the user asks to initialize, configure, or onboard **Paper Daily**, follow this two-phase interactive flow:
-
-## Phase 1: Multi-Select Architecture Questions
-Use your native question tool (`AskUserQuestion` with `is_multi_select: true`) to ask the user:
-1. **控制台与文献库平台 (libraries)**: `feishu` (飞书云文档), `obsidian` (Obsidian 本地库), `notion` (Notion 数据库), `zotero` (Zotero 文献库)
-2. **抓取信源 (sources)**: `arxiv`, `huggingface`, `semantic_scholar`, `openreview`, `dblp`, `news_and_trends` (AlphaXiv/X/小红书/机器之心/量子位/新智元)
-3. **日报推送渠道 (deliveries)**: `feishu`, `email`, `wechat`, `telegram`
-4. **部署与触发方式 (deploy_modes)**: `github_actions`, `agent_cli`, `webhook`
-5. **初始研究兴趣与追踪问题 (topics & questions)**: 询问关注领域标签（如 `LLM Agent, Memory`）与 1~3 个核心追踪科学问题。
-
-## Phase 2: Conditional Channel Key / Auth Follow-up
-Inspect the channels selected in Phase 1 (`uv run paper-daily init --schema`) and ask the user **ONLY** for the credentials matching their selected platforms:
-- **LLM (必填)**: `OPENAI_API_BASE`, `OPENAI_MODEL`, `LLM_API_KEYS`
-- **If `feishu` selected**: `FEISHU_APP_ID`, `FEISHU_APP_SECRET`, `FEISHU_CONSOLE_NODE_TOKEN`, `FEISHU_DAILY_PARENT_NODE_TOKEN`, `FEISHU_NOTES_PARENT_NODE_TOKEN`
-- **If `obsidian` selected**: `OBSIDIAN_VAULT_PATH`, `OBSIDIAN_CONSOLE_PATH` (default `Console.md`), `OBSIDIAN_NOTES_FOLDER` (default `Literature`)
-- **If `notion` selected**: `NOTION_TOKEN`, `NOTION_DATABASE_ID`, `NOTION_CONSOLE_PAGE_ID`
-- **If `zotero` selected**: `ZOTERO_ID`, `ZOTERO_KEY`, `ZOTERO_CONSOLE_NOTE_KEY`
-- **If `email` selected**: `SMTP_SERVER`, `SMTP_PORT`, `SENDER`, `SENDER_PASSWORD`, `RECEIVER`
-- **If `wechat` selected**: `WECHAT_APP_ID`, `WECHAT_APP_SECRET`, `WECHAT_THUMB_MEDIA_ID`, `WECHAT_AUTHOR`
-- **If `telegram` selected**: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
-
-## Phase 3: Apply Configuration
-Pass the collected JSON answers to the CLI generator:
-```bash
-uv run paper-daily init --from-json '{"libraries":["obsidian"],"sources":["arxiv","huggingface","openreview"],"deliveries":["telegram"],"deploy_modes":["github_actions"],"tags":["LLM Agent","Memory"],"questions":["How do long-horizon agents compress episodic memory?"],"credentials":{"OPENAI_API_BASE":"https://api.openai.com/v1","OPENAI_MODEL":"gpt-4o-mini","LLM_API_KEYS":"sk-xxx","OBSIDIAN_VAULT_PATH":"./vault","TELEGRAM_BOT_TOKEN":"123:abc","TELEGRAM_CHAT_ID":"999"}}'
-```
 """
 
 

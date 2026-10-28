@@ -97,15 +97,26 @@ src/zotero_arxiv_daily/
 
 ## 三、 快速开始与常用命令
 
-### 1. 环境安装
+### 0. 零安装全云端运行（Agent-Native Skill，推荐）
+
+**本地无需安装 Python、无需 `git clone` 代码**。只需将本项目提供的单个 Skill 文件加入到您的 AI Agent（Claude Code、OpenCode、Cursor、Hermes 等）中：
+
+- **Skill 文件路径**：[`skills/paper-daily/SKILL.md`](skills/paper-daily/SKILL.md)
+- **Agent 执行流程**：
+  1. Agent 自动调用 `gh repo fork link231rog/feisu-paper-daily --clone=false` 将流水线远程 Fork 到您的 GitHub 账号中。
+  2. Agent 对话询问您关心的研究方向与接收渠道（飞书 / 邮件 / Telegram / 微信），自动将密钥写入云端 GitHub Secrets。
+  3. Agent 远程触发首轮云端运行，后续每日自动在 GitHub Actions 免费调度，通过云端或 Webhook 随时对话交互。
+
+---
+
+### 1. 本地开发者环境安装（可选）
 
 ```bash
 # Python 后端流水线安装（推荐使用 uv）
 uv sync
 
 # 前端交互工作台安装与启动
-npm install
-npm run dev
+cd workbench && bun install && bun run dev
 ```
 
 ### 2. 交互式初始化向导
@@ -114,10 +125,13 @@ npm run dev
 
 ```bash
 # 终端交互式多选配置向导
-uv run paper-daily --init
+uv run paper-daily init
+
+# 查看/导出 Agent-Native 零安装 Skill 定义
+uv run paper-daily init --print-skill
 
 # Agent / 自动化 JSON 配置注入
-uv run paper-daily --init-json '{"libraries":["obsidian","feishu"],"sources":["arxiv","huggingface","openreview"],"deliveries":["feishu","telegram","wechat"]}'
+uv run paper-daily init --from-json '{"libraries":["obsidian","feishu"],"sources":["arxiv","huggingface","openreview"],"deliveries":["feishu","telegram","wechat"]}'
 ```
 
 ### 3. 开启可选 MP3 音频播客推送

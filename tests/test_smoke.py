@@ -558,6 +558,12 @@ def test_init_wizard_multi_select_and_conditional_credentials(tmp_path):
     assert res2["selected"]["deliveries"] == ["telegram"]
     assert "TELEGRAM_BOT_TOKEN=bot-token-777" in (tmp_path / ".env2").read_text(encoding="utf-8")
 
+    from zotero_arxiv_daily.init_wizard import export_agent_skill_markdown
+    skill_text = export_agent_skill_markdown()
+    assert "name: paper-daily" in skill_text
+    assert "gh repo fork link231rog/feisu-paper-daily --clone=false" in skill_text
+    assert "gh secret set" in skill_text
+
 
 def test_wechat_multi_mode_and_subpackage_imports(tmp_path):
     """Verify WeChat 3-mode article generation, academic cover generation, and subpackage imports."""

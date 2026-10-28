@@ -164,16 +164,16 @@ export const en: Locale = {
     },
     steps: {
       fork: {
-        title: 'Fork Repository',
-        desc: 'Clone or fork the GitHub repository',
+        title: 'Import SKILL.md',
+        desc: 'Single skill file with zero local code or dependencies',
       },
       wizard: {
-        title: 'Interactive CLI Wizard',
-        desc: 'Multi-select sources and channels, entering keys on demand',
+        title: 'Agent Remote Fork',
+        desc: 'Remotely forks repo to your personal GitHub account',
       },
       generate: {
-        title: 'Generate Config & Console',
-        desc: 'Automatically writes custom configs and initial console document',
+        title: 'Configure Secrets & Run',
+        desc: 'Injects Actions secrets and schedules 100% serverless',
       },
     },
     terminal: {

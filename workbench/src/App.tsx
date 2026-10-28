@@ -36,6 +36,7 @@ const README_RUBRIC = 'https://github.com/link231rog/feisu-paper-daily#2-审稿�
 const README_AUDIO = 'https://github.com/link231rog/feisu-paper-daily#3-可选-mp3-音频播客与多渠道语音推送';
 const README_WECHAT = 'https://github.com/link231rog/feisu-paper-daily#4-微信公众号排版封面生成与草稿箱发布';
 const README_INIT = 'https://github.com/link231rog/feisu-paper-daily#2-交互式初始化向导';
+const SKILL_FILE_URL = 'https://github.com/link231rog/feisu-paper-daily/blob/main/skills/paper-daily/SKILL.md';
 const AUTHOR_HOMEPAGE_URL = 'https://link231rog.github.io/Poster/';
 
 function BrandIcon({ name }: { name: string }) {
@@ -861,7 +862,7 @@ export default function App() {
 
             <div className="grid grid-cols-1 md:grid-cols-3 border-t border-l border-neutral-200 dark:border-neutral-800 mb-8">
               <a
-                href="https://github.com/link231rog/feisu-paper-daily/fork"
+                href={SKILL_FILE_URL}
                 target="_blank"
                 rel="noreferrer"
                 className="group p-6 border-r border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between gap-3 bg-white dark:bg-black hover:bg-neutral-50 dark:hover:bg-neutral-950 transition-colors"

@@ -164,16 +164,16 @@ export const zh: Locale = {
     },
     steps: {
       fork: {
-        title: 'Fork 仓库',
-        desc: '克隆或 Fork 项目仓库',
+        title: '下载 / 引入 SKILL.md',
+        desc: '只需单个 Skill 文件，本地零安装依赖与代码',
       },
       wizard: {
-        title: 'Agent / CLI 引导初始化',
-        desc: '多选勾选信源与渠道，按需填入对应 Key',
+        title: 'Agent 自动远程 Fork',
+        desc: '免 clone 自动将仓库远程 Fork 到个人 GitHub',
       },
       generate: {
-        title: '生成配置与控制台',
-        desc: '自动写入配置、密钥与初始控制台文档',
+        title: '写入云端密钥并触发',
+        desc: '自动配置 Actions Secrets 并在云端定时免费调度',
       },
     },
     terminal: {
