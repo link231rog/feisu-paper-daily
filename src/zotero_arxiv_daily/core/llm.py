@@ -65,8 +65,9 @@ class LLMRouter:
         keys = _as_list(api_cfg.get("keys")) or _as_list(api_cfg.get("key"))
         trans_cfg = config.get("translation") or {}
         for extra in (trans_cfg.get("api_key"), trans_cfg.get("backup_api_key")):
-            if extra and str(extra) not in keys:
-                keys.append(str(extra))
+            extra_str = str(extra).strip() if extra else ""
+            if extra_str and extra_str.lower() not in ("none", "null", "") and extra_str not in keys:
+                keys.append(extra_str)
 
         primary_model = str((llm_cfg.get("generation_kwargs") or {}).get("model") or trans_cfg.get("model") or DEFAULT_MODEL)
         backup_model = str(llm_cfg.get("backup_model") or trans_cfg.get("backup_model") or "")
@@ -160,6 +161,8 @@ class LLMRouter:
                             self._index = 0
                         else:
                             self._index += 1
+                    if self.keys:
+                        continue
                     break
 
                 self._failures = 0

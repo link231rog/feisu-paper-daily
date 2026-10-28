@@ -1726,7 +1726,8 @@ class Executor:
             )
             logger.info(f"pick_seeds finished at {time.time() - _t0:.1f}s ({len(seeds)} seeds)")
             if seeds and "semantic_scholar" in self.retrievers:
-                related = self.retrievers["semantic_scholar"].retrieve_related(seeds)
+                seed_urls = [s.url for s in seeds if getattr(s, "url", None)]
+                related = self.retrievers["semantic_scholar"].retrieve_related(seed_urls or seeds)
                 logger.info(f"Citation chasing finished at {time.time() - _t0:.1f}s ({len(related or [])} related)")
                 if related:
                     merged = self.paper_store.dedup(quality_papers + related)

@@ -116,7 +116,7 @@ def get_interest_corpus(
         and not feishu_config.get("dry_run", False)
     ):
         try:
-            from .feishu import FeishuClient
+            from ..channels.feishu import FeishuClient
             client = FeishuClient(feishu_config)
             notes_corpus = client.fetch_reading_notes()
             logger.info(f"Loaded {len(notes_corpus)} papers from Feishu reading notes")
@@ -129,7 +129,7 @@ def get_interest_corpus(
     console_cfg = config.get("console")
     if console_cfg and str(console_cfg.get("enabled", True)).lower() not in ("false", "0", "no"):
         if console_settings is None:
-            from .console import load_console_settings
+            from ..library.console import load_console_settings
 
             console_settings = load_console_settings(config)
 

@@ -102,14 +102,15 @@ class SemanticScholarRetriever(BaseRetriever):
         logger.info(f"Retrieved {len(raw_papers)} raw papers from Semantic Scholar")
         return raw_papers
 
-    def retrieve_related(self, seed_urls: list[str], limit: int = 8) -> list[Paper]:
+    def retrieve_related(self, seed_urls: list[Any], limit: int = 8) -> list[Paper]:
         """Follows citations and references of seed papers for a second retrieval hop."""
         if not seed_urls:
             return []
 
         raw_papers: list[dict[str, Any]] = []
         seen: set[str] = set()
-        for url in seed_urls[:5]:
+        for seed in seed_urls[:5]:
+            url = getattr(seed, "url", None) if not isinstance(seed, str) else seed
             match = re.search(r"(?:arxiv\.org/abs/|huggingface\.co/papers/)([0-9.]+)", url or "")
             if not match:
                 continue

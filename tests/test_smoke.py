@@ -925,4 +925,38 @@ def test_audio_podcast_briefing_and_multichannel_delivery(tmp_path, monkeypatch)
     assert mounted_token == "feishu_audio_token_123"
 
 
+def test_citation_chasing_paper_type_safety_and_interest_imports(monkeypatch):
+    """Verify SemanticScholarRetriever.retrieve_related accepts Paper objects, and interest module resolves imports cleanly."""
+    from zotero_arxiv_daily.core.interest import get_interest_corpus
+    from zotero_arxiv_daily.protocol import Paper
+    from zotero_arxiv_daily.retriever.semantic_scholar_retriever import SemanticScholarRetriever
+
+    # 1. Type safety: retrieve_related with Paper instance
+    ssr = SemanticScholarRetriever(OmegaConf.create({"source": {"semantic_scholar": {}}}))
+    monkeypatch.setattr(ssr, "_request_with_retry", lambda _url, _params: {"data": []})
+    p = Paper(
+        source="arxiv",
+        title="Test Memory Paper",
+        authors=["Alice"],
+        abstract="Test abstract",
+        url="https://arxiv.org/abs/2601.12345",
+    )
+    # Should not raise TypeError when passed Paper instances or strings
+    related_from_paper = ssr.retrieve_related([p])
+    assert related_from_paper == []
+    related_from_str = ssr.retrieve_related(["https://arxiv.org/abs/2601.12345"])
+    assert related_from_str == []
+
+    # 2. Interest corpus Feishu and Console import paths
+    cfg = OmegaConf.create({
+        "feishu": {"notes_parent_node_token": "dummy_token", "dry_run": True},
+        "console": {"enabled": True},
+        "executor": {},
+    })
+    # Should not raise ModuleNotFoundError: No module named 'zotero_arxiv_daily.core.feishu'
+    corpus = get_interest_corpus(cfg)
+    assert isinstance(corpus, list)
+
+
+
 
