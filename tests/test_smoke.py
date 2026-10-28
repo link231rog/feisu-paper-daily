@@ -958,5 +958,186 @@ def test_citation_chasing_paper_type_safety_and_interest_imports(monkeypatch):
     assert isinstance(corpus, list)
 
 
+def test_zotero_and_notion_library_restoration(monkeypatch):
+    """Verify Zotero and Notion note & annotation restoration logic in library bridge."""
+    from zotero_arxiv_daily.library.bridge import restore_notion_page, restore_zotero_item
+
+    # 1. Zotero item with child annotation and child note
+    class DummyZotero:
+        def children(self, _key):
+            return [
+                {
+                    "data": {
+                        "itemType": "annotation",
+                        "annotationText": "Bounded memory routing lowers latency by 3x",
+                        "annotationComment": "关键基线对比",
+                        "annotationPageLabel": "4",
+                    }
+                },
+                {
+                    "data": {
+                        "itemType": "note",
+                        "note": "<p>Personal reflection: this design can be adapted to our RL agent.</p>",
+                    }
+                },
+            ]
+
+    zot = DummyZotero()
+    parent_item = {
+        "key": "ZOT123",
+        "data": {
+            "key": "ZOT123",
+            "title": "Scalable Episodic Memory",
+            "url": "https://arxiv.org/abs/2602.00001",
+            "abstractNote": "A paper on scalable memory.",
+        },
+    }
+    zot_res = restore_zotero_item(zot, parent_item)
+    assert zot_res["source"] == "zotero"
+    assert zot_res["id"] == "ZOT123"
+    assert len(zot_res["annotations"]) == 1
+    assert zot_res["annotations"][0]["quote"] == "Bounded memory routing lowers latency by 3x"
+    assert zot_res["annotations"][0]["comments"] == ["关键基线对比"]
+    assert zot_res["annotations"][0]["section"] == "Page 4"
+    assert "Personal reflection" in zot_res["reflections"]["notes"][0]
+
+    # 2. Notion page with heading, callout, and text blocks
+    class DummyNotionResp:
+        status_code = 200
+
+        def json(self):
+            return {
+                "results": [
+                    {
+                        "type": "heading_2",
+                        "heading_2": {"rich_text": [{"plain_text": "3. Proposed Mechanism"}]},
+                    },
+                    {
+                        "type": "callout",
+                        "callout": {"rich_text": [{"plain_text": "Important insight: zero-shot memory works best"}]},
+                    },
+                    {
+                        "type": "paragraph",
+                        "paragraph": {
+                            "rich_text": [
+                                {
+                                    "plain_text": "Highlighted sentence",
+                                    "annotations": {"bold": True, "color": "yellow_background"},
+                                }
+                            ]
+                        },
+                    },
+                ]
+            }
+
+    monkeypatch.setattr("requests.get", lambda _url, **_kwargs: DummyNotionResp())
+    notion_res = restore_notion_page("secret_token", "page_abc_123", title="Notion Paper")
+    assert notion_res["source"] == "notion"
+    assert len(notion_res["annotations"]) == 2
+    quotes = [a["quote"] for a in notion_res["annotations"]]
+    assert "Important insight: zero-shot memory works best" in quotes
+    assert "Highlighted sentence" in quotes
+
+
+def test_email_delivery_with_mp3_attachment(tmp_path, monkeypatch):
+    """Verify send_email constructs MIME multipart with MP3 audio attachment and sanitizes credentials."""
+    from zotero_arxiv_daily.utils import send_email
+
+    mp3_file = tmp_path / "briefing.mp3"
+    mp3_file.write_bytes(b"\xff\xfb\x90\x64" + b"\x00" * 128)
+
+    cfg = OmegaConf.create({
+        "email": {
+            "sender": "  sender@qq.com \n",
+            "receiver": " receiver1@qq.com , receiver2@qq.com \n",
+            "sender_password": "  secret_token_123 \n",
+            "smtp_server": " smtp.qq.com ",
+            "smtp_port": 465,
+        }
+    })
+
+    sent_messages = []
+
+    class MockSMTP_SSL:
+        def __init__(self, server, port, timeout=30):
+            assert server == "smtp.qq.com"
+            assert port == 465
+
+        def login(self, user, password):
+            assert user == "sender@qq.com"
+            assert password == "secret_token_123"
+
+        def sendmail(self, from_addr, to_addrs, msg_str):
+            sent_messages.append({"from": from_addr, "to": to_addrs, "body": msg_str})
+
+        def quit(self):
+            pass
+
+    monkeypatch.setattr("smtplib.SMTP_SSL", MockSMTP_SSL)
+
+    send_email(
+        cfg,
+        html="<h1>Daily Literature Digest</h1>",
+        subject="[Paper Daily] 2026-10-28 Report",
+        attachments=[str(mp3_file)],
+    )
+
+    assert len(sent_messages) == 1
+    record = sent_messages[0]
+    import email
+    parsed_msg = email.message_from_string(record["body"])
+    assert parsed_msg.is_multipart()
+    assert record["to"] == ["receiver1@qq.com", "receiver2@qq.com"]
+    assert "audio/mpeg" in record["body"]
+    assert "briefing.mp3" in record["body"]
+
+
+def test_biorxiv_medrxiv_chemrxiv_retrievers(monkeypatch):
+    """Verify bioRxiv, medRxiv, and ChemRxiv paper ingestion and metadata normalization."""
+    from zotero_arxiv_daily.retriever.biorxiv_retriever import BiorxivRetriever
+    from zotero_arxiv_daily.retriever.chemrxiv_retriever import ChemrxivRetriever
+    from zotero_arxiv_daily.retriever.medrxiv_retriever import MedrxivRetriever
+
+    # 1. bioRxiv
+    bio = BiorxivRetriever(OmegaConf.create({"source": {"biorxiv": {"category": "neuroscience"}}}))
+    raw_bio = {
+        "title": "Neural Dynamics in LLM Memory Formations",
+        "authors": "Alice Smith; Bob Jones",
+        "abstract": "We investigate neural dynamics.",
+        "doi": "10.1101/2026.01.01.123456",
+        "version": "1",
+        "date": "2026-01-01",
+        "category": "neuroscience",
+    }
+    p_bio = bio.convert_to_paper(raw_bio)
+    assert p_bio is not None
+    assert p_bio.title == "Neural Dynamics in LLM Memory Formations"
+    assert p_bio.source == "biorxiv"
+    assert "Alice Smith" in p_bio.authors
+
+    # 2. medRxiv
+    med = MedrxivRetriever(OmegaConf.create({"source": {"medrxiv": {"category": "epidemiology"}}}))
+    p_med = med.convert_to_paper(raw_bio)
+    assert p_med is not None
+    assert p_med.source == "medrxiv"
+
+    # 3. ChemRxiv
+    chem = ChemrxivRetriever(OmegaConf.create({"source": {"chemrxiv": {"lookback_hours": 48}}, "executor": {"debug": False}}))
+    raw_chem = {
+        "DOI": "10.26434/chemrxiv.2026.123",
+        "title": ["Molecular Memory Representation with Graph Networks"],
+        "author": [{"given": "Carol", "family": "White"}],
+        "abstract": "Graph neural networks for chemical representations.",
+        "created": {"date-time": "2026-01-01T00:00:00Z"},
+        "URL": "https://doi.org/10.26434/chemrxiv.2026.123",
+    }
+    p_chem = chem.convert_to_paper(raw_chem)
+    assert p_chem is not None
+    assert p_chem.title == "Molecular Memory Representation with Graph Networks"
+    assert p_chem.source == "chemrxiv"
+    assert "Carol White" in p_chem.authors
+
+
+
 
 
