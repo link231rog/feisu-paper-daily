@@ -163,10 +163,10 @@ def glob_match(path:str, pattern:str) -> bool:
     return re.match(re_pattern, path) is not None
 
 def send_email(config:DictConfig, html:str, subject:str | None = None):
-    sender = config.email.sender
+    sender = str(config.email.sender).strip() if config.email.sender else ""
     receivers = [addr.strip() for addr in str(config.email.receiver).split(",") if addr.strip()]
-    password = config.email.sender_password
-    smtp_server = config.email.smtp_server
+    password = str(config.email.sender_password).strip() if config.email.sender_password else ""
+    smtp_server = str(config.email.smtp_server).strip() if config.email.smtp_server else "smtp.qq.com"
     smtp_port = int(config.email.smtp_port)
     if not receivers:
         raise ValueError("email.receiver must contain at least one address")

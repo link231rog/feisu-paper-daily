@@ -902,7 +902,10 @@ def query_library_notes(
         exact = [
             n
             for n in notes
-            if q in (n.get("title") or "").lower() or q == (n.get("id") or "").lower()
+            if q in (n.get("title") or "").lower()
+            or q == (n.get("id") or "").lower()
+            or q in (n.get("paper_url") or "").lower()
+            or q in (n.get("url") or "").lower()
         ]
         return exact[:top_k] if exact else rank_library_notes(notes, query, top_k=top_k)
     return rank_library_notes(notes, query, top_k=top_k)

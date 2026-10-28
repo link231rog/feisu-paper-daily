@@ -1813,14 +1813,10 @@ class Executor:
         # 2. Independent email delivery (not a Feishu fallback)
         email_cfg = self.config.get("email")
         email_enabled = str(email_cfg.get("enabled", True)).strip().lower() in ("true", "1", "yes") if email_cfg else False
-        if (
-            email_cfg
-            and email_enabled
-            and email_cfg.get("sender")
-            and email_cfg.get("receiver")
-            and email_cfg.get("sender_password")
-            and email_cfg.sender != "???"
-        ):
+        sender_val = str(email_cfg.get("sender") or "").strip() if email_cfg else ""
+        receiver_val = str(email_cfg.get("receiver") or "").strip() if email_cfg else ""
+        pwd_val = str(email_cfg.get("sender_password") or "").strip() if email_cfg else ""
+        if email_cfg and email_enabled and sender_val and receiver_val and pwd_val and sender_val != "???":
             attempted_channels += 1
             try:
                 if self.paper_store.is_channel_delivered("email", today_str) and not force_today and not reranked_papers:
@@ -1828,11 +1824,15 @@ class Executor:
                     delivered = True
                 else:
                     report = build_daily_report(reranked_papers, self.question_briefs, trending_items=trending_items)
+                    logger.info(f"Sending daily report email to {receiver_val} via {email_cfg.get('smtp_server', 'smtp.qq.com')}...")
                     send_email(self.config, report.html, report.title)
+                    logger.info(f"Daily report email sent successfully to {receiver_val}")
                     self.paper_store.mark_channel_delivered("email", today_str)
                     delivered = True
             except Exception as exc:
                 logger.error(f"Failed to send email daily report: {exc}")
+        elif email_cfg and email_enabled:
+            logger.info(f"Email delivery skipped: sender={'set' if sender_val else 'empty'}, receiver={'set' if receiver_val else 'empty'}, pwd={'set' if pwd_val else 'empty'}")
 
         # 3. Independent WeChat draft delivery; review and publish in the MP console
         wechat_cfg = self.config.get("wechat")
