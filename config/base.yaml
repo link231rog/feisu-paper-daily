@@ -49,6 +49,8 @@ wechat:
   enabled: false # Create drafts in WeChat Official Account draft box; never auto-publish
   app_id: null
   app_secret: null
+  proxy_url: null # Optional outbound HTTP/HTTPS/SOCKS5 proxy for WeChat API (e.g. http://user:pass@host:port) to pass IP whitelist in GitHub Actions
+  api_base: "https://api.weixin.qq.com" # Optional custom proxy/relay base URL
   thumb_media_id: null # Optional existing permanent image material ID; auto-generated if empty
   cover_path: null # Optional local cover path; auto-generates academic cover if empty
   author: "Paper Daily"

@@ -1434,6 +1434,132 @@ def test_pipeline_dag_fallback_chain_and_agent_reach(tmp_path, monkeypatch):
     assert len(ctx_enrich.enrichments[p.url]["bilibili"]) == 1
 
 
+def test_wechat_doocs_md_and_proxy_support(tmp_path, monkeypatch):
+    """Verify doocs/md table/code formatting and outbound proxy/api_base forwarding for WeChat."""
+    from paper_daily.channels.wechat import (
+        create_draft,
+        get_access_token,
+        markdown_to_wechat_html,
+        upload_cover,
+        upload_wechat_voice_material,
+    )
+    from paper_daily.channels.daily_report import DailyReport
+
+    # 1. Verify doocs/md Markdown styling (table scroll wrap & Mac code block window header)
+    md_sample = (
+        "# 论文日报\n\n"
+        "## 01 核心增量\n\n"
+        "| 模型 | 参数 | 召回率 |\n"
+        "|---|---|---|\n"
+        "| Baseline | 7B | 82.1% |\n"
+        "| Ours | 7B | 88.5% |\n\n"
+        "```python\n"
+        "def forward(x):\n"
+        "    return router(x)\n"
+        "```\n"
+    )
+    html_out = markdown_to_wechat_html(md_sample)
+    assert "overflow-x:auto" in html_out
+    assert "background:#ef4444" in html_out  # Mac red dot
+    assert "background:#f59e0b" in html_out  # Mac yellow dot
+    assert "background:#10b981" in html_out  # Mac green dot
+    assert "<table" in html_out
+
+    # 2. Verify proxy_url and api_base forwarding across requests
+    captured_requests = []
+
+    class DummyResp:
+        def __init__(self, data, status_code=200):
+            self._data = data
+            self.status_code = status_code
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self._data
+
+    def mock_get(url, **kwargs):
+        captured_requests.append(("GET", url, kwargs))
+        if "/cgi-bin/token" in url:
+            return DummyResp({"access_token": "mock_wx_token_123", "expires_in": 7200})
+        return DummyResp({})
+
+    def mock_post(url, **kwargs):
+        captured_requests.append(("POST", url, kwargs))
+        if "/material/add_material" in url:
+            return DummyResp({"media_id": "media_cover_888"})
+        if "/cgi-bin/draft/add" in url:
+            return DummyResp({"media_id": "draft_media_999"})
+        return DummyResp({})
+
+    monkeypatch.setattr("requests.get", mock_get)
+    monkeypatch.setattr("requests.post", mock_post)
+
+    cfg = {
+        "app_id": "wx_app_test",
+        "app_secret": "wx_secret_test",
+        "api_base": "https://custom.wechat.proxy/v1",
+        "proxy_url": "http://user:pass@127.0.0.1:8080",
+        "author": "Paper Daily",
+    }
+
+    # Test token fetching through custom api_base and proxy
+    token = get_access_token(
+        cfg["app_id"],
+        cfg["app_secret"],
+        api_base=cfg["api_base"],
+        proxy_url=cfg["proxy_url"],
+    )
+    assert token == "mock_wx_token_123"
+    assert any(
+        req[0] == "GET"
+        and "custom.wechat.proxy/v1/cgi-bin/token" in req[1]
+        and req[2].get("proxies") == {"http": "http://user:pass@127.0.0.1:8080", "https": "http://user:pass@127.0.0.1:8080"}
+        for req in captured_requests
+    )
+
+    # Test cover upload through custom proxy
+    dummy_img = tmp_path / "test_cover.png"
+    dummy_img.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 32)
+    cover_media = upload_cover(
+        token,
+        str(dummy_img),
+        api_base=cfg["api_base"],
+        proxy_url=cfg["proxy_url"],
+    )
+    assert cover_media == "media_cover_888"
+    assert any(
+        req[0] == "POST"
+        and "custom.wechat.proxy/v1/cgi-bin/material/add_material" in req[1]
+        and req[2].get("proxies") == {"http": "http://user:pass@127.0.0.1:8080", "https": "http://user:pass@127.0.0.1:8080"}
+        for req in captured_requests
+    )
+
+    # Test voice upload through custom proxy
+    dummy_voice = tmp_path / "voice.mp3"
+    dummy_voice.write_bytes(b"\xff\xfb\x90\x64" * 10)
+    voice_media = upload_wechat_voice_material(
+        token,
+        dummy_voice,
+        api_base=cfg["api_base"],
+        proxy_url=cfg["proxy_url"],
+    )
+    assert voice_media == "media_cover_888"
+
+    # Test create_draft through custom proxy
+    rep = DailyReport(title="今日文献精选", html="<p>正文内容</p>", digest="精选导读")
+    draft_id = create_draft(cfg, rep)
+    assert draft_id == "draft_media_999"
+    assert any(
+        req[0] == "POST"
+        and "custom.wechat.proxy/v1/cgi-bin/draft/add" in req[1]
+        and req[2].get("proxies") == {"http": "http://user:pass@127.0.0.1:8080", "https": "http://user:pass@127.0.0.1:8080"}
+        for req in captured_requests
+    )
+
+
+
 
 
 

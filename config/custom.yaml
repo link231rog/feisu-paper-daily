@@ -39,6 +39,8 @@ wechat:
   enabled: ${oc.env:WECHAT_ENABLED,false}
   app_id: ${oc.env:WECHAT_APP_ID,null}
   app_secret: ${oc.env:WECHAT_APP_SECRET,null}
+  proxy_url: ${oc.env:WECHAT_PROXY_URL,null}
+  api_base: ${oc.env:WECHAT_API_BASE,"https://api.weixin.qq.com"}
   thumb_media_id: ${oc.env:WECHAT_THUMB_MEDIA_ID,null}
   cover_path: ${oc.env:WECHAT_COVER_PATH,null}
   author: ${oc.env:WECHAT_AUTHOR,Feishu Paper Daily}

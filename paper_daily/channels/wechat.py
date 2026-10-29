@@ -43,69 +43,123 @@ section.wx-article {
   word-break: break-word;
 }
 h1 {
-  font-size: 20px;
-  font-weight: 700;
+  display: table;
+  margin: 24px auto 16px;
+  padding: 0 16px;
+  border-bottom: 2px solid #2563eb;
   color: #0f172a;
+  font-size: 19px;
+  font-weight: 700;
+  text-align: center;
   line-height: 1.4;
-  margin: 20px 0 14px 0;
-  padding-bottom: 10px;
-  border-bottom: 2px solid #0f172a;
 }
 h2 {
-  font-size: 17px;
+  display: table;
+  margin: 28px 0 14px 0;
+  padding: 4px 12px;
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 16px;
   font-weight: 700;
-  color: #0f172a;
-  line-height: 1.45;
-  margin: 24px 0 12px 0;
-  padding-left: 10px;
-  border-left: 4px solid #2563eb;
+  border-radius: 4px;
+  line-height: 1.4;
+  letter-spacing: 0.03em;
 }
 h3 {
+  margin: 20px 0 10px 0;
+  padding-left: 10px;
+  border-left: 3.5px solid #2563eb;
+  color: #0f172a;
   font-size: 15px;
   font-weight: 700;
-  color: #1e3a8a;
+  line-height: 1.4;
+}
+h4 {
   margin: 16px 0 8px 0;
+  color: #1e40af;
+  font-size: 14px;
+  font-weight: 700;
 }
 p {
-  margin: 0 0 12px 0;
+  margin: 0 0 14px 0;
   color: #334155;
   line-height: 1.8;
+  font-size: 15px;
+  letter-spacing: 0.02em;
 }
 blockquote {
-  margin: 12px 0;
-  padding: 12px 14px;
+  margin: 14px 0;
+  padding: 12px 16px;
   background-color: #f8fafc;
-  border-left: 4px solid #64748b;
-  color: #475569;
+  border-left: 4px solid #2563eb;
+  color: #334155;
   font-size: 14px;
   border-radius: 0 6px 6px 0;
+  line-height: 1.7;
 }
 ul, ol {
   margin: 8px 0 14px 0;
   padding-left: 20px;
   color: #334155;
+  font-size: 15px;
+  line-height: 1.75;
 }
 li {
   margin-bottom: 6px;
   line-height: 1.75;
+  color: #334155;
 }
 code {
   font-family: Menlo, Monaco, Consolas, "Courier New", monospace;
   font-size: 13px;
   background-color: #f1f5f9;
-  color: #0f172a;
+  color: #2563eb;
   padding: 2px 5px;
   border-radius: 4px;
+  border: 1px solid #e2e8f0;
 }
 pre {
   background-color: #0f172a;
   color: #f8fafc;
-  padding: 12px;
-  border-radius: 6px;
+  padding: 12px 14px;
+  border-radius: 8px;
   overflow-x: auto;
   font-size: 13px;
   line-height: 1.6;
-  margin: 12px 0;
+  margin: 14px 0;
+  font-family: Menlo, Monaco, Consolas, "Courier New", monospace;
+}
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 16px 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+th {
+  background-color: #f1f5f9;
+  color: #0f172a;
+  font-weight: 700;
+  padding: 8px 12px;
+  border: 1px solid #cbd5e1;
+  text-align: left;
+}
+td {
+  padding: 8px 12px;
+  border: 1px solid #e2e8f0;
+  color: #334155;
+}
+tr:nth-child(even) {
+  background-color: #f8fafc;
+}
+hr {
+  border: 0;
+  border-top: 1px solid #e2e8f0;
+  margin: 24px 0;
+}
+strong {
+  color: #0f172a;
+  font-weight: 700;
 }
 mark {
   background-color: #fef08a;
@@ -118,19 +172,26 @@ sup.wx-ref {
   color: #2563eb;
   font-weight: 600;
   font-size: 12px;
+  padding: 0 2px;
 }
 """
 
 _INLINE_TAG_STYLES: dict[str, str] = {
-    "h1": "font-size:20px;font-weight:700;color:#0f172a;line-height:1.4;margin:20px 0 14px 0;padding-bottom:10px;border-bottom:2px solid #0f172a;",
-    "h2": "font-size:17px;font-weight:700;color:#0f172a;line-height:1.45;margin:24px 0 12px 0;padding-left:10px;border-left:4px solid #2563eb;",
-    "h3": "font-size:15px;font-weight:700;color:#1e3a8a;margin:16px 0 8px 0;",
-    "p": "margin:0 0 12px 0;color:#334155;line-height:1.8;font-size:15px;",
-    "blockquote": "margin:12px 0;padding:12px 14px;background-color:#f8fafc;border-left:4px solid #64748b;color:#475569;font-size:14px;border-radius:0 6px 6px 0;",
-    "ul": "margin:8px 0 14px 0;padding-left:20px;color:#334155;font-size:15px;",
-    "ol": "margin:8px 0 14px 0;padding-left:20px;color:#334155;font-size:15px;",
+    "h1": "display:table;margin:24px auto 16px;padding:0 16px;border-bottom:2px solid #2563eb;color:#0f172a;font-size:19px;font-weight:700;text-align:center;line-height:1.4;",
+    "h2": "display:table;margin:28px 0 14px 0;padding:4px 12px;background:#2563eb;color:#ffffff;font-size:16px;font-weight:700;border-radius:4px;line-height:1.4;letter-spacing:0.03em;",
+    "h3": "margin:20px 0 10px 0;padding-left:10px;border-left:3.5px solid #2563eb;color:#0f172a;font-size:15px;font-weight:700;line-height:1.4;",
+    "h4": "margin:16px 0 8px 0;color:#1e40af;font-size:14px;font-weight:700;",
+    "p": "margin:0 0 14px 0;color:#334155;line-height:1.8;font-size:15px;letter-spacing:0.02em;",
+    "blockquote": "margin:14px 0;padding:12px 16px;background-color:#f8fafc;border-left:4px solid #2563eb;color:#334155;font-size:14px;border-radius:0 6px 6px 0;line-height:1.7;",
+    "ul": "margin:8px 0 14px 0;padding-left:20px;color:#334155;font-size:15px;line-height:1.75;",
+    "ol": "margin:8px 0 14px 0;padding-left:20px;color:#334155;font-size:15px;line-height:1.75;",
     "li": "margin-bottom:6px;line-height:1.75;color:#334155;",
-    "code": "font-family:Menlo,Monaco,Consolas,monospace;font-size:13px;background-color:#f1f5f9;color:#0f172a;padding:2px 5px;border-radius:4px;",
+    "code": "font-family:Menlo,Monaco,Consolas,monospace;font-size:13px;background-color:#f1f5f9;color:#2563eb;padding:2px 5px;border-radius:4px;border:1px solid #e2e8f0;",
+    "table": "border-collapse:collapse;width:100%;margin:16px 0;font-size:13.5px;line-height:1.6;",
+    "th": "background-color:#f1f5f9;color:#0f172a;font-weight:700;padding:8px 12px;border:1px solid #cbd5e1;text-align:left;",
+    "td": "padding:8px 12px;border:1px solid #e2e8f0;color:#334155;",
+    "hr": "border:0;border-top:1px solid #e2e8f0;margin:24px 0;",
+    "strong": "color:#0f172a;font-weight:700;",
 }
 
 
@@ -178,9 +239,8 @@ def convert_links_to_wechat_footnotes(html_or_md: str) -> str:
             for i, (label, url) in enumerate(footnotes, 1)
         )
         ref_section = (
-            '<h2 style="font-size:16px;font-weight:700;color:#0f172a;margin:24px 0 10px 0;'
-            'padding-left:10px;border-left:4px solid #64748b;">参考资料与原文链接</h2>'
-            f'<ol style="margin:6px 0 14px 0;padding-left:18px;font-size:13px;color:#64748b;">{ref_items}</ol>'
+            '<h2 style="display:table;margin:28px 0 14px 0;padding:4px 12px;background:#2563eb;color:#ffffff;font-size:16px;font-weight:700;border-radius:4px;line-height:1.4;letter-spacing:0.03em;">参考资料与原文链接</h2>'
+            f'<ol style="margin:8px 0 16px 0;padding-left:20px;font-size:13px;color:#64748b;line-height:1.7;">{ref_items}</ol>'
         )
         if "</section>" in converted:
             converted = converted.replace("</section>", f"{ref_section}</section>", 1)
@@ -191,7 +251,7 @@ def convert_links_to_wechat_footnotes(html_or_md: str) -> str:
 
 
 def _apply_inline_tag_styles(html: str) -> str:
-    """Ensure every standard block tag has WeChat-compatible inline style attributes."""
+    """Ensure every standard block tag has WeChat-compatible inline style attributes with doocs/md aesthetics."""
     try:
         from premailer import transform
 
@@ -199,16 +259,42 @@ def _apply_inline_tag_styles(html: str) -> str:
         inlined = transform(wrapped, remove_classes=False, strip_important=False)
         body_match = re.search(r"<body[^>]*>(.*)</body>", inlined, flags=re.IGNORECASE | re.DOTALL)
         if body_match:
-            return body_match.group(1).strip()
+            html = body_match.group(1).strip()
     except Exception:
         pass
 
-    # Deterministic fallback when premailer is unavailable in bare environments
     out = html
+
+    # 1. Ensure tables are wrapped in mobile horizontal-scroll container
+    def _wrap_table(m: re.Match) -> str:
+        tbl = m.group(0)
+        return f'<div style="max-width:100%;overflow-x:auto;margin:16px 0;-webkit-overflow-scrolling:touch;">{tbl}</div>'
+
+    if 'overflow-x:auto' not in out:
+        out = re.sub(r"<table[\s\S]*?</table>", _wrap_table, out, flags=re.IGNORECASE)
+
+    # 2. Decorate pre code blocks with doocs/md Mac window dots
+    def _mac_code_card(m: re.Match) -> str:
+        code_body = m.group(1)
+        return (
+            '<section style="margin:16px 0;background-color:#0f172a;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.12);">'
+            '<div style="display:flex;align-items:center;padding:8px 12px;background-color:#1e293b;border-bottom:1px solid #334155;">'
+            '<span style="width:10px;height:10px;border-radius:50%;background:#ef4444;display:inline-block;margin-right:6px;"></span>'
+            '<span style="width:10px;height:10px;border-radius:50%;background:#f59e0b;display:inline-block;margin-right:6px;"></span>'
+            '<span style="width:10px;height:10px;border-radius:50%;background:#10b981;display:inline-block;"></span>'
+            '</div>'
+            f'<pre style="background:transparent;color:#f8fafc;padding:12px 14px;margin:0;overflow-x:auto;font-family:Menlo,Monaco,Consolas,monospace;font-size:13px;line-height:1.6;">{code_body}</pre>'
+            '</section>'
+        )
+
+    if 'style="width:10px;height:10px;border-radius:50%;background:#ef4444' not in out:
+        out = re.sub(r"<pre[^>]*>([\s\S]*?)</pre>", _mac_code_card, out, flags=re.IGNORECASE)
+
+    # 3. Apply tag-level inline fallback styles
     for tag, style in _INLINE_TAG_STYLES.items():
         out = re.sub(
-            rf"<{tag}>",
-            f'<{tag} style="{style}">',
+            rf"<{tag}(?![^>]*style=)([^>]*)>",
+            rf'<{tag} style="{style}"\1>',
             out,
             flags=re.IGNORECASE,
         )
@@ -634,8 +720,26 @@ def build_wechat_articles(
 
 
 # ---------------------------------------------------------------------------
-# 4. WeChat Official Account API Client (wechatpy SDK + requests Fallback)
+# 4. WeChat Official Account API Client (Proxy & api_base Supported)
 # ---------------------------------------------------------------------------
+
+def _resolve_request_kwargs(
+    config: dict[str, Any] | Any | None = None,
+    api_base: str | None = None,
+    proxy_url: str | None = None,
+) -> tuple[str, dict[str, str] | None]:
+    """Resolve normalized API base URL and requests proxy mapping."""
+    cfg = config or {}
+    if hasattr(cfg, "get"):
+        base = str(api_base or cfg.get("api_base") or "https://api.weixin.qq.com").rstrip("/")
+        p_url = str(proxy_url or cfg.get("proxy_url") or "").strip() or None
+    else:
+        base = str(api_base or "https://api.weixin.qq.com").rstrip("/")
+        p_url = str(proxy_url or "").strip() or None
+
+    proxies = {"http": p_url, "https": p_url} if p_url else None
+    return base, proxies
+
 
 def _response(response: requests.Response) -> dict:
     response.raise_for_status()
@@ -649,7 +753,8 @@ def _response(response: requests.Response) -> dict:
         if errcode == 40164:
             raise RuntimeError(
                 f"WeChat API error 40164 (IP not in whitelist): {errmsg}. "
-                "Please add the current runner/machine public IP to WeChat MP Console -> Development -> Basic Config -> IP Whitelist."
+                "Please add the current runner/machine public IP to WeChat MP Console -> Development -> Basic Config -> IP Whitelist, "
+                "or configure 'proxy_url' / 'api_base' to route through a fixed outbound proxy."
             )
         raise RuntimeError(f"WeChat API error {errcode}: {errmsg}")
     return data
@@ -665,44 +770,61 @@ def _get_wechatpy_client(app_id: str, app_secret: str) -> Any | None:
         return None
 
 
-def get_access_token(app_id: str, app_secret: str) -> str:
+def get_access_token(
+    app_id: str,
+    app_secret: str,
+    api_base: str | None = None,
+    proxy_url: str | None = None,
+) -> str:
     now = time.time()
-    cached = _TOKEN_CACHE.get(app_id)
+    base, proxies = _resolve_request_kwargs(api_base=api_base, proxy_url=proxy_url)
+    cache_key = f"{app_id}:{base}"
+    cached = _TOKEN_CACHE.get(cache_key)
     if cached and now < cached[1]:
         return cached[0]
 
-    client = _get_wechatpy_client(app_id, app_secret)
-    if client is not None:
-        try:
-            token = client.fetch_access_token()["access_token"]
-            _TOKEN_CACHE[app_id] = (token, now + 6900)
-            return token
-        except Exception:
-            pass
+    # Try wechatpy client if on standard endpoint with no custom proxy
+    if base == "https://api.weixin.qq.com" and not proxies:
+        client = _get_wechatpy_client(app_id, app_secret)
+        if client is not None:
+            try:
+                token = client.fetch_access_token()["access_token"]
+                _TOKEN_CACHE[cache_key] = (token, now + 6900)
+                return token
+            except Exception:
+                pass
 
     data = _response(requests.get(
-        "https://api.weixin.qq.com/cgi-bin/token",
+        f"{base}/cgi-bin/token",
         params={"grant_type": "client_credential", "appid": app_id, "secret": app_secret},
+        proxies=proxies,
         timeout=30,
     ))
     token = data.get("access_token")
     if not token:
         raise RuntimeError("WeChat token response has no access_token")
-    _TOKEN_CACHE[app_id] = (token, now + int(data.get("expires_in", 7200)) - 300)
+    _TOKEN_CACHE[cache_key] = (token, now + int(data.get("expires_in", 7200)) - 300)
     return token
 
 
-def upload_cover(access_token: str, image_path: str) -> str:
+def upload_cover(
+    access_token: str,
+    image_path: str,
+    api_base: str | None = None,
+    proxy_url: str | None = None,
+) -> str:
     """Upload a permanent cover image to WeChat material library and return media_id."""
     path = Path(image_path)
     if not path.is_file():
         raise ValueError(f"WeChat cover image not found: {path.name}")
+    base, proxies = _resolve_request_kwargs(api_base=api_base, proxy_url=proxy_url)
     content_type = mimetypes.guess_type(path.name)[0] or "image/png"
     with path.open("rb") as image:
         data = _response(requests.post(
-            "https://api.weixin.qq.com/cgi-bin/material/add_material",
+            f"{base}/cgi-bin/material/add_material",
             params={"access_token": access_token, "type": "image"},
             files={"media": (path.name, image, content_type)},
+            proxies=proxies,
             timeout=30,
         ))
     if not data.get("media_id"):
@@ -710,17 +832,24 @@ def upload_cover(access_token: str, image_path: str) -> str:
     return data["media_id"]
 
 
-def upload_article_image(access_token: str, image_path: str) -> str:
+def upload_article_image(
+    access_token: str,
+    image_path: str,
+    api_base: str | None = None,
+    proxy_url: str | None = None,
+) -> str:
     """Upload an inline article image to WeChat CDN (mmbiz.qpic.cn) via /cgi-bin/media/uploadimg."""
     path = Path(image_path)
     if not path.is_file():
         raise ValueError(f"WeChat inline image not found: {path.name}")
+    base, proxies = _resolve_request_kwargs(api_base=api_base, proxy_url=proxy_url)
     content_type = mimetypes.guess_type(path.name)[0] or "image/png"
     with path.open("rb") as image:
         data = _response(requests.post(
-            "https://api.weixin.qq.com/cgi-bin/media/uploadimg",
+            f"{base}/cgi-bin/media/uploadimg",
             params={"access_token": access_token},
             files={"media": (path.name, image, content_type)},
+            proxies=proxies,
             timeout=30,
         ))
     url = data.get("url")
@@ -730,59 +859,68 @@ def upload_article_image(access_token: str, image_path: str) -> str:
 
 
 def resolve_thumb_media_id(
-    config: dict,
+    config: dict | Any,
     access_token: str,
     title: str = "论文研究日报",
     subtitle: str = "Paper Daily · Academic Digest",
+    api_base: str | None = None,
+    proxy_url: str | None = None,
 ) -> str:
     """Resolve thumb_media_id from config, local cover_path, or auto-generated academic cover."""
-    thumb_media_id = str(config.get("thumb_media_id") or "").strip()
+    cfg = config if hasattr(config, "get") else {}
+    thumb_media_id = str(cfg.get("thumb_media_id") or "").strip()
     if thumb_media_id:
         return thumb_media_id
 
-    cover_path = str(config.get("cover_path") or "").strip()
+    base, proxies = _resolve_request_kwargs(cfg, api_base, proxy_url)
+    p_url = cfg.get("proxy_url") or proxy_url
+
+    cover_path = str(cfg.get("cover_path") or "").strip()
     if cover_path and Path(cover_path).is_file():
-        cache_key = f"file:{cover_path}"
+        cache_key = f"file:{cover_path}:{base}"
         if cache_key not in _COVER_MEDIA_CACHE:
-            _COVER_MEDIA_CACHE[cache_key] = upload_cover(access_token, cover_path)
+            _COVER_MEDIA_CACHE[cache_key] = upload_cover(access_token, cover_path, api_base=base, proxy_url=p_url)
         return _COVER_MEDIA_CACHE[cache_key]
 
     # Auto-generate minimalist academic cover image when not configured
-    cache_key = f"auto:{date.today().isoformat()}:{title[:24]}"
+    cache_key = f"auto:{date.today().isoformat()}:{title[:24]}:{base}"
     if cache_key not in _COVER_MEDIA_CACHE:
         generated_cover = generate_academic_cover(title=title, subtitle=subtitle)
-        _COVER_MEDIA_CACHE[cache_key] = upload_cover(access_token, str(generated_cover))
+        _COVER_MEDIA_CACHE[cache_key] = upload_cover(access_token, str(generated_cover), api_base=base, proxy_url=p_url)
     return _COVER_MEDIA_CACHE[cache_key]
 
 
 def _build_draft_article_payload(
-    config: dict,
+    config: dict | Any,
     report: DailyReport,
     thumb_media_id: str,
 ) -> dict[str, Any]:
+    cfg = config if hasattr(config, "get") else {}
     article: dict[str, Any] = {
         "title": report.title[:64],
-        "author": str(config.get("author") or "Paper Daily")[:16],
+        "author": str(cfg.get("author") or "Paper Daily")[:16],
         "digest": report.digest[:120],
         "content": report.html,
         "thumb_media_id": thumb_media_id,
         "show_cover_pic": 0,
-        "need_open_comment": int(config.get("need_open_comment", 0)),
-        "only_fans_can_comment": int(config.get("only_fans_can_comment", 0)),
+        "need_open_comment": int(cfg.get("need_open_comment", 0)),
+        "only_fans_can_comment": int(cfg.get("only_fans_can_comment", 0)),
     }
-    if config.get("content_source_url"):
-        article["content_source_url"] = str(config["content_source_url"])
+    if cfg.get("content_source_url"):
+        article["content_source_url"] = str(cfg["content_source_url"])
     return article
 
 
 def create_draft(
-    config: dict,
+    config: dict | Any,
     report: DailyReport | list[DailyReport],
 ) -> str:
     """Create a WeChat Official Account draft (single or multi-article bundle); never auto-publishes."""
     app_id = str(config["app_id"])
     app_secret = str(config["app_secret"])
-    token = get_access_token(app_id, app_secret)
+    base, proxies = _resolve_request_kwargs(config)
+    proxy_url = config.get("proxy_url") if hasattr(config, "get") else None
+    token = get_access_token(app_id, app_secret, api_base=base, proxy_url=proxy_url)
 
     reports = report if isinstance(report, list) else [report]
     if not reports:
@@ -790,14 +928,22 @@ def create_draft(
 
     articles_payload: list[dict[str, Any]] = []
     for rep in reports[:8]:  # WeChat allows up to 8 articles per draft item
-        thumb_id = resolve_thumb_media_id(config, token, title=rep.title, subtitle=rep.digest)
+        thumb_id = resolve_thumb_media_id(
+            config,
+            token,
+            title=rep.title,
+            subtitle=rep.digest,
+            api_base=base,
+            proxy_url=proxy_url,
+        )
         articles_payload.append(_build_draft_article_payload(config, rep, thumb_id))
 
     data = _response(requests.post(
-        "https://api.weixin.qq.com/cgi-bin/draft/add",
+        f"{base}/cgi-bin/draft/add",
         params={"access_token": token},
         data=json.dumps({"articles": articles_payload}, ensure_ascii=False).encode("utf-8"),
         headers={"Content-Type": "application/json; charset=utf-8"},
+        proxies=proxies,
         timeout=30,
     ))
     if not data.get("media_id"):
@@ -805,7 +951,12 @@ def create_draft(
     return data["media_id"]
 
 
-def upload_wechat_voice_material(access_token: str, mp3_path: str | Path) -> str:
+def upload_wechat_voice_material(
+    access_token: str,
+    mp3_path: str | Path,
+    api_base: str | None = None,
+    proxy_url: str | None = None,
+) -> str:
     """Upload a <=60s, <=2MB MP3 voice guide to WeChat Official Account permanent voice material library."""
     path = Path(mp3_path)
     if not path.is_file():
@@ -814,12 +965,14 @@ def upload_wechat_voice_material(access_token: str, mp3_path: str | Path) -> str
     if size_bytes > 2 * 1024 * 1024:
         raise ValueError(f"WeChat voice material exceeds 2MB limit ({size_bytes} bytes): {path.name}")
 
+    base, proxies = _resolve_request_kwargs(api_base=api_base, proxy_url=proxy_url)
     with path.open("rb") as voice_file:
         data = _response(
             requests.post(
-                "https://api.weixin.qq.com/cgi-bin/material/add_material",
+                f"{base}/cgi-bin/material/add_material",
                 params={"access_token": access_token, "type": "voice"},
                 files={"media": (path.name, voice_file, "audio/mpeg")},
+                proxies=proxies,
                 timeout=45,
             )
         )
@@ -830,7 +983,7 @@ def upload_wechat_voice_material(access_token: str, mp3_path: str | Path) -> str
 
 
 def publish_wechat_drafts(
-    config: dict,
+    config: dict | Any,
     papers: list[Paper],
     question_briefs: list[dict] | None = None,
     trending_items: list | None = None,
@@ -838,7 +991,7 @@ def publish_wechat_drafts(
     voice_mp3_path: str | Path | None = None,
 ) -> str:
     """Build multi-mode WeChat articles (digest, deep_read, topic_review), optionally upload 60s voice material, and push to WeChat Draft Box."""
-    raw_modes = config.get("article_modes")
+    raw_modes = config.get("article_modes") if hasattr(config, "get") else None
     if isinstance(raw_modes, str):
         modes = [m.strip() for m in raw_modes.split(",") if m.strip()]
     elif isinstance(raw_modes, (list, tuple)):
@@ -862,15 +1015,18 @@ def publish_wechat_drafts(
             )
         ]
 
+    base, proxies = _resolve_request_kwargs(config)
+    proxy_url = config.get("proxy_url") if hasattr(config, "get") else None
+
     if voice_mp3_path and Path(voice_mp3_path).is_file():
         try:
             app_id = str(config["app_id"])
             app_secret = str(config["app_secret"])
-            token = get_access_token(app_id, app_secret)
-            voice_media_id = upload_wechat_voice_material(token, voice_mp3_path)
+            token = get_access_token(app_id, app_secret, api_base=base, proxy_url=proxy_url)
+            voice_media_id = upload_wechat_voice_material(token, voice_mp3_path, api_base=base, proxy_url=proxy_url)
             voice_banner = (
-                '<blockquote style="margin:12px 0;padding:10px 14px;background-color:#eff6ff;'
-                'border-left:4px solid #2563eb;color:#1e3a8a;font-size:13px;border-radius:0 6px 6px 0;">'
+                '<blockquote style="margin:14px 0;padding:12px 16px;background-color:#eff6ff;'
+                'border-left:4px solid #2563eb;color:#1e3a8a;font-size:13.5px;border-radius:0 6px 6px 0;">'
                 f"<strong>[今日 60 秒语音导读已同步上传至公众号素材库]</strong>（语音 Media ID: <code>{escape(voice_media_id)}</code>，可在公众号后台编辑器一键插入顶部音频条）"
                 "</blockquote>"
             )
