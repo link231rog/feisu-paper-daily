@@ -24,6 +24,8 @@ export const en: Locale = {
     tags: [
       'Serverless via GitHub Actions',
       'Multi-Dimensional Reranking',
+      'Agent-Reach Web Reach',
+      'Dual-Track Audio (Edge-TTS / NotebookLM)',
       'Hypothesis & Question Tracking',
       'Direct Agent Bridge',
     ],
@@ -45,12 +47,16 @@ export const en: Locale = {
     },
   },
   recommend: {
-    title: 'Paper Recommendation System',
+    title: 'Paper Recommendation & Web Reach',
     pills: ['arXiv', 'HuggingFace', 'OpenReview', 'Semantic Scholar', 'GitHub', 'Agent-Reach'],
     cards: {
       sources: {
-        title: 'Multi-Source & Community Reach',
-        desc: 'Ingests from arXiv, HuggingFace, OpenReview, and enriches candidates via Agent-Reach community talks.',
+        title: 'Multi-Source Retrieval',
+        desc: 'Ingests candidate preprints from arXiv, HuggingFace, OpenReview, and Semantic Scholar.',
+      },
+      agentReach: {
+        title: 'Agent-Reach Intelligence',
+        desc: 'Zero-install assembly with Agent-Reach to extract Bilibili talks, YouTube talks, and Reddit discussions.',
       },
       scoring: {
         title: 'Relevance Scoring',

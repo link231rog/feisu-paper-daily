@@ -116,6 +116,8 @@ function BrandIcon({ name }: { name: string }) {
       return <Database className="w-5 h-5" />;
     case 'Crossref':
       return <Layers className="w-5 h-5" />;
+    case 'Agent-Reach':
+      return <Globe className="w-5 h-5" />;
     case 'bioRxiv':
     case 'medRxiv':
       return <FileText className="w-5 h-5" />;
@@ -641,11 +643,16 @@ export default function App() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 border-t border-l border-neutral-200 dark:border-neutral-800">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 border-t border-l border-neutral-200 dark:border-neutral-800">
               <GridCard
                 title={t.recommend.cards.sources.title}
                 desc={t.recommend.cards.sources.desc}
                 href={README_ARCH}
+              />
+              <GridCard
+                title={t.recommend.cards.agentReach.title}
+                desc={t.recommend.cards.agentReach.desc}
+                href="https://github.com/Panniantong/Agent-Reach"
               />
               <GridCard
                 title={t.recommend.cards.scoring.title}

@@ -36,6 +36,7 @@ export interface Locale {
     pills: string[];
     cards: {
       sources: { title: string; desc: string };
+      agentReach: { title: string; desc: string };
       scoring: { title: string; desc: string };
       filtering: { title: string; desc: string };
     };

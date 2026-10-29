@@ -24,6 +24,8 @@ export const zh: Locale = {
     tags: [
       'GitHub Actions 免服运行',
       '多维度文献推荐',
+      'Agent-Reach 全网声量',
+      '双轨音频 (Edge-TTS / NotebookLM)',
       '问题追踪与精读',
       '文献库与 Agent 直连',
     ],
@@ -45,12 +47,16 @@ export const zh: Locale = {
     },
   },
   recommend: {
-    title: '文献推荐系统',
+    title: '文献推荐与全网情报',
     pills: ['arXiv', 'HuggingFace', 'OpenReview', 'Semantic Scholar', 'GitHub', 'Agent-Reach'],
     cards: {
       sources: {
-        title: '多信源抓取与社区情报',
-        desc: '覆盖 arXiv、OpenReview、HuggingFace 与 Agent-Reach 全网学术视频/讨论拓展。',
+        title: '多源文献检索',
+        desc: '支持 arXiv、HuggingFace、OpenReview、Semantic Scholar 等主流学术源。',
+      },
+      agentReach: {
+        title: 'Agent-Reach 全网声量',
+        desc: '免安装组装 Agent-Reach 管道，探查 B站视频、YouTube 演讲与 Reddit 讨论。',
       },
       scoring: {
         title: '相关性打分',
