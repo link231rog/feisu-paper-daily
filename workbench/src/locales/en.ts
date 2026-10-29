@@ -46,11 +46,11 @@ export const en: Locale = {
   },
   recommend: {
     title: 'Paper Recommendation System',
-    pills: ['arXiv', 'HuggingFace', 'OpenReview', 'Semantic Scholar', 'GitHub', 'DBLP'],
+    pills: ['arXiv', 'HuggingFace', 'OpenReview', 'Semantic Scholar', 'GitHub', 'Agent-Reach'],
     cards: {
       sources: {
-        title: 'Multi-Source Aggregation',
-        desc: 'Ingests candidate preprints from arXiv, HuggingFace, OpenReview, Semantic Scholar, and GitHub.',
+        title: 'Multi-Source & Community Reach',
+        desc: 'Ingests from arXiv, HuggingFace, OpenReview, and enriches candidates via Agent-Reach community talks.',
       },
       scoring: {
         title: 'Relevance Scoring',

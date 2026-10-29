@@ -97,6 +97,13 @@ notebooklm:
   attach_email: true
   attach_telegram: true
 
+agent_reach:
+  enabled: false # Optional external social & multimedia intelligence assembly (Panniantong/Agent-Reach)
+  channels: ["bilibili", "youtube", "github"] # Channels to probe for top deep-read papers
+  max_papers_to_enrich: 3 # Top N deep-read papers to enrich with external talks/discussions
+  fallback_web_reader: true # Use agent-reach read <url> as fallback reader backend
+  timeout: 15.0 # Timeout in seconds for individual CLI calls
+
 llm:
   api:
     key: null # API Key of your LLM API. Example: sk-xxx

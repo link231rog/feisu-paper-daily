@@ -1281,6 +1281,146 @@ def test_notebooklm_pipeline_and_dual_mode_topics(tmp_path, monkeypatch):
     assert any(today_str in title for _, title in created_notebooks)
 
 
+def test_pipeline_dag_fallback_chain_and_agent_reach(tmp_path, monkeypatch):
+    """Verify Pipeline DAG stage sequencing, Agent-Reach fallback chains, and external CLI assembly."""
+    import json
+    from omegaconf import OmegaConf
+    from zotero_arxiv_daily.pipeline import (
+        Backend,
+        FallbackChain,
+        PipelineContext,
+        PipelineEngine,
+        PipelineStage,
+    )
+    from zotero_arxiv_daily.pipeline.backends.agent_reach import AgentReachCLI
+    from zotero_arxiv_daily.pipeline.backends.fulltext_backends import AgentReachReadBackend
+    from zotero_arxiv_daily.pipeline.stages.enrich_stage import EnrichStage
+    from zotero_arxiv_daily.protocol import Paper
+
+    # 1. Test FallbackChain (Agent-Reach style ordered backends)
+    class FailingBackend(Backend[str]):
+        name = "failing_primary"
+
+        def execute(self, *args, **kwargs):
+            raise ConnectionError("Network timeout on primary backend")
+
+    class WorkingBackend(Backend[str]):
+        name = "working_secondary"
+
+        def execute(self, *args, **kwargs):
+            return "# Full Text Extracted via Secondary Backend"
+
+    chain = FallbackChain[str]([FailingBackend(), WorkingBackend()], name="test_chain")
+    res = chain.execute("https://example.com/paper.pdf")
+    assert res.ok is True
+    assert res.backend_name == "working_secondary"
+    assert "Full Text Extracted" in res.data
+    assert res.elapsed_seconds >= 0.0
+
+    # 2. Test AgentReachCLI Mocking
+    class MockProcess:
+        def __init__(self, stdout_text, returncode=0):
+            self.stdout = stdout_text
+            self.stderr = ""
+            self.returncode = returncode
+
+    # Mock Bilibili search
+    def mock_subprocess_run(cmd, *args, **kwargs):
+        if "bilibili" in cmd:
+            payload = {
+                "ok": True,
+                "result": [
+                    {"title": "【顶会精读】Agent 记忆架构深度拆解", "bvid": "BV1xx411c7X", "author": "AI科研社"}
+                ],
+            }
+            return MockProcess(json.dumps(payload))
+        if "read" in cmd:
+            payload = {
+                "ok": True,
+                "result": "# Paper Markdown Body via Agent Reach\n\nClean extracted text with no ads. Comprehensive architecture breakdown for agents and models.",
+            }
+            return MockProcess(json.dumps(payload))
+        return MockProcess("{\"ok\": false}")
+
+    monkeypatch.setattr("shutil.which", lambda cmd: "/usr/local/bin/agent-reach" if cmd == "agent-reach" else None)
+    monkeypatch.setattr("subprocess.run", mock_subprocess_run)
+
+    assert AgentReachCLI.is_installed() is True
+    bili_items = AgentReachCLI.search_bilibili("Agent Memory", limit=1)
+    assert len(bili_items) == 1
+    assert "Agent 记忆架构" in bili_items[0]["title"]
+
+    # Test AgentReachReadBackend
+    read_backend = AgentReachReadBackend()
+    assert read_backend.is_available() is True
+    read_res = read_backend.execute("https://some-paywalled-blog.com/paper")
+    assert read_res is not None
+    assert "Paper Markdown Body" in read_res
+
+    # 3. Test PipelineEngine & Context stage execution
+    stage_log = []
+
+    class StageA(PipelineStage):
+        name = "stage_a"
+
+        def run(self, context: PipelineContext) -> None:
+            stage_log.append("A")
+            context.funnel["stage_a"] = 100
+
+    class StageB(PipelineStage):
+        name = "stage_b"
+
+        def run(self, context: PipelineContext) -> None:
+            stage_log.append("B")
+            context.funnel["stage_b"] = 50
+
+    engine = PipelineEngine([StageA(), StageB()])
+    ctx = PipelineContext(config=OmegaConf.create({"executor": {"send_empty": True}}))
+    engine.execute(ctx)
+
+    assert stage_log == ["A", "B"]
+    assert ctx.funnel["stage_a"] == 100
+    assert ctx.funnel["stage_b"] == 50
+    assert "stage_a" in ctx.stage_durations
+    assert "stage_b" in ctx.stage_durations
+
+    # 4. Test EnrichStage with AgentReach assembly
+    p = Paper(
+        source="arxiv",
+        title="Scalable Memory Architecture for LLM Agents",
+        authors=["Alice", "Bob"],
+        abstract="Novel hierarchical memory for long-horizon planning.",
+        url="https://arxiv.org/abs/2610.12345",
+    )
+    p.recommendation_tier = "deep_read"
+
+    cfg_with_ar = OmegaConf.create({
+        "agent_reach": {
+            "enabled": True,
+            "channels": ["bilibili"],
+            "max_papers_to_enrich": 1,
+            "timeout": 5.0,
+        },
+        "news_and_trends": {"enabled": False},
+        "executor": {"tldr_workers": 1},
+    })
+
+    class DummyExecutor:
+        def __init__(self):
+            self.research_cfg = {"baselines": False, "synthesis": False}
+
+    enrich_stage = EnrichStage(DummyExecutor())
+    ctx_enrich = PipelineContext(config=cfg_with_ar)
+    ctx_enrich.reranked_papers = [p]
+    ctx_enrich.deep_read_papers = [p]
+
+    enrich_stage.run(ctx_enrich)
+    assert p.url in ctx_enrich.enrichments
+    assert "bilibili" in ctx_enrich.enrichments[p.url]
+    assert len(ctx_enrich.enrichments[p.url]["bilibili"]) == 1
+
+
+
 
 
 

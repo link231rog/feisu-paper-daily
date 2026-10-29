@@ -73,6 +73,13 @@ notebooklm:
   attach_email: ${oc.env:NOTEBOOKLM_ATTACH_EMAIL,true}
   attach_telegram: ${oc.env:NOTEBOOKLM_ATTACH_TELEGRAM,true}
 
+agent_reach:
+  enabled: ${oc.env:AGENT_REACH_ENABLED,false}
+  channels: ["bilibili", "youtube", "github"]
+  max_papers_to_enrich: ${oc.env:AGENT_REACH_MAX_PAPERS,3}
+  fallback_web_reader: ${oc.env:AGENT_REACH_FALLBACK_READER,true}
+  timeout: ${oc.env:AGENT_REACH_TIMEOUT,15.0}
+
 llm:
   api:
     key: ${oc.env:OPENAI_API_KEY,null}

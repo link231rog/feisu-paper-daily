@@ -146,6 +146,7 @@ const PLATFORM_URLS: Record<string, string> = {
   OpenReview: 'https://openreview.net',
   'Semantic Scholar': 'https://www.semanticscholar.org',
   GitHub: 'https://github.com',
+  'Agent-Reach': 'https://github.com/Panniantong/Agent-Reach',
   DBLP: 'https://dblp.org',
   Crossref: 'https://www.crossref.org',
   bioRxiv: 'https://www.biorxiv.org',

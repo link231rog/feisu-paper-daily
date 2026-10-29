@@ -46,11 +46,11 @@ export const zh: Locale = {
   },
   recommend: {
     title: '文献推荐系统',
-    pills: ['arXiv', 'HuggingFace', 'OpenReview', 'Semantic Scholar', 'GitHub', 'DBLP'],
+    pills: ['arXiv', 'HuggingFace', 'OpenReview', 'Semantic Scholar', 'GitHub', 'Agent-Reach'],
     cards: {
       sources: {
-        title: '多信源抓取',
-        desc: '支持 arXiv、HuggingFace、OpenReview、Semantic Scholar 等主流信源。',
+        title: '多信源抓取与社区情报',
+        desc: '覆盖 arXiv、OpenReview、HuggingFace 与 Agent-Reach 全网学术视频/讨论拓展。',
       },
       scoring: {
         title: '相关性打分',

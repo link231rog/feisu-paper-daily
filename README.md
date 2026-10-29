@@ -28,6 +28,11 @@ src/zotero_arxiv_daily/
 │   ├── research.py        # DeepResearch 查询规划、多跳引文追踪与问题证据综述
 │   ├── textutil.py        # 鲁棒 JSON 解析与文本工具
 │   └── translator.py      # 学术摘要中英双语翻译
+├── pipeline/              # 模块化 DAG 流水线引擎与有序容灾降级链 (方案 B)
+│   ├── base.py            # Backend, FallbackChain, PipelineContext, PipelineStage 核心抽象
+│   ├── engine.py          # 6 阶段流水线调度引擎与生命周期钩子
+│   ├── backends/          # 有序降级后端 (AgentReachCLI, ArxivHtml, PyMuPDF, Trafilatura)
+│   └── stages/            # 独立执行阶段 (Ingest, Fetch, Rerank, Enrich, Digest, Delivery)
 ├── channels/              # 多渠道排版、音频合成与推送适配器
 │   ├── audio.py           # MP3 双人播客（NotebookLM 风格）/ 学术早报 / 微信 60s 语音合成
 │   ├── daily_report.py    # 邮件与通用 HTML 日报构建器
@@ -202,6 +207,10 @@ uv run pytest tests/test_smoke.py
   *引用说明*：集成为微信公众号 API 客户端底座，用于 Access Token 管理、永久封面素材上传、60 秒语音素材（`type=voice`）上传及草稿箱创建（`/cgi-bin/draft/add`）。
 - **[`doocs/md`](https://github.com/doocs/md) & [`caol64/wenyan`](https://github.com/caol64/wenyan)**  
   *引用说明*：借鉴了微信公众号学术风内联 CSS 样式表（Inline Styles）渲染以及将外部超链接自动转化为文末编号角标（`[1]`, `[2]`）的排版方案。
+
+### 5. 全网外部情报与有序降级链 (External Reach & Fallback Chains)
+- **[`Panniantong/Agent-Reach`](https://github.com/Panniantong/Agent-Reach)**  
+  *引用说明*：参考了其「以有序降级链（Ordered Backends）处理复杂异构互联网」的架构哲学与统一 CLI JSON 通信契约，为本项目重构了基于 DAG 的 6 阶段文献流水线（`pipeline/`），并在 Enrich 阶段作为免安装/只读外部组件接入，按论文标题自动拓展 B 站/YouTube 学术解说视频与 X/Reddit 社区热议，同时作为通用正文抓取的坚固兜底。
 - **[`LucianaiB2004/wechat-publisher`](https://github.com/LucianaiB2004/wechat-publisher)**  
   *引用说明*：参考了其面向微信公众号的多模式推文构建（每日精选合集、单篇深度解读、专题综述）与自动化封面图生成流程。
 
