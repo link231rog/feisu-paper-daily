@@ -14,6 +14,15 @@ from ..protocol import Paper
 from .textutil import UNTRUSTED_NOTICE, extract_json
 
 
+def _safe_int_days(val: Any) -> int:
+    if isinstance(val, list):
+        return len(val)
+    try:
+        return int(val or 0)
+    except (ValueError, TypeError):
+        return 0
+
+
 class ResearchState:
     """Persists cumulative evidence for tracked research questions across daily runs."""
 
@@ -79,7 +88,7 @@ class ResearchState:
             new_counter = brief.get("counter_evidence") or []
             if new_ev or new_counter:
                 if entry.get("last_evidence_date") != today:
-                    entry["evidence_days"] = int(entry.get("evidence_days", 0)) + 1
+                    entry["evidence_days"] = _safe_int_days(entry.get("evidence_days", 0)) + 1
                     entry["last_evidence_date"] = today
 
                 seen_sup = {e.get("url") or e.get("title") for e in entry.get("supporting", []) if isinstance(e, dict)}
@@ -105,10 +114,10 @@ class ResearchState:
             if brief.get("gap"):
                 entry["gap"] = brief["gap"]
 
-            if entry.get("evidence_days", 0) >= saturation_days and not brief.get("gap"):
+            if _safe_int_days(entry.get("evidence_days", 0)) >= saturation_days and not brief.get("gap"):
                 entry["saturated"] = True
 
-            brief["evidence_days"] = entry.get("evidence_days", 0)
+            brief["evidence_days"] = _safe_int_days(entry.get("evidence_days", 0))
             brief["supporting_count"] = len(entry.get("supporting", []))
             brief["counter_count"] = len(entry.get("counter", []))
         self.save()

@@ -623,6 +623,15 @@ def test_wechat_multi_mode_and_subpackage_imports(tmp_path):
     st = ResearchState(str(tmp_path / "state.json"))
     st.record(briefs)
     assert st.gap("如何提升长上下文记忆召回？") == "多模态视频记忆尚待验证"
+
+    # Test backward compatibility where legacy cache stored evidence_days as list
+    st.questions["legacy_q"] = {
+        "evidence_days": ["2026-10-25", "2026-10-26"],
+        "last_evidence_date": "2026-10-26",
+    }
+    st.record([{"question": "legacy_q", "evidence": [{"url": "http://test", "title": "test"}]}])
+    assert st.questions["legacy_q"]["evidence_days"] == 3
+
     assert callable(compute_review_confidence) and callable(locate_spans)
     assert callable(parse_console_text) and callable(rank_library_notes)
 

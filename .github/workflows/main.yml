@@ -13,7 +13,8 @@ on:
   repository_dispatch:
     types: [paper-daily, paper_daily, ingest]
   schedule:
-    - cron: '0 1,7,11 * * *' # 09:00, 15:00, 19:00 Beijing Time (01:00, 07:00, 11:00 UTC)
+    - cron: '15 1 * * *' # 09:15 Beijing Time (01:15 UTC): Full daily literature recommendation
+    - cron: '0 7,11 * * *' # 15:00, 19:00 Beijing Time (07:00, 11:00 UTC): Scheduled ingestion
 
 permissions:
   contents: read
@@ -105,7 +106,7 @@ jobs:
           if [ "$IS_INGEST_ONLY" = "true" ] || [ "${{ github.event.action }}" = "ingest" ]; then
             echo "Running in ingest-only mode (external dispatch/manual)"
             export INGEST_ONLY="true"
-          elif [ "$GITHUB_EVENT_NAME" = "schedule" ] && [ "$CURRENT_HOUR" -gt 3 ]; then
+          elif [ "$GITHUB_EVENT_NAME" = "schedule" ] && [ "$CURRENT_HOUR" -ge 5 ]; then
             echo "Running scheduled ingestion at $(date) (UTC hour $CURRENT_HOUR, ingest-only)"
             export INGEST_ONLY="true"
           else
