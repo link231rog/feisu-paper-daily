@@ -17,7 +17,7 @@
 代码库按职责划分为三大核心子包与检索/重排插件层，同时在顶层保留向后兼容导入垫片：
 
 ```text
-src/zotero_arxiv_daily/
+paper_daily/
 ├── core/                  # 核心审阅、评分、研究闭环与状态存储
 │   ├── annotator.py       # 摘要行内三色高亮批注与字符偏移定位
 │   ├── baseline.py        # 对比基线提取与个人文献库双向回链

@@ -382,9 +382,10 @@ def get_agent_skill_schema() -> dict[str, Any]:
 
 def export_agent_skill_markdown() -> str:
     """Returns the SKILL.md instruction text for Claude Code / OpenClaw / Cursor / Hermes."""
-    skill_file = Path(__file__).resolve().parents[2] / "skills" / "paper-daily" / "SKILL.md"
-    if skill_file.is_file():
-        return skill_file.read_text(encoding="utf-8")
+    for parent in Path(__file__).resolve().parents:
+        skill_file = parent / "skills" / "paper-daily" / "SKILL.md"
+        if skill_file.is_file():
+            return skill_file.read_text(encoding="utf-8")
     return """---
 name: paper-daily
 description: Zero-install cloud literature pipeline running 100% serverless on GitHub Actions.

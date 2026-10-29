@@ -3,17 +3,17 @@
 import pytest
 from omegaconf import OmegaConf
 
-from zotero_arxiv_daily.annotator import build_annotated_text_elements, locate_spans
-from zotero_arxiv_daily.feishu import normalize_reading_status
-from zotero_arxiv_daily.protocol import Paper
-from zotero_arxiv_daily.reranker.local import LocalReranker
-from zotero_arxiv_daily.textutil import extract_json
-from zotero_arxiv_daily.utils import clean_paper_markdown
+from paper_daily.annotator import build_annotated_text_elements, locate_spans
+from paper_daily.feishu import normalize_reading_status
+from paper_daily.protocol import Paper
+from paper_daily.reranker.local import LocalReranker
+from paper_daily.textutil import extract_json
+from paper_daily.utils import clean_paper_markdown
 
 
 def test_config_composition():
     """Verify base and custom configs load and compose cleanly."""
-    from zotero_arxiv_daily.executor import as_bool
+    from paper_daily.executor import as_bool
 
     base = OmegaConf.load("config/base.yaml")
     custom = OmegaConf.load("config/custom.yaml")
@@ -108,7 +108,7 @@ def test_tfidf_reranker():
 
 def test_restore_feishu_and_obsidian_annotations(tmp_path):
     """Verify direct annotation restoration across Feishu and Obsidian libraries."""
-    from zotero_arxiv_daily.library import restore_feishu_note, restore_obsidian_note
+    from paper_daily.library import restore_feishu_note, restore_obsidian_note
 
     # 1. Feishu restoration with bilingual context & section heading
     blocks = [
@@ -146,7 +146,7 @@ def test_restore_feishu_and_obsidian_annotations(tmp_path):
     assert obs_note["annotations"][0]["section"] == "Method"
 
     # 3. Hybrid bilingual search & ranking across restored notes
-    from zotero_arxiv_daily.library import rank_library_notes
+    from paper_daily.library import rank_library_notes
 
     ranked = rank_library_notes([feishu_note, obs_note], "外部存储 三个gap", top_k=2)
     assert len(ranked) >= 1
@@ -157,12 +157,12 @@ def test_restore_feishu_and_obsidian_annotations(tmp_path):
 def test_critical_paper_digest_and_no_icons():
     """Verify Critical-Paper-Digest deterministic scoring and strict icon-free report formatting."""
     import re
-    from zotero_arxiv_daily.digest import (
+    from paper_daily.digest import (
         compute_review_confidence,
         format_digest_feishu_elements,
         format_digest_html,
     )
-    from zotero_arxiv_daily.daily_report import _inline_annotated_html
+    from paper_daily.daily_report import _inline_annotated_html
 
     # 1. Deterministic scoring
     grades_high = {
@@ -238,8 +238,8 @@ def test_critical_paper_digest_and_no_icons():
 
 def test_research_and_baseline_json_parsing():
     """Verify research and baseline pipelines call extract_json cleanly."""
-    from zotero_arxiv_daily.baseline import extract_baselines
-    from zotero_arxiv_daily.research import plan_queries
+    from paper_daily.baseline import extract_baselines
+    from paper_daily.research import plan_queries
 
     class MockRouter:
         available = True
@@ -258,7 +258,7 @@ def test_research_and_baseline_json_parsing():
 def test_dispatch_payload_overlay(monkeypatch):
     """Verify external dispatch payload from Hermes/Grok bot merges into console settings."""
     import json
-    from zotero_arxiv_daily.console import _apply_dispatch_payload
+    from paper_daily.console import _apply_dispatch_payload
 
     initial = {
         "tags": ["Agent"],
@@ -281,7 +281,7 @@ def test_dispatch_payload_overlay(monkeypatch):
 
 def test_openreview_and_dblp_retrievers():
     """Verify OpenReview and DBLP retrievers are registered and convert API payloads into Paper objects."""
-    from zotero_arxiv_daily.retriever import get_retriever_cls
+    from paper_daily.retriever import get_retriever_cls
 
     cfg = OmegaConf.create(
         {
@@ -332,7 +332,7 @@ def test_openreview_and_dblp_retrievers():
 
 def test_console_custom_skills_templates_and_writeback(tmp_path):
     """Verify console parses custom skills/templates, expands external .md files, and writes back suggested questions."""
-    from zotero_arxiv_daily.console import (
+    from paper_daily.console import (
         append_suggested_questions_to_console,
         load_console_settings,
         parse_console_text,
@@ -377,7 +377,7 @@ def test_console_custom_skills_templates_and_writeback(tmp_path):
 
 def test_obsidian_ingestion_and_detail_annotations(tmp_path):
     """Verify Obsidian checked-task discovery and reading note generation with detail annotations."""
-    from zotero_arxiv_daily.library import (
+    from paper_daily.library import (
         fetch_checked_papers_from_obsidian,
         restore_obsidian_note,
         write_obsidian_reading_note,
@@ -425,8 +425,8 @@ def test_obsidian_ingestion_and_detail_annotations(tmp_path):
 
 def test_telegram_and_digest_sections():
     """Verify Telegram message chunking and digest table/markdown extraction."""
-    from zotero_arxiv_daily.digest import _extract_html_latexml_sections, _extract_markdown_sections
-    from zotero_arxiv_daily.telegram import format_telegram_messages
+    from paper_daily.digest import _extract_html_latexml_sections, _extract_markdown_sections
+    from paper_daily.telegram import format_telegram_messages
 
     html_sample = """
     <section class="ltx_section"><h2>3 Methodology</h2><p>Our state transition equation is <math><annotation encoding="application/x-tex">s_{t+1} = f(s_t, a_t)</annotation></math>.</p></section>
@@ -470,7 +470,7 @@ def test_telegram_and_digest_sections():
 
 def test_init_wizard_multi_select_and_conditional_credentials(tmp_path):
     """Verify multi-select initialization wizard and conditional credential follow-up."""
-    from zotero_arxiv_daily.init_wizard import (
+    from paper_daily.init_wizard import (
         apply_init_configuration,
         get_agent_skill_schema,
         get_conditional_credential_prompts,
@@ -558,7 +558,7 @@ def test_init_wizard_multi_select_and_conditional_credentials(tmp_path):
     assert res2["selected"]["deliveries"] == ["telegram"]
     assert "TELEGRAM_BOT_TOKEN=bot-token-777" in (tmp_path / ".env2").read_text(encoding="utf-8")
 
-    from zotero_arxiv_daily.init_wizard import export_agent_skill_markdown
+    from paper_daily.init_wizard import export_agent_skill_markdown
     skill_text = export_agent_skill_markdown()
     assert "name: paper-daily" in skill_text
     assert "gh repo fork link231rog/feisu-paper-daily --clone=false" in skill_text
@@ -567,13 +567,13 @@ def test_init_wizard_multi_select_and_conditional_credentials(tmp_path):
 
 def test_wechat_multi_mode_and_subpackage_imports(tmp_path):
     """Verify WeChat 3-mode article generation, academic cover generation, and subpackage imports."""
-    from zotero_arxiv_daily.channels import (
+    from paper_daily.channels import (
         build_wechat_articles,
         convert_links_to_wechat_footnotes,
         generate_academic_cover,
     )
-    from zotero_arxiv_daily.core import ResearchState, compute_review_confidence, locate_spans
-    from zotero_arxiv_daily.library import parse_console_text, rank_library_notes
+    from paper_daily.core import ResearchState, compute_review_confidence, locate_spans
+    from paper_daily.library import parse_console_text, rank_library_notes
 
     p = Paper(
         source="arxiv",
@@ -640,15 +640,15 @@ def test_recommendation_algorithms_and_4d_rubric_scoring(tmp_path):
     """Verify Max-TopK similarity, Rocchio negative feedback, MMR diversity, 4D rubric scoring, and artifact/HF signals."""
     from datetime import datetime
     from omegaconf import OmegaConf
-    from zotero_arxiv_daily.protocol import CorpusPaper, Paper, extract_paper_artifacts
-    from zotero_arxiv_daily.reranker.local import LocalReranker
-    from zotero_arxiv_daily.core.digest import (
+    from paper_daily.protocol import CorpusPaper, Paper, extract_paper_artifacts
+    from paper_daily.reranker.local import LocalReranker
+    from paper_daily.core.digest import (
         compute_composite_paper_score,
         format_digest_html,
         normalize_rubric_scores,
         rerank_by_composite_score,
     )
-    from zotero_arxiv_daily.core.paper_store import PaperStore
+    from paper_daily.core.paper_store import PaperStore
 
     # 1. Automatic GitHub & Project URL artifact extraction (ignoring generic pytorch/pytorch)
     text_sample = (
@@ -808,7 +808,7 @@ def test_recommendation_algorithms_and_4d_rubric_scoring(tmp_path):
 
 def test_audio_podcast_briefing_and_multichannel_delivery(tmp_path, monkeypatch):
     """Verify MP3 podcast/briefing script generation, frame concatenation, and Telegram/WeChat/Feishu audio delivery."""
-    from zotero_arxiv_daily.channels.audio import (
+    from paper_daily.channels.audio import (
         build_audio_script,
         build_wechat_60s_script,
         clean_text_for_tts,
@@ -816,9 +816,9 @@ def test_audio_podcast_briefing_and_multichannel_delivery(tmp_path, monkeypatch)
         generate_daily_audio_bundle,
         generate_mpeg1_layer3_silence,
     )
-    from zotero_arxiv_daily.channels.telegram import send_telegram_audio
-    from zotero_arxiv_daily.channels.wechat import upload_wechat_voice_material
-    from zotero_arxiv_daily.channels.feishu import FeishuClient
+    from paper_daily.channels.telegram import send_telegram_audio
+    from paper_daily.channels.wechat import upload_wechat_voice_material
+    from paper_daily.channels.feishu import FeishuClient
 
     # 1. Text sanitization for TTS (strip LaTeX, URLs, symbols)
     raw_txt = "We optimize $L = \\sum_{i=1}^N x_i$ -> see [Code](https://github.com/org/repo) and https://arxiv.org/abs/2605.00001."
@@ -936,9 +936,9 @@ def test_audio_podcast_briefing_and_multichannel_delivery(tmp_path, monkeypatch)
 
 def test_citation_chasing_paper_type_safety_and_interest_imports(monkeypatch):
     """Verify SemanticScholarRetriever.retrieve_related accepts Paper objects, and interest module resolves imports cleanly."""
-    from zotero_arxiv_daily.core.interest import get_interest_corpus
-    from zotero_arxiv_daily.protocol import Paper
-    from zotero_arxiv_daily.retriever.semantic_scholar_retriever import SemanticScholarRetriever
+    from paper_daily.core.interest import get_interest_corpus
+    from paper_daily.protocol import Paper
+    from paper_daily.retriever.semantic_scholar_retriever import SemanticScholarRetriever
 
     # 1. Type safety: retrieve_related with Paper instance
     ssr = SemanticScholarRetriever(OmegaConf.create({"source": {"semantic_scholar": {}}}))
@@ -962,14 +962,14 @@ def test_citation_chasing_paper_type_safety_and_interest_imports(monkeypatch):
         "console": {"enabled": True},
         "executor": {},
     })
-    # Should not raise ModuleNotFoundError: No module named 'zotero_arxiv_daily.core.feishu'
+    # Should not raise ModuleNotFoundError: No module named 'paper_daily.core.feishu'
     corpus = get_interest_corpus(cfg)
     assert isinstance(corpus, list)
 
 
 def test_zotero_and_notion_library_restoration(monkeypatch):
     """Verify Zotero and Notion note & annotation restoration logic in library bridge."""
-    from zotero_arxiv_daily.library.bridge import restore_notion_page, restore_zotero_item
+    from paper_daily.library.bridge import restore_notion_page, restore_zotero_item
 
     # 1. Zotero item with child annotation and child note
     class DummyZotero:
@@ -1050,7 +1050,7 @@ def test_zotero_and_notion_library_restoration(monkeypatch):
 
 def test_email_delivery_with_mp3_attachment(tmp_path, monkeypatch):
     """Verify send_email constructs MIME multipart with MP3 audio attachment and sanitizes credentials."""
-    from zotero_arxiv_daily.utils import send_email
+    from paper_daily.utils import send_email
 
     mp3_file = tmp_path / "briefing.mp3"
     mp3_file.write_bytes(b"\xff\xfb\x90\x64" + b"\x00" * 128)
@@ -1103,9 +1103,9 @@ def test_email_delivery_with_mp3_attachment(tmp_path, monkeypatch):
 
 def test_biorxiv_medrxiv_chemrxiv_retrievers(monkeypatch):
     """Verify bioRxiv, medRxiv, and ChemRxiv paper ingestion and metadata normalization."""
-    from zotero_arxiv_daily.retriever.biorxiv_retriever import BiorxivRetriever
-    from zotero_arxiv_daily.retriever.chemrxiv_retriever import ChemrxivRetriever
-    from zotero_arxiv_daily.retriever.medrxiv_retriever import MedrxivRetriever
+    from paper_daily.retriever.biorxiv_retriever import BiorxivRetriever
+    from paper_daily.retriever.chemrxiv_retriever import ChemrxivRetriever
+    from paper_daily.retriever.medrxiv_retriever import MedrxivRetriever
 
     # 1. bioRxiv
     bio = BiorxivRetriever(OmegaConf.create({"source": {"biorxiv": {"category": "neuroscience"}}}))
@@ -1151,12 +1151,12 @@ def test_notebooklm_pipeline_and_dual_mode_topics(tmp_path, monkeypatch):
     """Verify NotebookLM topic grouping, persistent auto-volume split, daily mode, and dual-track audio."""
     import datetime
     from pathlib import Path
-    from zotero_arxiv_daily.channels.notebooklm import (
+    from paper_daily.channels.notebooklm import (
         _resolve_auth_json,
         group_papers_by_topic,
         run_notebooklm_pipeline,
     )
-    from zotero_arxiv_daily.protocol import Paper
+    from paper_daily.protocol import Paper
 
     # 1. Topic grouping
     p1 = Paper(source="arxiv", title="Episodic Memory Agents", authors=["A"], abstract="abs", url="http://1", matched_anchor_title="Agent Memory")
@@ -1294,17 +1294,17 @@ def test_pipeline_dag_fallback_chain_and_agent_reach(tmp_path, monkeypatch):
     """Verify Pipeline DAG stage sequencing, Agent-Reach fallback chains, and external CLI assembly."""
     import json
     from omegaconf import OmegaConf
-    from zotero_arxiv_daily.pipeline import (
+    from paper_daily.pipeline import (
         Backend,
         FallbackChain,
         PipelineContext,
         PipelineEngine,
         PipelineStage,
     )
-    from zotero_arxiv_daily.pipeline.backends.agent_reach import AgentReachCLI
-    from zotero_arxiv_daily.pipeline.backends.fulltext_backends import AgentReachReadBackend
-    from zotero_arxiv_daily.pipeline.stages.enrich_stage import EnrichStage
-    from zotero_arxiv_daily.protocol import Paper
+    from paper_daily.pipeline.backends.agent_reach import AgentReachCLI
+    from paper_daily.pipeline.backends.fulltext_backends import AgentReachReadBackend
+    from paper_daily.pipeline.stages.enrich_stage import EnrichStage
+    from paper_daily.protocol import Paper
 
     # 1. Test FallbackChain (Agent-Reach style ordered backends)
     class FailingBackend(Backend[str]):

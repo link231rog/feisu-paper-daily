@@ -3,7 +3,7 @@ requires = ["uv_build>=0.8.5,<0.9.0"]
 build-backend = "uv_build"
 
 [project]
-name = "zotero-arxiv-daily"
+name = "paper-daily"
 version = "1.0.0"
 description = "Automated daily literature pipeline delivering research papers, question briefs, and AI annotations to Feishu, email, and WeChat."
 readme = "README.md"
@@ -34,8 +34,12 @@ dependencies = [
 ]
 
 [project.scripts]
-paper-daily = "zotero_arxiv_daily.main:main"
-paper-library = "zotero_arxiv_daily.library:main"
+paper-daily = "paper_daily.main:main"
+paper-library = "paper_daily.library:main"
+
+[tool.uv.build-backend]
+module-name = "paper_daily"
+module-root = ""
 
 [tool.uv.sources]
 torch = { index = "pytorch" }

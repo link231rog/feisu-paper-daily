@@ -113,7 +113,7 @@ jobs:
             echo "Running full pipeline at $(date) (UTC hour $CURRENT_HOUR)"
           fi
 
-          uv run src/zotero_arxiv_daily/main.py
+          uv run paper_daily/main.py
 
       - name: Save pipeline state
         if: always()
