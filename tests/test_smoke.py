@@ -624,13 +624,18 @@ def test_wechat_multi_mode_and_subpackage_imports(tmp_path):
     st.record(briefs)
     assert st.gap("如何提升长上下文记忆召回？") == "多模态视频记忆尚待验证"
 
-    # Test backward compatibility where legacy cache stored evidence_days as list
+    # Test backward compatibility where legacy cache stored evidence_days as list and supporting as dict
     st.questions["legacy_q"] = {
         "evidence_days": ["2026-10-25", "2026-10-26"],
         "last_evidence_date": "2026-10-26",
+        "supporting": {"url1": {"url": "http://1", "title": "t1"}},
+        "counter": {"url2": {"url": "http://2", "title": "t2"}},
     }
     st.record([{"question": "legacy_q", "evidence": [{"url": "http://test", "title": "test"}]}])
     assert st.questions["legacy_q"]["evidence_days"] == 3
+    assert isinstance(st.questions["legacy_q"]["supporting"], list)
+    assert isinstance(st.questions["legacy_q"]["counter"], list)
+    assert any(e.get("url") == "http://test" for e in st.questions["legacy_q"]["supporting"])
 
     assert callable(compute_review_confidence) and callable(locate_spans)
     assert callable(parse_console_text) and callable(rank_library_notes)

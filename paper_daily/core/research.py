@@ -23,6 +23,14 @@ def _safe_int_days(val: Any) -> int:
         return 0
 
 
+def _safe_list(val: Any) -> list:
+    if isinstance(val, list):
+        return val
+    if isinstance(val, dict):
+        return [v for v in val.values() if isinstance(v, dict)] or list(val.values())
+    return []
+
+
 class ResearchState:
     """Persists cumulative evidence for tracked research questions across daily runs."""
 
@@ -38,7 +46,14 @@ class ResearchState:
             with open(self.path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             if isinstance(data, dict):
-                self.questions = data.get("questions", data)
+                raw_q = data.get("questions", data)
+                if isinstance(raw_q, dict):
+                    for qk, qv in raw_q.items():
+                        if isinstance(qv, dict):
+                            qv["supporting"] = _safe_list(qv.get("supporting"))
+                            qv["counter"] = _safe_list(qv.get("counter"))
+                            qv["evidence_days"] = _safe_int_days(qv.get("evidence_days"))
+                    self.questions = raw_q
         except Exception as exc:
             logger.warning(f"Failed to load research state from {self.path}: {exc}")
 
@@ -84,6 +99,8 @@ class ResearchState:
                     "saturated": False,
                 },
             )
+            entry["supporting"] = _safe_list(entry.get("supporting"))
+            entry["counter"] = _safe_list(entry.get("counter"))
             new_ev = brief.get("evidence") or brief.get("supporting_evidence") or []
             new_counter = brief.get("counter_evidence") or []
             if new_ev or new_counter:
@@ -91,23 +108,23 @@ class ResearchState:
                     entry["evidence_days"] = _safe_int_days(entry.get("evidence_days", 0)) + 1
                     entry["last_evidence_date"] = today
 
-                seen_sup = {e.get("url") or e.get("title") for e in entry.get("supporting", []) if isinstance(e, dict)}
+                seen_sup = {e.get("url") or e.get("title") for e in entry["supporting"] if isinstance(e, dict)}
                 for item in new_ev:
                     if isinstance(item, dict):
                         key = item.get("url") or item.get("title")
                         if key and key not in seen_sup:
-                            entry.setdefault("supporting", []).append(item)
+                            entry["supporting"].append(item)
                             seen_sup.add(key)
-                entry["supporting"] = entry.get("supporting", [])[-12:]
+                entry["supporting"] = entry["supporting"][-12:]
 
-                seen_cnt = {e.get("url") or e.get("title") for e in entry.get("counter", []) if isinstance(e, dict)}
+                seen_cnt = {e.get("url") or e.get("title") for e in entry["counter"] if isinstance(e, dict)}
                 for item in new_counter:
                     if isinstance(item, dict):
                         key = item.get("url") or item.get("title")
                         if key and key not in seen_cnt:
-                            entry.setdefault("counter", []).append(item)
+                            entry["counter"].append(item)
                             seen_cnt.add(key)
-                entry["counter"] = entry.get("counter", [])[-8:]
+                entry["counter"] = entry["counter"][-8:]
 
             if brief.get("summary"):
                 entry["summary"] = brief["summary"]
