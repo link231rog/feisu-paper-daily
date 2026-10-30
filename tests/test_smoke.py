@@ -1703,6 +1703,133 @@ def test_agent_literature_find_and_ingest(tmp_path, monkeypatch):
     assert store.is_ingested("https://arxiv.org/abs/2602.13530")
 
 
+def test_feishu_rich_text_formatting_and_user_preference_learning(tmp_path, monkeypatch):
+    """Verifies Feishu Docx rich-text formatting (clickable links, colored badges) and explicit user preference learning."""
+    from paper_daily.channels.feishu import extract_user_reason
+    from paper_daily.core import PaperStore
+    from paper_daily.core.digest import format_digest_feishu_elements
+    from paper_daily.library.console import parse_console_text, sync_user_preferences_to_console
+    from paper_daily.protocol import Paper
+
+    # 1. Test extract_user_reason
+    assert extract_user_reason("确认精读入库（可在此输入入库理由/个性偏好，AI 自动记忆学习）") == ""
+    assert extract_user_reason("移出待选（可在此输入淘汰理由/排除特征，AI 自动加入负向排除）") == ""
+    assert extract_user_reason("移出待选 纯 Prompt 调优水文，没有底层架构创新") == "纯 Prompt 调优水文，没有底层架构创新"
+    assert extract_user_reason("确认精读入库：关注这个轻量级路由机制") == "关注这个轻量级路由机制"
+    assert extract_user_reason("[x] 移出待选（可在此输入淘汰理由） 缺乏开源代码支撑") == "缺乏开源代码支撑"
+
+    # 2. Test format_digest_feishu_elements rich text styling
+    p = Paper(
+        source="arxiv",
+        title="LOW N: Diffusion VLM Decoding Routing",
+        authors=["Author A"],
+        abstract="A method for VLM decoding routing.",
+        url="https://arxiv.org/abs/2604.12345",
+        code_url="https://github.com/test/lown",
+        project_url="https://test.github.io/lown/",
+        review_badge="[强烈推荐复用] (高置信度)",
+        critical_digest={
+            "delta": "提出 LOW N 无需训练的扩散 VLM 解码路由",
+            "qualitative_grades": {
+                "method_reusability": {"grade": "High"},
+                "claim_support": {"grade": "High"},
+                "baseline_fairness": {"grade": "Unknown"},
+            },
+            "mechanism": {
+                "pipeline": "Masked Tokens -> 一致性认证",
+                "core_formula": "N/A (需查正文)",
+                "symbol_dict": "N/A (需查正文)",
+            },
+            "evidence_and_cost": {
+                "metrics": "在 10 个基准上保持 99.6% 性能",
+                "cost_and_limits": "免训练、免阈值调优",
+            },
+            "action_or_check": "【启发】轻量草稿+重量验证范式。【需查正文: 1. 具体一致性判定指标；2. 消融实验。】",
+        },
+    )
+
+    elements = format_digest_feishu_elements(p)
+    assert elements
+
+    # Check clickable code & project links
+    code_el = next((el for el in elements if el.get("text_run", {}).get("content") == "代码仓库 ↗"), None)
+    assert code_el is not None
+    assert code_el["text_run"]["text_element_style"]["link"]["url"] == "https://github.com/test/lown"
+    assert code_el["text_run"]["text_element_style"]["bold"] is True
+
+    proj_el = next((el for el in elements if el.get("text_run", {}).get("content") == "项目主页 ↗"), None)
+    assert proj_el is not None
+    assert proj_el["text_run"]["text_element_style"]["link"]["url"] == "https://test.github.io/lown/"
+
+    # Check review badge color (pink/red=1 for 强烈推荐复用)
+    badge_el = next((el for el in elements if "[强烈推荐复用]" in el.get("text_run", {}).get("content", "")), None)
+    assert badge_el is not None
+    assert badge_el["text_run"]["text_element_style"]["text_color"] == 1
+
+    # Check that N/A formula and symbol lines were cleanly omitted
+    all_content = "".join(el.get("text_run", {}).get("content", "") for el in elements)
+    assert "核心公式" not in all_content
+    assert "符号释义" not in all_content
+    assert "真实提升：" in all_content
+    assert "【启发】" in all_content
+    assert "【需查正文】" in all_content
+
+    # 3. Test PaperStore user preference recording and cues
+    store_file = tmp_path / "pref_store.json"
+    store = PaperStore(str(store_file))
+
+    store.record_user_preference("negative", "纯 Prompt 调优水文，没有底层架构创新", title="Paper 1")
+    store.record_user_preference("positive", "轻量级路由机制，与自身项目契合", title="Paper 2")
+
+    prefs = store.get_user_preferences()
+    assert len(prefs["negative"]) == 1
+    assert prefs["negative"][0]["reason"] == "纯 Prompt 调优水文，没有底层架构创新"
+    assert len(prefs["positive"]) == 1
+    assert prefs["positive"][0]["reason"] == "轻量级路由机制，与自身项目契合"
+
+    assert "纯 Prompt 调优水文，没有底层架构创新" in store.get_preference_negative_texts()
+    assert "轻量级路由机制，与自身项目契合" in store.get_preference_positive_texts()
+
+    # Test discard with reason
+    store.mark_discarded("Paper 1", metadata={"title": "Paper 1", "abstract": "abs", "reason": "纯 Prompt 调优水文"})
+    discarded_texts = store.recent_discarded_texts()
+    assert any("Dislike Reason: 纯 Prompt 调优水文" in t for t in discarded_texts)
+
+    # 4. Test console preference parsing and Obsidian writeback
+    console_md = """
+# 核心标签
+- Agent
+- Memory
+
+# 用户偏好记忆库 (AI 学习偏好)
+- 👍 偏好特征: 轻量级路由机制 (来源: Paper 2)
+- 👎 排除特征: 纯 Prompt 水文 (来源: Paper 1)
+"""
+    settings = parse_console_text(console_md)
+    assert "轻量级路由机制" in settings["required_anchors"]
+    assert "纯 Prompt 水文" in settings["excluded_keywords"]
+
+    # Test writeback to Obsidian console note
+    vault_dir = tmp_path / "obs_vault"
+    vault_dir.mkdir(parents=True, exist_ok=True)
+    console_note = vault_dir / "Console.md"
+    console_note.write_text("# Console Note\n\n## 核心标签\n- RL\n", encoding="utf-8")
+
+    cfg = OmegaConf.create({
+        "console": {"provider": "obsidian"},
+        "obsidian": {
+            "vault_path": str(vault_dir),
+            "console_path": "Console.md",
+        },
+    })
+    res = sync_user_preferences_to_console(cfg, prefs)
+    assert res is True
+    updated_console = console_note.read_text(encoding="utf-8")
+    assert "用户偏好记忆库" in updated_console
+    assert "👍 偏好特征: 轻量级路由机制" in updated_console
+    assert "👎 排除特征: 纯 Prompt 调优水文" in updated_console
+
+
 
 
 

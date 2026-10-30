@@ -87,6 +87,8 @@ def parse_console_text(text: str, base_dir: Path | None = None) -> dict[str, lis
                 section = "excluded_keywords"
             elif any(k in heading for k in ["必含", "核心锚点", "必须命中", "require", "anchor"]):
                 section = "required_anchors"
+            elif any(k in heading for k in ["偏好", "preference", "用户偏好"]):
+                section = "user_preferences"
             elif any(k in heading.lower() for k in ["自定义", "阅读规则", "审阅规则", "审稿", "skill", "custom rule", "rule"]):
                 section = "custom_rules"
             elif "标签" in heading or "tag" in heading.lower():
@@ -99,6 +101,19 @@ def parse_console_text(text: str, base_dir: Path | None = None) -> dict[str, lis
                 section = None
             continue
         if not section:
+            continue
+        if section == "user_preferences":
+            match = _ITEM_RE.match(line)
+            raw_item = match.group(1).strip() if match else line
+            raw_item = re.sub(r"[（\(](?:来源|source|from)[:：\s]*.*?[）\)]", "", raw_item).strip()
+            if any(k in raw_item for k in ["👎", "排除", "厌恶", "负向", "dislike"]):
+                clean = re.sub(r"^[👎\-—:：\s]*(?:排除特征|排除|负向|厌恶)?[:：\s]*", "", raw_item).strip()
+                if clean and clean not in settings["excluded_keywords"]:
+                    settings["excluded_keywords"].append(clean)
+            else:
+                clean = re.sub(r"^[👍\+—:：\s]*(?:偏好特征|偏好|正向|喜欢)?[:：\s]*", "", raw_item).strip()
+                if clean and clean not in settings["required_anchors"]:
+                    settings["required_anchors"].append(clean)
             continue
         match = _ITEM_RE.match(line)
         item = match.group(1).strip() if match else (line if section in ("custom_rules", "note_template") else "")
@@ -420,3 +435,55 @@ def append_suggested_questions_to_console(
             logger.warning(f"Could not write suggested questions to Notion console: {exc}")
 
     return wrote_any
+
+
+def sync_user_preferences_to_console(
+    config: Any,
+    preferences: dict[str, list[dict[str, Any]]],
+    feishu_client: Any = None,
+) -> bool:
+    """Synchronizes learned user preferences back to the configured console document (Feishu/Obsidian)."""
+    pos = preferences.get("positive") or []
+    neg = preferences.get("negative") or []
+    if not pos and not neg:
+        return False
+
+    console_cfg = config.get("console") or {}
+    provider = str(console_cfg.get("provider", "auto")).lower()
+
+    def enabled(name: str) -> bool:
+        return provider in ("auto", name)
+
+    # 1. Feishu Console
+    if enabled("feishu") and console_cfg.get("node_token"):
+        try:
+            if feishu_client is None:
+                from ..channels.feishu import FeishuClient
+                feishu_client = FeishuClient(config.get("feishu"))
+            feishu_client.sync_user_preferences(str(console_cfg.get("node_token")), preferences)
+            return True
+        except Exception as exc:
+            logger.warning(f"Could not sync user preferences to Feishu console: {exc}")
+
+    # 2. Obsidian Console
+    obsidian_cfg = config.get("obsidian") or {}
+    if enabled("obsidian") and obsidian_cfg.get("vault_path") and obsidian_cfg.get("console_path"):
+        try:
+            note_path = Path(str(obsidian_cfg.get("vault_path"))).expanduser() / str(obsidian_cfg.get("console_path"))
+            if note_path.is_file():
+                existing = note_path.read_text(encoding="utf-8", errors="ignore")
+                lines = ["\n## 用户偏好记忆库 (AI 学习偏好)"]
+                for p in pos[:10]:
+                    lines.append(f"- 👍 偏好特征: {p['reason']} (来源: {p.get('title', '')})")
+                for n in neg[:10]:
+                    lines.append(f"- 👎 排除特征: {n['reason']} (来源: {n.get('title', '')})")
+                if "## 用户偏好记忆库" in existing:
+                    updated = re.sub(r"## 用户偏好记忆库[\s\S]*?(?=\n## |$)", "\n".join(lines) + "\n", existing)
+                else:
+                    updated = existing.rstrip() + "\n" + "\n".join(lines) + "\n"
+                note_path.write_text(updated, encoding="utf-8")
+                return True
+        except Exception as exc:
+            logger.warning(f"Could not sync user preferences to Obsidian console: {exc}")
+
+    return False

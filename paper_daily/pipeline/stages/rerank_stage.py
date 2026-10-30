@@ -48,15 +48,27 @@ class RerankStage(PipelineStage):
         }
 
         priority_institutions = context.console_settings.get("institutions", [])
+        user_positives = (
+            self.executor.paper_store.get_preference_positive_texts()
+            if hasattr(self.executor.paper_store, "get_preference_positive_texts")
+            else []
+        )
+        user_negatives = (
+            self.executor.paper_store.get_preference_negative_texts()
+            if hasattr(self.executor.paper_store, "get_preference_negative_texts")
+            else []
+        )
         topic_anchors = list(
             dict.fromkeys(
-                (context.console_settings.get("tags") or [])
+                user_positives
+                + (context.console_settings.get("tags") or [])
                 + (context.console_settings.get("required_anchors") or [])
             )
         ) or None
         negative_texts = list(
             dict.fromkeys(
-                self.executor.paper_store.recent_discarded_texts(200)
+                user_negatives
+                + self.executor.paper_store.recent_discarded_texts(200)
                 + (context.console_settings.get("excluded_keywords") or [])
             )
         ) or None

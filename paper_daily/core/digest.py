@@ -644,47 +644,99 @@ def format_digest_feishu_elements(
     extra_meta = f" | {rubric_line}" if rubric_line else ""
 
     # 1. 审稿评级
-    elements.append({"text_run": {"content": "[审稿评级]：", "text_element_style": {"bold": True}}})
-    elements.append({"text_run": {"content": f"{badge} ", "text_element_style": {"bold": True, "text_color": 1}}})
-    elements.append({"text_run": {"content": f"(复用度: {r_grade} | 证据支撑: {s_grade} | 基线公平: {f_grade}{extra_meta})\n"}})
+    badge_color = 5
+    if "强烈推荐复用" in badge:
+        badge_color = 1  # red
+    elif "值得参考" in badge:
+        badge_color = 4  # green
+    elif any(k in badge for k in ["证据存疑", "基线较弱"]):
+        badge_color = 2  # orange
+    elif "仅作了解" in badge:
+        badge_color = 7  # gray
+
+    elements.append({"text_run": {"content": "[审稿评级]：", "text_element_style": {"bold": True, "text_color": 5}}})
+    elements.append({"text_run": {"content": f"{badge} ", "text_element_style": {"bold": True, "text_color": badge_color}}})
+    elements.append({"text_run": {"content": f"(复用度: {r_grade} | 证据支撑: {s_grade} | 基线公平: {f_grade}{extra_meta})\n", "text_element_style": {"text_color": 7}}})
 
     # 1b. 开源代码与项目主页链接（若存在）
-    if getattr(paper, "code_url", None) or getattr(paper, "project_url", None):
-        elements.append({"text_run": {"content": "• [开源与复现]：", "text_element_style": {"bold": True}}})
-        if getattr(paper, "code_url", None):
-            elements.append({"text_run": {"content": f"代码仓库 ({paper.code_url}) "}})
-        if getattr(paper, "project_url", None):
-            elements.append({"text_run": {"content": f"项目主页 ({paper.project_url})"}})
+    code_url = getattr(paper, "code_url", None)
+    project_url = getattr(paper, "project_url", None)
+    has_code = bool(code_url and str(code_url).startswith("http"))
+    has_proj = bool(project_url and str(project_url).startswith("http"))
+    if has_code or has_proj:
+        elements.append({"text_run": {"content": "• [开源与复现]：", "text_element_style": {"bold": True, "text_color": 4}}})
+        if has_code:
+            elements.append({"text_run": {"content": "代码仓库 ↗", "text_element_style": {"bold": True, "link": {"url": str(code_url)}}}})
+        if has_proj:
+            if has_code:
+                elements.append({"text_run": {"content": "  ·  "}})
+            elements.append({"text_run": {"content": "项目主页 ↗", "text_element_style": {"bold": True, "link": {"url": str(project_url)}}}})
         elements.append({"text_run": {"content": "\n"}})
 
     # 2. 核心增量 (Delta)
     delta = digest.get("delta") or paper.tldr_zh or "暂无核心增量记录"
-    elements.append({"text_run": {"content": "• [核心增量] (Delta)：", "text_element_style": {"bold": True}}})
+    elements.append({"text_run": {"content": "• [核心增量] (Delta)：", "text_element_style": {"bold": True, "text_color": 5}}})
     elements.append({"text_run": {"content": f"{delta}\n"}})
+
+    # Helper for filtering meaningful content
+    def is_meaningful(val: Any) -> bool:
+        s = str(val or "").strip().upper()
+        return bool(s and not s.startswith("N/A") and s != "NONE" and "需查正文" not in s)
 
     # 3. 方法链路与公式 (Mechanism)
     mech = digest.get("mechanism") or {}
-    pipeline = mech.get("pipeline") or "N/A"
-    formula = mech.get("core_formula") or "N/A"
-    symbols = mech.get("symbol_dict") or "N/A"
-    elements.append({"text_run": {"content": "• [方法链路与公式] (Mechanism)：\n", "text_element_style": {"bold": True}}})
-    elements.append({"text_run": {"content": f"  - 链路：{pipeline}\n"}})
-    elements.append({"text_run": {"content": f"  - 核心公式：{formula}\n"}})
-    elements.append({"text_run": {"content": f"  - 符号释义：{symbols}\n"}})
+    pipeline = str(mech.get("pipeline") or "").strip()
+    formula = str(mech.get("core_formula") or "").strip()
+    symbols = str(mech.get("symbol_dict") or "").strip()
+
+    if is_meaningful(pipeline) or is_meaningful(formula) or is_meaningful(symbols):
+        elements.append({"text_run": {"content": "• [方法链路与公式] (Mechanism)：\n", "text_element_style": {"bold": True, "text_color": 6}}})
+        if is_meaningful(pipeline):
+            elements.append({"text_run": {"content": "  - 链路：", "text_element_style": {"bold": True}}})
+            elements.append({"text_run": {"content": f"{pipeline}\n"}})
+        if is_meaningful(formula):
+            elements.append({"text_run": {"content": "  - 核心公式：", "text_element_style": {"bold": True}}})
+            elements.append({"text_run": {"content": f"{formula}\n"}})
+        if is_meaningful(symbols):
+            elements.append({"text_run": {"content": "  - 符号释义：", "text_element_style": {"bold": True}}})
+            elements.append({"text_run": {"content": f"{symbols}\n"}})
 
     # 4. 实验真相与代价 (Truth & Cost)
     ev = digest.get("evidence_and_cost") or {}
-    metrics = ev.get("metrics") or "N/A"
-    cost = ev.get("cost_and_limits") or "N/A"
-    elements.append({"text_run": {"content": "• [实验真相与代价] (Truth & Cost)：\n", "text_element_style": {"bold": True}}})
-    elements.append({"text_run": {"content": f"  - 真实提升：{metrics}\n"}})
-    elements.append({"text_run": {"content": f"  - 代价与边界：{cost}\n"}})
+    metrics = str(ev.get("metrics") or "").strip()
+    cost = str(ev.get("cost_and_limits") or "").strip()
+
+    if is_meaningful(metrics) or is_meaningful(cost):
+        elements.append({"text_run": {"content": "• [实验真相与代价] (Truth & Cost)：\n", "text_element_style": {"bold": True, "text_color": 2}}})
+        if is_meaningful(metrics):
+            elements.append({"text_run": {"content": "  - 真实提升：", "text_element_style": {"bold": True}}})
+            elements.append({"text_run": {"content": f"{metrics}\n"}})
+        if is_meaningful(cost):
+            elements.append({"text_run": {"content": "  - 代价与边界：", "text_element_style": {"bold": True}}})
+            elements.append({"text_run": {"content": f"{cost}\n"}})
 
     # 5. 启发与待查 (Action / Check)
-    action = digest.get("action_or_check") or "N/A"
-    elements.append({"text_run": {"content": "• [启发与待查] (Action / Check)：\n", "text_element_style": {"bold": True}}})
-    elements.append({"text_run": {"content": f"  {action}\n\n"}})
+    action = str(digest.get("action_or_check") or "").strip()
+    if action and not action.upper().startswith("N/A"):
+        elements.append({"text_run": {"content": "• [启发与待查] (Action / Check)：\n", "text_element_style": {"bold": True, "text_color": 4}}})
+        match_insp = re.search(r"【启发】\s*([\s\S]*?)(?=【需查正文|$)", action)
+        match_check = re.search(r"【需查正文[:：]?\s*([\s\S]*)", action)
 
+        if match_insp or match_check:
+            if match_insp:
+                insp_text = match_insp.group(1).strip()
+                if insp_text:
+                    elements.append({"text_run": {"content": "  【启发】", "text_element_style": {"bold": True, "text_color": 4}}})
+                    elements.append({"text_run": {"content": f"{insp_text}\n"}})
+            if match_check:
+                check_text = match_check.group(1).strip().rstrip("】")
+                if check_text:
+                    elements.append({"text_run": {"content": "  【需查正文】", "text_element_style": {"bold": True, "text_color": 2}}})
+                    elements.append({"text_run": {"content": f"{check_text}\n"}})
+        else:
+            elements.append({"text_run": {"content": f"  {action}\n"}})
+
+    elements.append({"text_run": {"content": "\n"}})
     return elements
 
 

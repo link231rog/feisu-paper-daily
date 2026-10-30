@@ -1374,7 +1374,15 @@ def fetch_checked_papers_from_obsidian(obsidian_cfg: Any) -> list[dict[str, Any]
             if m:
                 title, url, tail = m.group(1).strip(), m.group(2).strip(), m.group(3).strip()
                 action = "delete" if any(k in tail.lower() for k in ("删除", "屏蔽", "discard", "delete")) else "ingest"
-                checked.append({"title": title, "url": url, "action": action, "tldr": tail.lstrip("-: ")})
+                from ..channels.feishu import extract_user_reason
+                user_reason = extract_user_reason(tail)
+                checked.append({
+                    "title": title,
+                    "url": url,
+                    "action": action,
+                    "tldr": tail.lstrip("-: "),
+                    "user_reason": user_reason,
+                })
     return checked
 
 

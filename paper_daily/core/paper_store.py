@@ -205,6 +205,59 @@ class PaperStore:
         self.data["discarded"][key] = entry
         self.save()
 
+    def record_user_preference(
+        self,
+        preference_type: str,
+        reason: str,
+        title: str = "",
+        url: str = "",
+    ) -> None:
+        """Records an explicit user preference (positive or negative) learned from daily report interactions."""
+        p_type = "positive" if preference_type in ("positive", "ingest") else "negative"
+        clean_reason = str(reason or "").strip()
+        if not clean_reason:
+            return
+
+        prefs = self.data.setdefault("user_preferences", {"positive": [], "negative": []})
+        target_list = prefs.setdefault(p_type, [])
+
+        # Deduplicate by reason text
+        for item in target_list:
+            if item.get("reason") == clean_reason:
+                item["updated_at"] = datetime.now().isoformat()
+                if title:
+                    item["title"] = title
+                if url:
+                    item["url"] = url
+                self.save()
+                return
+
+        target_list.insert(
+            0,
+            {
+                "reason": clean_reason,
+                "title": title,
+                "url": url,
+                "created_at": datetime.now().isoformat(),
+            },
+        )
+        prefs[p_type] = target_list[:100]
+        self.save()
+
+    def get_user_preferences(self) -> dict[str, list[dict[str, Any]]]:
+        """Returns the dictionary of positive and negative user preference records."""
+        return self.data.get("user_preferences", {"positive": [], "negative": []})
+
+    def get_preference_negative_texts(self) -> list[str]:
+        """Returns active negative reasons as explicit cues for Rocchio repulsion and exclusion."""
+        prefs = self.get_user_preferences()
+        return [str(item["reason"]).strip() for item in prefs.get("negative", []) if item.get("reason")]
+
+    def get_preference_positive_texts(self) -> list[str]:
+        """Returns active positive reasons as explicit anchor keywords."""
+        prefs = self.get_user_preferences()
+        return [str(item["reason"]).strip() for item in prefs.get("positive", []) if item.get("reason")]
+
     def recent_discarded(self, limit: int = 200) -> list[dict[str, Any]]:
         """Returns metadata for the most recently discarded items, newest first."""
         discarded = self.data.get("discarded", {})
@@ -222,6 +275,7 @@ class PaperStore:
                 "title": title,
                 "abstract": str(entry.get("abstract") or entry.get("tldr") or ""),
                 "url": entry.get("url") or "",
+                "reason": str(entry.get("reason") or ""),
             })
             if len(recent) >= limit:
                 break
@@ -233,7 +287,9 @@ class PaperStore:
         for item in self.recent_discarded(limit=limit):
             title = (item.get("title") or "").strip()
             abstract = (item.get("abstract") or "").strip()
-            combined = f"{title}. {abstract}".strip(". ")
+            reason = (item.get("reason") or "").strip()
+            prefix = f"Dislike Reason: {reason}. " if reason else ""
+            combined = f"{prefix}{title}. {abstract}".strip(". ")
             if combined:
                 texts.append(combined)
         return texts

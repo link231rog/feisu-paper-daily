@@ -39,9 +39,18 @@ class FetchStage(PipelineStage):
         context.tracked_questions = console_settings.get("questions", [])
 
         if self.executor.research_cfg.get("enabled", True):
+            tags_to_plan = list(console_settings.get("tags", []))
+            user_pos = (
+                self.executor.paper_store.get_preference_positive_texts()
+                if hasattr(self.executor.paper_store, "get_preference_positive_texts")
+                else []
+            )
+            if user_pos:
+                tags_to_plan.extend(user_pos[:3])
+
             plan = plan_queries(
                 self.executor.router,
-                console_settings.get("tags", []),
+                tags_to_plan,
                 console_settings.get("questions", []),
                 [p.title for p in taste_corpus(corpus)[:10]],
                 state=self.executor.research_state,

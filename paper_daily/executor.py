@@ -1010,8 +1010,19 @@ class Executor:
                 title = item.get("title", "")
                 url = item.get("url", "")
                 action = item.get("action", "ingest")
+                user_reason = str(item.get("user_reason") or "").strip()
                 doc_id = item.get("document_id", "")
                 card_block_ids = item.get("card_block_ids", [])
+
+                if user_reason:
+                    pref_type = "negative" if action == "delete" else "positive"
+                    self.paper_store.record_user_preference(
+                        pref_type,
+                        reason=user_reason,
+                        title=title,
+                        url=url,
+                    )
+                    logger.info(f"Learned explicit {pref_type} user preference from '{title}': {user_reason}")
 
                 if action == "delete":
                     logger.info(f"User marked '{title}' for removal/deletion. Deleting card from document {doc_id} and permanently blacklisting...")
@@ -1019,10 +1030,10 @@ class Executor:
                         client.delete_document_blocks(doc_id, card_block_ids)
                     self.paper_store.mark_discarded(
                         title,
-                        metadata={"url": url, "title": title, "abstract": item.get("tldr", "")},
+                        metadata={"url": url, "title": title, "abstract": item.get("tldr", ""), "reason": user_reason},
                     )
                     if url:
-                        self.paper_store.mark_discarded(url, metadata={"title": title, "abstract": item.get("tldr", "")})
+                        self.paper_store.mark_discarded(url, metadata={"title": title, "abstract": item.get("tldr", ""), "reason": user_reason})
                     continue
 
                 if not title:
@@ -1133,6 +1144,14 @@ class Executor:
                 if primary_url:
                     ingested_urls.append(primary_url)
                 logger.info(f"Successfully ingested '{title}' into knowledge library: {primary_url}")
+
+            try:
+                from .library.console import sync_user_preferences_to_console
+                prefs = self.paper_store.get_user_preferences()
+                if prefs.get("positive") or prefs.get("negative"):
+                    sync_user_preferences_to_console(self.config, prefs, feishu_client=client)
+            except Exception as sync_pref_err:
+                logger.debug(f"Notice: syncing user preferences to console: {sync_pref_err}")
 
             return ingested_urls
         except Exception as exc:

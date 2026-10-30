@@ -51,6 +51,24 @@ def normalize_reading_status(status_str: Optional[str]) -> str:
     return s
 
 
+def extract_user_reason(todo_text: str) -> str:
+    """Extracts user-typed preference reason from a checked todo line, removing standard labels and hints."""
+    s = str(todo_text or "").strip()
+    if not s:
+        return ""
+    # Strip parenthesized or bracketed default prompt hints
+    s = re.sub(r"[（\(](?:可在此输入|可直接输入|可选).*?[）\)]", "", s)
+    # Strip standard action keywords at the beginning
+    s = re.sub(
+        r"^\[?[xX✓✔]?\]?\s*(?:确认精读入库|精读入库|确认入库|入库|移出待选|移出|删除待选|删除|淘汰|delete|discard|ingest)\s*[:：\-—]*\s*",
+        "",
+        s,
+        flags=re.IGNORECASE,
+    )
+    s = s.strip(" :：-—\t\r\n")
+    return s if len(s) >= 2 else ""
+
+
 def _build_annotation_workspace_markdown(
     sections: dict[str, Any],
     is_app_note: bool = False
@@ -914,20 +932,26 @@ class FeishuClient:
                 }
             })
 
-            # Todo block 1: [ ] 确认精读入库
+            # Todo block 1: [ ] 确认精读入库 (支持输入个性理由)
             paper_blocks.append({
                 "block_type": 17,
                 "todo": {
                     "style": {"done": False},
-                    "elements": [{"text_run": {"content": "确认精读入库"}}]
+                    "elements": [
+                        {"text_run": {"content": "确认精读入库", "text_element_style": {"bold": True}}},
+                        {"text_run": {"content": "（可在此输入入库理由/个性偏好，AI 自动记忆学习）", "text_element_style": {"text_color": 7, "italic": True}}},
+                    ]
                 }
             })
-            # Todo block 2: [ ] 移出待选
+            # Todo block 2: [ ] 移出待选 (支持输入淘汰特征)
             paper_blocks.append({
                 "block_type": 17,
                 "todo": {
                     "style": {"done": False},
-                    "elements": [{"text_run": {"content": "移出待选"}}]
+                    "elements": [
+                        {"text_run": {"content": "移出待选", "text_element_style": {"bold": True}}},
+                        {"text_run": {"content": "（可在此输入淘汰理由/排除特征，AI 自动加入负向排除）", "text_element_style": {"text_color": 7, "italic": True}}},
+                    ]
                 }
             })
 
@@ -949,21 +973,49 @@ class FeishuClient:
             date_str = p.published_date.strftime("%Y-%m-%d") if p.published_date else ""
             date_part = f" | 日期: {date_str}" if date_str else ""
             affil_str = ", ".join(p.affiliations) if p.affiliations else "N/A"
-            venue_line = f"录用会议: {p.venue}\n" if getattr(p, "venue", None) else ""
-            meta_prefix = (
-                f"推荐层级: {tier_label}{badge_str}\n"
-                f"来源: [{src_str}]{date_part}\n"
-                f"{venue_line}"
-                f"发表单位/实验室: {affil_str}\n"
-                f"原文链接: "
-            )
+
+            meta_elements: list[dict[str, Any]] = [
+                {"text_run": {"content": "推荐层级: ", "text_element_style": {"bold": True}}},
+                {"text_run": {"content": f"{tier_label}", "text_element_style": {"bold": True, "text_color": 5 if tier == "deep_read" else 4}}},
+                {"text_run": {"content": f"{badge_str}\n", "text_element_style": {"text_color": 7}}},
+                {"text_run": {"content": f"来源: [{src_str}]{date_part}\n"}},
+            ]
+            if getattr(p, "venue", None):
+                meta_elements.extend([
+                    {"text_run": {"content": "录用会议/期刊: ", "text_element_style": {"bold": True}}},
+                    {"text_run": {"content": f"{p.venue}\n"}},
+                ])
+            meta_elements.extend([
+                {"text_run": {"content": "发表单位/团队: ", "text_element_style": {"bold": True}}},
+                {"text_run": {"content": f"{affil_str}\n"}},
+                {"text_run": {"content": "原文直达: ", "text_element_style": {"bold": True}}},
+            ])
+            if p.url and p.url.startswith("http"):
+                meta_elements.append({
+                    "text_run": {
+                        "content": "点击查看原文 ↗",
+                        "text_element_style": {"bold": True, "link": {"url": p.url}},
+                    }
+                })
+            else:
+                meta_elements.append({"text_run": {"content": p.url or "N/A"}})
+
+            if getattr(p, "pdf_url", None) and str(p.pdf_url).startswith("http"):
+                meta_elements.extend([
+                    {"text_run": {"content": "  ·  "}},
+                    {
+                        "text_run": {
+                            "content": "PDF 原文 ↗",
+                            "text_element_style": {"bold": True, "link": {"url": str(p.pdf_url)}},
+                        }
+                    },
+                ])
+            meta_elements.append({"text_run": {"content": "\n"}})
+
             paper_blocks.append({
                 "block_type": 2,
                 "text": {
-                    "elements": [
-                        {"text_run": {"content": meta_prefix}},
-                        {"text_run": {"content": p.url or "N/A"}},
-                    ]
+                    "elements": meta_elements
                 }
             })
 
@@ -1333,6 +1385,80 @@ class FeishuClient:
         )
         logger.info(f"Appended {len(fresh)} suggested questions to the console")
 
+    def sync_user_preferences(
+        self,
+        node_token: str,
+        preferences: dict[str, list[dict[str, Any]]],
+    ) -> None:
+        """Appends or updates learned user preferences in the Feishu console document for human visibility."""
+        if self.dry_run or not preferences:
+            return
+        obj_token, _ = self.get_obj_token_from_node_token(str(node_token))
+        if not obj_token:
+            return
+
+        blocks = self.get_document_blocks(obj_token)
+        known = set()
+        for block in blocks:
+            if block.get("block_type") == 12:
+                known.add(
+                    "".join(
+                        el.get("text_run", {}).get("content", "")
+                        for el in block.get("bullet", {}).get("elements", [])
+                    ).strip()
+                )
+
+        pos_items = preferences.get("positive") or []
+        neg_items = preferences.get("negative") or []
+
+        bullets_to_add: list[tuple[str, str, int]] = []
+        for p in pos_items[:10]:
+            r = str(p.get("reason") or "").strip()
+            if r and not any(r in k for k in known):
+                bullets_to_add.append(("👍 偏好特征: ", r, 4))  # green
+        for n in neg_items[:10]:
+            r = str(n.get("reason") or "").strip()
+            if r and not any(r in k for k in known):
+                bullets_to_add.append(("👎 排除特征: ", r, 2))  # orange
+
+        if not bullets_to_add:
+            return
+
+        has_heading = any(
+            "用户偏好记忆" in "".join(
+                el.get("text_run", {}).get("content", "")
+                for el in block.get("heading2", {}).get("elements", [])
+            )
+            for block in blocks
+            if block.get("block_type") == 4
+        )
+
+        children: list[dict[str, Any]] = []
+        if not has_heading:
+            children.append({
+                "block_type": 4,
+                "heading2": {
+                    "elements": [{"text_run": {"content": "用户偏好记忆库 (AI 学习偏好)"}}]
+                }
+            })
+        for label, reason, color in bullets_to_add:
+            children.append({
+                "block_type": 12,
+                "bullet": {
+                    "elements": [
+                        {"text_run": {"content": label, "text_element_style": {"bold": True, "text_color": color}}},
+                        {"text_run": {"content": reason}},
+                    ]
+                },
+            })
+
+        self._call_api(
+            "POST",
+            f"/docx/v1/documents/{obj_token}/blocks/{obj_token}/children",
+            data={"children": children, "index": -1},
+        )
+        logger.info(f"Appended {len(bullets_to_add)} user preference cues to Feishu console")
+
     def append_baseline_backlink(
         self,
         obj_token: str,
@@ -1577,6 +1703,7 @@ class FeishuClient:
                             if "TL;DR:" in full_block_text:
                                 tldr_text = full_block_text.replace("TL;DR:", "").strip()
 
+                    user_reason = extract_user_reason(todo_text)
                     checked_papers.append({
                         "raw_heading": last_heading,
                         "title": cleaned_title or last_heading,
@@ -1588,6 +1715,7 @@ class FeishuClient:
                         "todo_block_id": item.get("block_id", ""),
                         "action": action,
                         "todo_text": todo_text,
+                        "user_reason": user_reason,
                         "card_block_ids": card_block_ids,
                     })
         return checked_papers
