@@ -16,6 +16,7 @@ from .digest import (
 from .interest import build_corpus_from_topics, get_interest_corpus, taste_corpus
 from .llm import LLMRouter
 from .paper_store import PaperStore
+from .poster import build_framework_prompt, extract_source_method_figure, generate_diagram_with_gpt_image, generate_paper_poster
 from .research import (
     ResearchState,
     judge_ranking,
@@ -48,6 +49,7 @@ __all__ = [
     "format_digest_feishu_elements",
     "format_digest_html",
     "format_rubric_summary_line",
+    "generate_paper_poster",
     "get_interest_corpus",
     "judge_ranking",
     "locate_spans",

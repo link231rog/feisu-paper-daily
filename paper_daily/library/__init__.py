@@ -12,6 +12,7 @@ from .console import (  # noqa: F401
 from .finder import (  # noqa: F401
     find_papers,
     format_found_papers_markdown,
+    generate_poster_for_paper_direct,
     ingest_paper_direct,
     normalize_paper_url,
     search_and_rank_papers,

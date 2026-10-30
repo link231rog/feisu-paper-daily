@@ -439,6 +439,7 @@ def format_found_papers_markdown(papers: list[dict[str, Any]], query: str) -> st
 def ingest_paper_direct(
     url_or_id: str,
     provider: str = "auto",
+    generate_poster: bool = False,
     config: Any = None,
 ) -> dict[str, Any]:
     """Directly ingests a paper by URL or arXiv ID into the target literature library without interactive checklist."""
@@ -452,7 +453,7 @@ def ingest_paper_direct(
     cfg = config or _load_runtime_config()
     executor = Executor(cfg)
 
-    note_url = executor.ingest_paper_by_url(clean_url, provider=provider)
+    note_url = executor.ingest_paper_by_url(clean_url, provider=provider, generate_poster=generate_poster)
     if not note_url:
         # Fallback to local paper store entry if external library provider is disabled/dry_run
         return {
@@ -468,4 +469,59 @@ def ingest_paper_direct(
         "note_url": note_url,
         "provider": provider,
         "message": f"Successfully ingested paper directly into {provider} knowledge base: {note_url}",
+    }
+
+
+def generate_poster_for_paper_direct(
+    url_or_id: str,
+    config: Any = None,
+) -> dict[str, Any]:
+    """Generates an academic framework diagram / visual poster for a given paper URL or arXiv ID."""
+    from .bridge import _load_runtime_config
+    from ..core.poster import generate_paper_poster
+    from ..executor import Executor
+
+    clean_url = normalize_paper_url(url_or_id)
+    if not clean_url:
+        raise ValueError("A valid paper URL or arXiv ID must be provided.")
+
+    cfg = config or _load_runtime_config()
+    executor = Executor(cfg)
+
+    # Minimal Paper representation
+    p = Paper(
+        source="arxiv" if "arxiv.org" in clean_url else "web",
+        title=f"Paper ({clean_url})",
+        authors=[],
+        abstract="",
+        url=clean_url,
+        arxiv_id=clean_url.split("abs/")[-1].split("pdf/")[-1].removesuffix(".pdf") if "arxiv.org" in clean_url else None,
+    )
+
+    try:
+        raw_text = executor.fetch_paper_full_text(clean_url)
+        if raw_text:
+            p.full_text = raw_text
+            first_lines = [l.strip("# \t") for l in raw_text.splitlines() if l.strip()]
+            if first_lines and len(first_lines[0]) > 5:
+                p.title = first_lines[0][:120]
+        from ..core.digest import run_critical_paper_digest
+        run_critical_paper_digest(executor.router, p, questions=[], library_baselines=[])
+    except Exception as exc:
+        logger.debug(f"Pre-digest for poster generation notice: {exc}")
+
+    img_path = generate_paper_poster(p, cfg)
+    if img_path and img_path.is_file():
+        return {
+            "status": "success",
+            "url": clean_url,
+            "title": p.title,
+            "poster_path": str(img_path),
+            "file_uri": f"file://{img_path.resolve()}",
+            "size_kb": round(img_path.stat().st_size / 1024, 1),
+        }
+    return {
+        "status": "failed",
+        "url": clean_url,
+        "message": "Failed to generate or extract framework diagram. Check POSTER_API_KEY or network connectivity.",
     }

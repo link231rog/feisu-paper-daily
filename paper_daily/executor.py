@@ -77,12 +77,16 @@ class Executor:
             self.ignore_path_patterns = None
 
         self.retrievers = {}
-        for source in (config.executor.get("source") if hasattr(config.executor, "get") else getattr(config.executor, "source", [])) or []:
+        exec_cfg = config.get("executor") if hasattr(config, "get") else getattr(config, "executor", None)
+        exec_cfg = exec_cfg or {}
+        sources_list = exec_cfg.get("source") if hasattr(exec_cfg, "get") else getattr(exec_cfg, "source", [])
+        for source in sources_list or []:
             try:
                 self.retrievers[source] = get_retriever_cls(source)(config)
             except Exception as r_err:
                 logger.debug(f"Retriever '{source}' not initialized: {r_err}")
-        self.reranker = get_reranker_cls(config.executor.reranker)(config)
+        reranker_name = exec_cfg.get("reranker", "local") if hasattr(exec_cfg, "get") else getattr(exec_cfg, "reranker", "local")
+        self.reranker = get_reranker_cls(reranker_name)(config)
 
         # LLM client (optional for offline testing or dry-run)
         api_key = config.get("llm", {}).get("api", {}).get("key")
@@ -1163,6 +1167,7 @@ class Executor:
         url: str,
         category: Optional[str] = None,
         provider: str = "auto",
+        generate_poster: bool = False,
     ) -> Optional[str]:
         """Directly ingests a paper or open-source tool/skill by URL or arXiv ID into active literature libraries."""
         clean_url = url.strip()
@@ -1273,6 +1278,18 @@ class Executor:
             tldr=sections.get("core_summary", ""),
             tldr_zh=sections.get("core_summary", ""),
         )
+
+        poster_cfg = self.config.get("poster") or {}
+        p_enabled = str(poster_cfg.get("enabled", False)).lower() in ("true", "1") or os.environ.get("POSTER_ENABLED", "").lower() in ("true", "1") or generate_poster
+        if p_enabled:
+            try:
+                from .core.poster import generate_paper_poster
+                p_img = generate_paper_poster(paper, self.config)
+                if p_img and p_img.is_file():
+                    paper.poster_path = str(p_img)
+                    logger.info(f"Attached visual framework diagram to reading note: {p_img}")
+            except Exception as p_err:
+                logger.debug(f"Poster generation skipped in ingest_paper_by_url: {p_err}")
 
         full_text_md = None
         if not is_github_or_tool and clean_url:

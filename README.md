@@ -25,6 +25,7 @@ paper_daily/
 │   ├── interest.py        # 多生态个人文献库（飞书/Obsidian/Notion/Zotero）兴趣语料构建
 │   ├── llm.py             # 多 Key 轮询、并发限流与多任务 LLM 路由器
 │   ├── paper_store.py     # 跨源去重、已推送记录与负向反馈（移出待选）持久化
+│   ├── poster.py          # 学术框架图与海报生成 (GPT-Image 生图 / 原文 Method 图提取 / Paper2Poster)
 │   ├── research.py        # DeepResearch 查询规划、多跳引文追踪与问题证据综述
 │   ├── textutil.py        # 鲁棒 JSON 解析与文本工具
 │   └── translator.py      # 学术摘要中英双语翻译
@@ -151,8 +152,11 @@ uv run paper-daily init --from-json '{"libraries":["obsidian","feishu"],"sources
 # 1. 在线检索学术论文并执行 TF-IDF + MMR 多样性重排 (支持 --json)
 uv run paper-library find "episodic memory agent compression" --top-k 5
 
-# 2. 查阅返回结果后，一键直接将目标文献精读沉淀入库 (跳过早报候选勾选流程)
-uv run paper-library ingest "https://arxiv.org/abs/2602.13530" --provider auto
+# 2. 查阅返回结果后，一键直接将目标文献精读沉淀入库 (跳过早报候选勾选流程，支持 --poster 自动挂载框架图)
+uv run paper-library ingest "https://arxiv.org/abs/2602.13530" --provider auto --poster
+
+# 3. 独立提取或生成论文核心机制架构全景图 (支持 GPT-Image 与原作者 Method 图)
+uv run paper-library poster "https://arxiv.org/abs/2602.13530"
 ```
 
 ### 4. 开启可选 MP3 音频播客推送

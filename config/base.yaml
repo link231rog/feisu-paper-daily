@@ -106,6 +106,18 @@ agent_reach:
   fallback_web_reader: true # Use agent-reach read <url> as fallback reader backend
   timeout: 15.0 # Timeout in seconds for individual CLI calls
 
+poster:
+  enabled: false # Optional visual framework diagram / academic poster generation
+  engine: "gpt-image" # "gpt-image" (OpenAI-compatible image generation via sub.umapis.com) | "source_figures" | "paper2poster"
+  api_base: "https://sub.umapis.com/v1"
+  api_key: null
+  model: "gpt-image-2.5-sunburst"
+  size: "1792x1024" # 16:9 widescreen publication figure
+  proxy_url: null # Optional HTTP/SOCKS5 proxy, e.g. "http://127.0.0.1:7897"
+  max_papers: 3 # Top N deep-read papers to generate framework diagrams for
+  output_dir: "data/posters"
+  attach_feishu: true # Mount visual framework diagram in Feishu daily report
+
 llm:
   api:
     key: null # API Key of your LLM API. Example: sk-xxx

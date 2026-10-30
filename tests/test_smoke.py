@@ -1830,6 +1830,141 @@ def test_feishu_rich_text_formatting_and_user_preference_learning(tmp_path, monk
     assert "👎 排除特征: 纯 Prompt 调优水文" in updated_console
 
 
+def test_visual_framework_diagram_and_poster_generation(tmp_path, monkeypatch):
+    """Verify academic framework diagram generation, caching, and Feishu image block mounting."""
+    import base64
+    from paper_daily.core.poster import (
+        build_framework_prompt,
+        generate_diagram_with_gpt_image,
+        generate_paper_poster,
+    )
+    from paper_daily.channels.feishu import FeishuClient
+    from paper_daily.library.finder import generate_poster_for_paper_direct
+    from paper_daily.protocol import Paper
+
+    p = Paper(
+        source="arxiv",
+        title="Episodic Memory Routing for Autonomous Agents",
+        authors=["Alice", "Bob"],
+        abstract="We present an episodic memory routing framework.",
+        url="https://arxiv.org/abs/2604.99999",
+        arxiv_id="2604.99999",
+        critical_digest={
+            "delta": "Dynamic certificate-guided memory indexing",
+            "mechanism": "Context -> Index -> Verification -> Dispatch",
+        },
+    )
+
+    # 1. Prompt formulation
+    prompt = build_framework_prompt(p)
+    assert "Episodic Memory Routing" in prompt
+    assert "Context -> Index -> Verification -> Dispatch" in prompt
+    assert "clean vector publication figure" in prompt
+
+    # 2. Mock OpenAI-compatible API for gpt-image-2.5
+    out_dir = tmp_path / "posters"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    dummy_png_bytes = b"\x89PNG\r\n\x1a\n" + b"\x00" * 6000
+    b64_dummy = base64.b64encode(dummy_png_bytes).decode("ascii")
+
+    class MockResp:
+        def __init__(self, status_code=200, json_data=None):
+            self.status_code = status_code
+            self._json = json_data or {"data": [{"b64_json": b64_dummy}]}
+            self.text = "ok"
+
+        def json(self):
+            return self._json
+
+    def mock_post(url, **kwargs):
+        if "images/generations" in url:
+            assert kwargs.get("json", {}).get("model") == "gpt-image-2.5-sunburst"
+            return MockResp(200)
+        if "upload_all" in url:
+            return MockResp(200, {"code": 0, "data": {"file_token": "img_token_123"}})
+        return MockResp(200)
+
+    monkeypatch.setattr("requests.post", mock_post)
+
+    img_path = generate_diagram_with_gpt_image(
+        p,
+        api_base="https://sub.umapis.com/v1",
+        api_key="sk-test-mock-key",
+        output_dir=out_dir,
+    )
+    assert img_path is not None
+    assert img_path.is_file()
+    assert img_path.stat().st_size > 5000
+
+    # Test cache reuse
+    img_path2 = generate_diagram_with_gpt_image(
+        p,
+        api_base="https://sub.umapis.com/v1",
+        api_key="sk-test-mock-key",
+        output_dir=out_dir,
+    )
+    assert img_path2 == img_path
+
+    # 3. Test FeishuClient image upload and daily report block mounting
+    feishu = FeishuClient({
+        "app_id": "cli_mock",
+        "app_secret": "sec_mock",
+        "dry_run": False,
+    })
+    feishu._has_lark_cli = False
+    feishu._tenant_token = "mock_tok"
+
+    uploaded = feishu.upload_image_to_drive("doc_123", str(img_path))
+    assert uploaded is not None
+    assert uploaded["file_token"] == "img_token_123"
+
+    # Test daily report block creation with visual poster
+    p.poster_path = str(img_path)
+    p.inline_annotations = [{"quote": "Raw redundant quote", "comment": "Comment"}]
+
+    created_blocks = []
+
+    def mock_call_api(method, path, params=None, data=None):
+        if method == "GET" and path.endswith("/blocks"):
+            return [{"block_id": "root_1", "block_type": 1}]
+        if method == "POST" and "children" in path:
+            children = (data or {}).get("children") or []
+            created_blocks.extend(children)
+            return {"children": [{"block_id": f"b_{i}"} for i in range(len(children))]}
+        return {}
+
+    monkeypatch.setattr(feishu, "_call_api", mock_call_api)
+    monkeypatch.setattr(feishu, "get_or_create_daily_document", lambda folder: ("doc_123", "https://feishu.cn/docx/123"))
+
+    feishu.create_or_update_daily_report([p])
+
+    # Verify that an image block (block_type: 27) was mounted
+    img_block = next((b for b in created_blocks if b.get("block_type") == 27), None)
+    assert img_block is not None
+    assert img_block["image"]["token"] == "img_token_123"
+
+    # Verify that redundant inline_annotations and raw quotes were cleanly omitted
+    has_inline_quote = any(
+        "Raw redundant quote" in "".join(el.get("text_run", {}).get("content", "") for el in b.get("text", {}).get("elements", []))
+        for b in created_blocks if b.get("block_type") == 2
+    )
+    assert not has_inline_quote
+
+    # 4. Test direct poster generation function for coding agent
+    cfg_direct = OmegaConf.create({
+        "poster": {
+            "enabled": True,
+            "api_key": "sk-test-mock-key",
+            "api_base": "https://sub.umapis.com/v1",
+            "output_dir": str(out_dir),
+        }
+    })
+    res = generate_poster_for_paper_direct("https://arxiv.org/abs/2604.99999", config=cfg_direct)
+    assert res["status"] == "success"
+    assert res["poster_path"] == str(img_path)
+    assert "file://" in res["file_uri"]
+
+
 
 
 

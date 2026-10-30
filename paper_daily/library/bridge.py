@@ -1443,7 +1443,12 @@ def main() -> None:
     p_ingest = sub.add_parser("ingest", help="Directly ingest paper by URL or arXiv ID into knowledge base without checklist")
     p_ingest.add_argument("url", help="Paper URL (arXiv, OpenReview, GitHub, or arXiv ID e.g. 2401.12345)")
     p_ingest.add_argument("--provider", default="auto", choices=["auto", "feishu", "obsidian", "notion", "zotero"], help="Target library provider (default: auto)")
+    p_ingest.add_argument("--poster", action="store_true", help="Generate and attach visual framework diagram / poster upon ingestion")
     p_ingest.add_argument("--json", action="store_true", help="Output raw JSON for agent parsing")
+
+    p_poster = sub.add_parser("poster", help="Generate or extract an academic framework diagram / poster for a paper")
+    p_poster.add_argument("url", help="Paper URL or arXiv ID (e.g. 2401.12345)")
+    p_poster.add_argument("--json", action="store_true", help="Output raw JSON for agent parsing")
 
     args = parser.parse_args()
     if args.cmd == "init":
@@ -1526,7 +1531,7 @@ def main() -> None:
     elif args.cmd == "ingest":
         from .finder import ingest_paper_direct
 
-        res = ingest_paper_direct(args.url, provider=args.provider, config=cfg)
+        res = ingest_paper_direct(args.url, provider=args.provider, generate_poster=getattr(args, "poster", False), config=cfg)
         if args.json:
             print(json.dumps(res, ensure_ascii=False, indent=2))
         else:
@@ -1534,6 +1539,19 @@ def main() -> None:
                 print(f"[入库成功] {res.get('message')}")
             else:
                 print(f"[{res.get('status', '提示')}] {res.get('message')}")
+    elif args.cmd == "poster":
+        from .finder import generate_poster_for_paper_direct
+
+        res = generate_poster_for_paper_direct(args.url, config=cfg)
+        if args.json:
+            print(json.dumps(res, ensure_ascii=False, indent=2))
+        else:
+            if res.get("status") == "success":
+                print(f"[海报生成成功] {res.get('title')}")
+                print(f"🖼️ 本地文件: {res.get('poster_path')}")
+                print(f"🔗 本地链接: {res.get('file_uri')} ({res.get('size_kb')} KB)")
+            else:
+                print(f"[生成失败] {res.get('message')}")
 
 
 if __name__ == "__main__":

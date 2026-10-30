@@ -62,6 +62,11 @@ Ask the user in chat (or using `question` / `AskUserQuestion` tool):
      - `NOTEBOOKLM_ENABLED` (`true` / `false`)
      - `NOTEBOOKLM_AUTH_JSON` (或 `NOTEBOOKLM_COOKIES`)
      - `NOTEBOOKLM_MODE` (`persistent` 长效专题自动分卷 | `daily` 每日专题)
+   - **Visual Framework Diagram / Poster (可选框架图与海报生成)**:
+     - `POSTER_ENABLED` (`true` / `false`)
+     - `POSTER_API_KEY` (如 `sk-...`)
+     - `POSTER_API_BASE` (默认 `https://sub.umapis.com/v1`)
+     - `POSTER_MODEL` (默认 `gpt-image-2.5-sunburst`)
 3. **Initial Research Tags & Questions**:
    - Tags (e.g. `LLM Agents, Memory, Reinforcement Learning`)
    - 1~2 core questions (e.g. `How to compress episodic memory with bounded tokens?`)
@@ -145,8 +150,16 @@ The agent receives clean candidate cards (title, authors, venue, relevance score
 ### Step 2: One-Click Direct Ingestion (Zero-Checklist)
 When the Coding Agent or user decides a paper is helpful and should be saved into the personal knowledge base:
 ```bash
-uv run paper-library ingest "<url_or_arxiv_id>" [--provider auto|feishu|obsidian|notion|zotero] [--json]
+uv run paper-library ingest "<url_or_arxiv_id>" [--provider auto|feishu|obsidian|notion|zotero] [--poster] [--json]
 ```
+Add `--poster` to automatically generate and mount an academic pipeline framework diagram into the reading note.
+
+### Step 3: Standalone Framework Diagram / Poster Generation
+When the Coding Agent only needs a visual pipeline/framework diagram for a paper without ingesting:
+```bash
+uv run paper-library poster "<url_or_arxiv_id>" [--json]
+```
+Returns local image path and `file://` URI for immediate visual inspection in terminal or markdown preview.
 This command:
 1. Resolves full text via ordered fallback chains (`arXiv HTML` -> `PyMuPDF` -> `Agent-Reach` -> `Trafilatura`).
 2. Generates structured 5-section reading notes (core summary, motivation, method, experiments, takeaways) and detail annotations.

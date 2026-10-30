@@ -74,6 +74,8 @@ class Paper:
     rubric_scores: Optional[dict[str, int]] = None  # 4D 1-5 scores: delta, rigor, actionability, reproducibility
     composite_score: Optional[float] = None  # Calibrated 0-10 score combining recall + 4D rubric + external signals
     matched_anchor_title: Optional[str] = None  # Highest-matching positive corpus paper title
+    poster_path: Optional[str] = None  # Path to generated/extracted framework diagram or academic poster
+    poster_url: Optional[str] = None  # Remote or uploaded URL / media token
 
     def __post_init__(self) -> None:
         if not self.code_url or not self.project_url:

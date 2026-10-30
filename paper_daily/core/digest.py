@@ -685,9 +685,14 @@ def format_digest_feishu_elements(
 
     # 3. 方法链路与公式 (Mechanism)
     mech = digest.get("mechanism") or {}
-    pipeline = str(mech.get("pipeline") or "").strip()
-    formula = str(mech.get("core_formula") or "").strip()
-    symbols = str(mech.get("symbol_dict") or "").strip()
+    if isinstance(mech, str):
+        pipeline = mech.strip()
+        formula = ""
+        symbols = ""
+    else:
+        pipeline = str(mech.get("pipeline") or "").strip()
+        formula = str(mech.get("core_formula") or "").strip()
+        symbols = str(mech.get("symbol_dict") or "").strip()
 
     if is_meaningful(pipeline) or is_meaningful(formula) or is_meaningful(symbols):
         elements.append({"text_run": {"content": "• [方法链路与公式] (Mechanism)：\n", "text_element_style": {"bold": True, "text_color": 6}}})
@@ -703,8 +708,12 @@ def format_digest_feishu_elements(
 
     # 4. 实验真相与代价 (Truth & Cost)
     ev = digest.get("evidence_and_cost") or {}
-    metrics = str(ev.get("metrics") or "").strip()
-    cost = str(ev.get("cost_and_limits") or "").strip()
+    if isinstance(ev, str):
+        metrics = ev.strip()
+        cost = ""
+    else:
+        metrics = str(ev.get("metrics") or "").strip()
+        cost = str(ev.get("cost_and_limits") or "").strip()
 
     if is_meaningful(metrics) or is_meaningful(cost):
         elements.append({"text_run": {"content": "• [实验真相与代价] (Truth & Cost)：\n", "text_element_style": {"bold": True, "text_color": 2}}})

@@ -106,8 +106,8 @@ export const zh: Locale = {
         desc: '提取方法流程与实验图表，自动输出可编辑的学术汇报幻灯片。',
       },
       videoPoster: {
-        title: '视频与交互海报',
-        desc: '基于切片素材生成动态视频解说流与轻量交互式 HTML 展板。',
+        title: '架构全景图与海报',
+        desc: '支持 GPT-Image 机制全景图生成与 Paper2Poster 学术海报，免除冗长摘抄。',
       },
     },
   },

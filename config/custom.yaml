@@ -82,6 +82,17 @@ agent_reach:
   fallback_web_reader: ${oc.env:AGENT_REACH_FALLBACK_READER,true}
   timeout: ${oc.env:AGENT_REACH_TIMEOUT,15.0}
 
+poster:
+  enabled: ${oc.env:POSTER_ENABLED,false}
+  engine: ${oc.env:POSTER_ENGINE,"gpt-image"}
+  api_base: ${oc.env:POSTER_API_BASE,"https://sub.umapis.com/v1"}
+  api_key: ${oc.env:POSTER_API_KEY,null}
+  model: ${oc.env:POSTER_MODEL,"gpt-image-2.5-sunburst"}
+  size: ${oc.env:POSTER_SIZE,"1792x1024"}
+  proxy_url: ${oc.env:POSTER_PROXY_URL,${oc.env:ALL_PROXY,null}}
+  max_papers: ${oc.env:POSTER_MAX_PAPERS,3}
+  attach_feishu: ${oc.env:POSTER_ATTACH_FEISHU,true}
+
 llm:
   api:
     key: ${oc.env:OPENAI_API_KEY,null}

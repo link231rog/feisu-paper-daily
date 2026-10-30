@@ -106,8 +106,8 @@ export const en: Locale = {
         desc: 'Extracts architecture flowcharts and benchmark tables into editable academic slide decks.',
       },
       videoPoster: {
-        title: 'Video & Interactive Posters',
-        desc: 'Compiles paper assets into dynamic video narratives and lightweight interactive HTML5 exhibits.',
+        title: 'Framework Diagrams & Posters',
+        desc: 'Generates GPT-Image architecture diagrams and Paper2Poster visual overviews directly from papers.',
       },
     },
   },

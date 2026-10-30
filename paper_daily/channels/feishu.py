@@ -792,6 +792,47 @@ class FeishuClient:
             logger.warning(f"Failed to upload/mount MP3 audio block in Feishu document {document_id}: {exc}")
         return None
 
+    def upload_image_to_drive(self, doc_id: str, image_path: str) -> Optional[dict[str, Any]]:
+        """Uploads an image file to Feishu Drive for document mounting, returning file_token and dimensions."""
+        if self.dry_run or not image_path or not os.path.isfile(image_path):
+            return None
+        try:
+            import pymupdf
+            doc = pymupdf.open(image_path)
+            page = doc[0]
+            w, h = int(page.rect.width), int(page.rect.height)
+            doc.close()
+        except Exception:
+            w, h = 1024, 576
+
+        file_token: Optional[str] = None
+        if self.app_id and self.app_secret:
+            token = self._get_tenant_token()
+            upload_url = f"{FEISHU_BASE_URL}/drive/v1/medias/upload_all"
+            filename = os.path.basename(image_path)
+            try:
+                with open(image_path, "rb") as f_img:
+                    file_bytes = f_img.read()
+                data = {
+                    "file_name": filename,
+                    "parent_type": "docx_image",
+                    "parent_node": str(doc_id),
+                    "size": len(file_bytes),
+                }
+                files = {"file": (filename, file_bytes, "image/png")}
+                auth_headers = {"Authorization": f"Bearer {token}"}
+                resp = requests.post(upload_url, headers=auth_headers, data=data, files=files, timeout=60)
+                if resp.status_code == 200:
+                    res_json = resp.json()
+                    if res_json.get("code") == 0:
+                        file_token = res_json.get("data", {}).get("file_token")
+            except Exception as exc:
+                logger.warning(f"Failed to upload image {image_path} to Feishu: {exc}")
+
+        if file_token:
+            return {"file_token": file_token, "width": w, "height": h}
+        return None
+
     def create_or_update_daily_report(
         self,
         papers: list[Paper],
@@ -1019,6 +1060,22 @@ class FeishuClient:
                 }
             })
 
+            # Visual Framework Diagram / Poster mounting
+            has_visual_poster = False
+            if getattr(p, "poster_path", None) and os.path.isfile(str(p.poster_path)):
+                uploaded = self.upload_image_to_drive(doc_id, str(p.poster_path))
+                if uploaded and uploaded.get("file_token"):
+                    has_visual_poster = True
+                    p.poster_url = str(uploaded["file_token"])
+                    paper_blocks.append({
+                        "block_type": 27,
+                        "image": {
+                            "token": str(uploaded["file_token"]),
+                            "width": int(uploaded.get("width", 1024)),
+                            "height": int(uploaded.get("height", 576)),
+                        }
+                    })
+
             # Critical-Paper-Digest or fallback TL;DR
             if getattr(p, "critical_digest", None):
                 from ..core.digest import format_digest_feishu_elements
@@ -1056,39 +1113,40 @@ class FeishuClient:
                     }
                 })
 
-            # In-line annotations & abstract rendering
-            if getattr(p, "inline_annotations", None):
-                from ..core.annotator import build_annotated_text_elements
+            # In-line annotations & abstract rendering (omitted when visual framework diagram is mounted)
+            if not has_visual_poster:
+                if getattr(p, "inline_annotations", None):
+                    from ..core.annotator import build_annotated_text_elements
 
-                annotated_elements = build_annotated_text_elements(p, corpus=corpus, client=self)
-                paper_blocks.append({
-                    "block_type": 2,
-                    "text": {
-                        "elements": annotated_elements
-                    }
-                })
-            elif tier == "quick_radar" and p.qa_matches:
-                qa_lines = ["[关键证据速览]:"]
-                for match in p.qa_matches[:2]:
-                    qa_lines.append(f"  • [{match.get('question', '')}] -> {match.get('answer', '')}")
-                paper_blocks.append({
-                    "block_type": 2,
-                    "text": {
-                        "elements": [
-                            {"text_run": {"content": "\n".join(qa_lines) + "\n"}}
-                        ]
-                    }
-                })
-            else:
-                # Fallback to plain English abstract and standalone cards
-                if p.abstract and p.abstract.strip():
-                    clean_abs = p.abstract.strip()
+                    annotated_elements = build_annotated_text_elements(p, corpus=corpus, client=self)
                     paper_blocks.append({
                         "block_type": 2,
                         "text": {
-                            "elements": [{"text_run": {"content": f"英文摘要 (Abstract):\n{clean_abs}\n"}}]
+                            "elements": annotated_elements
                         }
                     })
+                elif tier == "quick_radar" and p.qa_matches:
+                    qa_lines = ["[关键证据速览]:"]
+                    for match in p.qa_matches[:2]:
+                        qa_lines.append(f"  • [{match.get('question', '')}] -> {match.get('answer', '')}")
+                    paper_blocks.append({
+                        "block_type": 2,
+                        "text": {
+                            "elements": [
+                                {"text_run": {"content": "\n".join(qa_lines) + "\n"}}
+                            ]
+                        }
+                    })
+                else:
+                    # Fallback to plain English abstract and standalone cards
+                    if p.abstract and p.abstract.strip():
+                        clean_abs = p.abstract.strip()
+                        paper_blocks.append({
+                            "block_type": 2,
+                            "text": {
+                                "elements": [{"text_run": {"content": f"英文摘要 (Abstract):\n{clean_abs}\n"}}]
+                            }
+                        })
 
                 # Tracked-question matches
                 if p.qa_matches:
@@ -2081,11 +2139,15 @@ class FeishuClient:
             parts.append(_build_annotation_workspace_markdown(sections, is_app_note=False))
 
             hero_img_md = ""
-            first_img_match = re.search(r"!\[(.*?)\]\((.*?)\)", full_text_markdown or "")
-            if first_img_match:
-                hero_cap = first_img_match.group(1).strip() or "Figure 1: 核心系统架构与工作流设计"
-                hero_src = first_img_match.group(2).strip()
-                hero_img_md = f"\n\n![{hero_cap}]({hero_src})\n*{hero_cap}*\n"
+            if getattr(paper, "poster_path", None) and os.path.isfile(str(paper.poster_path)):
+                hero_cap = "核心架构与 Pipeline 机制全景图"
+                hero_img_md = f"\n\n![{hero_cap}]({paper.poster_path})\n*{hero_cap}*\n"
+            else:
+                first_img_match = re.search(r"!\[(.*?)\]\((.*?)\)", full_text_markdown or "")
+                if first_img_match:
+                    hero_cap = first_img_match.group(1).strip() or "Figure 1: 核心系统架构与工作流设计"
+                    hero_src = first_img_match.group(2).strip()
+                    hero_img_md = f"\n\n![{hero_cap}]({hero_src})\n*{hero_cap}*\n"
 
             parts.append(f"""## 一、核心一句话总结
 
