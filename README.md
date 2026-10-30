@@ -42,6 +42,7 @@ paper_daily/
 ├── library/               # 跨平台文献库同步、批注还原与初始化向导
 │   ├── bridge.py          # paper-library 命令行检索、批注还原与混合排序
 │   ├── console.py         # 飞书 / Obsidian / Notion / Zotero 控制台指令与自定义 Skill 解析
+│   ├── finder.py          # Coding Agent 在线文献检索、MMR 重排推荐与一键入库
 │   └── init_wizard.py     # 多选交互式初始化向导与按需凭证配置生成
 ├── retriever/             # 多源学术文献与社区热点检索器
 │   ├── arxiv_retriever.py            # arXiv API 检索与开源代码/主页链接提取
@@ -142,7 +143,19 @@ uv run paper-daily init --print-skill
 uv run paper-daily init --from-json '{"libraries":["obsidian","feishu"],"sources":["arxiv","huggingface","openreview"],"deliveries":["feishu","telegram","wechat"]}'
 ```
 
-### 3. 开启可选 MP3 音频播客推送
+### 3. 本地 Coding Agent 主动文献检索与零候选一键入库
+
+针对编程助理（Claude Code、Cursor、OpenCode、Cline）在编码排错、方案设计时对前沿学术文献的即时检索与入库需求，提供原子化 CLI：
+
+```bash
+# 1. 在线检索学术论文并执行 TF-IDF + MMR 多样性重排 (支持 --json)
+uv run paper-library find "episodic memory agent compression" --top-k 5
+
+# 2. 查阅返回结果后，一键直接将目标文献精读沉淀入库 (跳过早报候选勾选流程)
+uv run paper-library ingest "https://arxiv.org/abs/2602.13530" --provider auto
+```
+
+### 4. 开启可选 MP3 音频播客推送
 
 在 `config/custom.yaml` 中开启 `audio.enabled`：
 
@@ -162,7 +175,7 @@ audio:
   upload_wechat_voice: true      # 生成 60 秒浓缩版并上传微信公众号语音素材库
 ```
 
-### 4. 运行测试
+### 5. 运行测试
 
 ```bash
 uv run pytest tests/test_smoke.py

@@ -124,8 +124,8 @@ export const zh: Locale = {
         desc: '勾选论文沉淀入库，自动抓取正文生成精读笔记并进行细节批注。',
       },
       agentBridge: {
-        title: 'Agent 直连',
-        desc: 'paper-library CLI 直接读取文献库中的高亮与批注，供本地 Agent 调用。',
+        title: 'Agent 直连与主动检索',
+        desc: 'paper-library CLI 支持本地 Coding Agent 在线查找前沿文献、MMR 算法重排并一键免候选直接入库。',
       },
     },
   },

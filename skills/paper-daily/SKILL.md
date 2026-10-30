@@ -16,6 +16,7 @@ Use this skill when the user wants to set up, trigger, configure, or monitor **P
 2. **On-Demand Run & Force Today**: Trigger immediate paper curation and delivery via GitHub CLI or Webhook.
 3. **Dynamic Question & Skill Injection**: Inject ad-hoc research questions, exclusion keywords, or custom review rules directly into cloud runs.
 4. **Pipeline Monitoring & Diagnostics**: Check workflow run status, view failed logs, and inspect report URLs.
+5. **Local Coding Agent Active Search & Ingest**: Active online academic literature search (`find`), relevance & MMR reranking, and zero-checklist direct note ingestion (`ingest`) for local agents.
 
 ---
 
@@ -127,3 +128,28 @@ JSON
   ```bash
   gh run watch <run_id> -R <repo>
   ```
+
+---
+
+## Workflow 5: Local Coding Agent Active Research & Direct Ingestion
+
+Use this workflow when a local Coding Agent (Claude Code, Cursor, OpenCode, Cline) is working on code/architecture and needs academic references, algorithmic baselines, or wants to save a paper:
+
+### Step 1: Online Academic Literature Search & MMR Reranking
+Search online across official arXiv, Semantic Scholar, and DBLP engines with Max-TopK relevance scoring and MMR diversity:
+```bash
+uv run paper-library find "<keywords or problem description>" --top-k 5 [--json]
+```
+The agent receives clean candidate cards (title, authors, venue, relevance score, abstract, paper URL, PDF link, open-source code repo) without entering an interactive checklist.
+
+### Step 2: One-Click Direct Ingestion (Zero-Checklist)
+When the Coding Agent or user decides a paper is helpful and should be saved into the personal knowledge base:
+```bash
+uv run paper-library ingest "<url_or_arxiv_id>" [--provider auto|feishu|obsidian|notion|zotero] [--json]
+```
+This command:
+1. Resolves full text via ordered fallback chains (`arXiv HTML` -> `PyMuPDF` -> `Agent-Reach` -> `Trafilatura`).
+2. Generates structured 5-section reading notes (core summary, motivation, method, experiments, takeaways) and detail annotations.
+3. Directly writes the note to the user's active library (Feishu Docx note, Obsidian vault Markdown, Notion database, or Zotero collection).
+4. Marks the paper in `paper_store.json` so future daily morning runs do not re-recommend it as unread.
+5. Returns the direct note link or local URI immediately for the Coding Agent to continue coding.

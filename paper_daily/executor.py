@@ -76,9 +76,12 @@ class Executor:
             self.include_path_patterns = None
             self.ignore_path_patterns = None
 
-        self.retrievers = {
-            source: get_retriever_cls(source)(config) for source in config.executor.source
-        }
+        self.retrievers = {}
+        for source in (config.executor.get("source") if hasattr(config.executor, "get") else getattr(config.executor, "source", [])) or []:
+            try:
+                self.retrievers[source] = get_retriever_cls(source)(config)
+            except Exception as r_err:
+                logger.debug(f"Retriever '{source}' not initialized: {r_err}")
         self.reranker = get_reranker_cls(config.executor.reranker)(config)
 
         # LLM client (optional for offline testing or dry-run)
@@ -1136,14 +1139,21 @@ class Executor:
             logger.warning(f"Error during paper ingestion check: {exc}")
             return []
 
-    def ingest_paper_by_url(self, url: str, category: Optional[str] = None) -> Optional[str]:
-        """Directly ingests a paper or open-source tool/skill by URL into the Wiki Knowledge Base."""
-        feishu_cfg = self.config.get("feishu")
-        if not feishu_cfg:
-            logger.warning("No feishu configuration found for ingest_paper_by_url")
-            return None
-
+    def ingest_paper_by_url(
+        self,
+        url: str,
+        category: Optional[str] = None,
+        provider: str = "auto",
+    ) -> Optional[str]:
+        """Directly ingests a paper or open-source tool/skill by URL or arXiv ID into active literature libraries."""
         clean_url = url.strip()
+        if re.match(r"^\d{4}\.\d{4,5}(v\d+)?$", clean_url):
+            clean_url = f"https://arxiv.org/abs/{clean_url}"
+        elif clean_url.lower().startswith("arxiv:"):
+            clean_url = f"https://arxiv.org/abs/{clean_url.split(':', 1)[1].strip()}"
+        elif clean_url.startswith("10.") and "/" in clean_url:
+            clean_url = f"https://doi.org/{clean_url}"
+
         title = ""
         abstract = ""
         authors = []
@@ -1211,23 +1221,26 @@ class Executor:
                 sources=sources,
                 venue=venue,
             )
-            sections, tags = self.generate_reading_note_sections(paper_obj)
+            raw_text = self.fetch_paper_full_text(clean_url) if clean_url else None
+            sections, tags = self.generate_reading_note_sections(paper_obj, full_text=raw_text)
         else:
             sources = ["web"]
+            raw_text = self.fetch_paper_full_text(clean_url) if clean_url else ""
             title = clean_url
+            if raw_text and len(raw_text) > 50:
+                first_lines = [line.strip("# \t") for line in raw_text.splitlines() if line.strip()]
+                if first_lines:
+                    title = first_lines[0][:120]
             paper_obj = Paper(
                 source="web",
                 title=title,
                 authors=[],
-                abstract="",
+                abstract=raw_text[:500] if raw_text else "",
                 url=clean_url,
                 affiliations=[],
                 sources=sources,
             )
-            sections, tags = self.generate_reading_note_sections(paper_obj)
-
-        from .feishu import FeishuClient
-        client = FeishuClient(feishu_cfg)
+            sections, tags = self.generate_reading_note_sections(paper_obj, full_text=raw_text)
 
         paper = Paper(
             source=sources[0] if sources else "web",
@@ -1245,54 +1258,78 @@ class Executor:
         full_text_md = None
         if not is_github_or_tool and clean_url:
             raw_text = self.fetch_paper_full_text(clean_url)
-            full_text_md = self.translate_full_text_to_bilingual(raw_text)
+            full_text_md = self.translate_full_text_to_bilingual(raw_text) if raw_text else None
 
-        note_url = client.create_reading_note(paper, sections=sections, full_text_markdown=full_text_md)
-        if is_github_or_tool:
-            client.append_to_engineering_index(
-                paper,
-                note_url=note_url,
-                tags=tags,
-                core_summary=sections.get("core_summary", "")
-            )
-        client.append_to_master_index(
-            paper,
-            note_url=note_url,
-            tags=tags,
-            core_summary=sections.get("core_summary", "")
-        )
-        client.append_to_tag_graph(
-            paper,
-            note_url=note_url,
-            tags=tags,
-            core_summary=sections.get("core_summary", "")
-        )
-
-        if feishu_cfg.get("create_tasks", True):
+        note_url: Optional[str] = None
+        feishu_cfg = self.config.get("feishu")
+        feishu_target = provider in ("auto", "feishu")
+        if feishu_target and feishu_cfg and feishu_cfg.get("app_id") and not as_bool(feishu_cfg.get("dry_run", False)):
             try:
-                task_res = client.create_reading_task(
-                    paper=paper,
+                from .channels.feishu import FeishuClient
+                client = FeishuClient(feishu_cfg)
+                note_url = client.create_reading_note(paper, sections=sections, full_text_markdown=full_text_md)
+                if is_github_or_tool:
+                    client.append_to_engineering_index(
+                        paper,
+                        note_url=note_url,
+                        tags=tags,
+                        core_summary=sections.get("core_summary", "")
+                    )
+                client.append_to_master_index(
+                    paper,
                     note_url=note_url,
                     tags=tags,
+                    core_summary=sections.get("core_summary", "")
                 )
-                task_guid = task_res.get("guid") or task_res.get("task", {}).get("guid")
-                logger.info(f"Created Lark Task for '{title}': guid={task_guid}")
-            except Exception as t_exc:
-                logger.warning(f"Notice: creating Lark task for '{title}': {t_exc}")
+                client.append_to_tag_graph(
+                    paper,
+                    note_url=note_url,
+                    tags=tags,
+                    core_summary=sections.get("core_summary", "")
+                )
+
+                if feishu_cfg.get("create_tasks", True):
+                    try:
+                        task_res = client.create_reading_task(
+                            paper=paper,
+                            note_url=note_url,
+                            tags=tags,
+                        )
+                        task_guid = task_res.get("guid") or task_res.get("task", {}).get("guid")
+                        logger.info(f"Created Lark Task for '{title}': guid={task_guid}")
+                    except Exception as t_exc:
+                        logger.warning(f"Notice: creating Lark task for '{title}': {t_exc}")
+            except Exception as feishu_err:
+                logger.warning(f"Failed to ingest note into Feishu: {feishu_err}")
+
+        # Extra libraries: Obsidian, Notion, Zotero
+        extra_urls = []
+        if provider in ("auto", "obsidian", "notion", "zotero"):
+            extra_urls = self._write_note_to_extra_libraries(
+                paper, sections=sections, tags=tags, full_text_md=full_text_md
+            )
+
+        primary_url = note_url or (extra_urls[0] if extra_urls else None)
 
         self.paper_store.mark_ingested(
             paper,
             {
                 "title": title,
                 "url": clean_url,
-                "wiki_url": note_url,
+                "wiki_url": primary_url or clean_url,
+                "extra_urls": extra_urls,
                 "tags": tags,
             }
         )
         if clean_url:
-            self.paper_store.mark_ingested(clean_url, {"title": title, "wiki_url": note_url})
-        logger.info(f"Directly ingested '{title}' into Wiki Knowledge Base: {note_url}")
-        return note_url
+            self.paper_store.mark_ingested(clean_url, {"title": title, "wiki_url": primary_url or clean_url})
+
+        if primary_url:
+            logger.info(f"Directly ingested '{title}' into knowledge base: {primary_url}")
+        else:
+            logger.info(f"Directly recorded '{title}' in local paper store (no active cloud notes client configured).")
+
+        return primary_url
 
     def rebuild_reading_note(self, paper_url_or_title: str) -> Optional[str]:
         """Rebuilds an existing reading note with native Feishu Docx blocks (tables, images, formulas)."""

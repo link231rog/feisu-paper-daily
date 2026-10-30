@@ -1426,6 +1426,17 @@ def main() -> None:
     p_init.add_argument("--config-out", default="config/custom.yaml", help="Target path for generated custom.yaml")
     p_init.add_argument("--env-out", default=".env", help="Target path for generated .env file")
 
+    p_find = sub.add_parser("find", help="Online academic literature search & MMR reranking for Coding Agents")
+    p_find.add_argument("query", help="Keywords or description of coding problem/technology to search")
+    p_find.add_argument("--top-k", type=int, default=5, help="Number of papers to recommend (default: 5)")
+    p_find.add_argument("--source", action="append", dest="sources", help="Specific sources (arxiv, semantic_scholar, dblp)")
+    p_find.add_argument("--json", action="store_true", help="Output raw JSON for agent parsing")
+
+    p_ingest = sub.add_parser("ingest", help="Directly ingest paper by URL or arXiv ID into knowledge base without checklist")
+    p_ingest.add_argument("url", help="Paper URL (arXiv, OpenReview, GitHub, or arXiv ID e.g. 2401.12345)")
+    p_ingest.add_argument("--provider", default="auto", choices=["auto", "feishu", "obsidian", "notion", "zotero"], help="Target library provider (default: auto)")
+    p_ingest.add_argument("--json", action="store_true", help="Output raw JSON for agent parsing")
+
     args = parser.parse_args()
     if args.cmd == "init":
         from ..init_wizard import handle_init_cli
@@ -1496,6 +1507,25 @@ def main() -> None:
                 print(f"[触发成功] 已向 GitHub Actions ({res['repo']}) 发送 '{res['event_type']}' 事件调度请求。")
         except Exception as exc:
             print(f"[触发失败] {exc}")
+    elif args.cmd == "find":
+        from .finder import find_papers, format_found_papers_markdown
+
+        found = find_papers(args.query, top_k=args.top_k, sources=args.sources, config=cfg)
+        if args.json:
+            print(json.dumps(found, ensure_ascii=False, indent=2))
+        else:
+            print(format_found_papers_markdown(found, args.query))
+    elif args.cmd == "ingest":
+        from .finder import ingest_paper_direct
+
+        res = ingest_paper_direct(args.url, provider=args.provider, config=cfg)
+        if args.json:
+            print(json.dumps(res, ensure_ascii=False, indent=2))
+        else:
+            if res.get("status") == "success":
+                print(f"[入库成功] {res.get('message')}")
+            else:
+                print(f"[{res.get('status', '提示')}] {res.get('message')}")
 
 
 if __name__ == "__main__":

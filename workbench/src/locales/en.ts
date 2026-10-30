@@ -124,8 +124,8 @@ export const en: Locale = {
         desc: 'Select candidate papers to generate structured deep-reading notes with paragraph-level highlights and reflections.',
       },
       agentBridge: {
-        title: 'Direct Agent Bridge',
-        desc: 'Provides the paper-library CLI to query highlights, comments, and bilingual contexts directly into local AI agents.',
+        title: 'Direct Agent Bridge & Active Search',
+        desc: 'paper-library CLI allows local Coding Agents to search literature online, rerank with MMR, and directly ingest notes without checklists.',
       },
     },
   },

@@ -1559,6 +1559,150 @@ def test_wechat_doocs_md_and_proxy_support(tmp_path, monkeypatch):
     )
 
 
+def test_agent_literature_find_and_ingest(tmp_path, monkeypatch):
+    """Verifies Coding Agent active literature search, MMR reranking, and zero-checklist direct ingestion."""
+    from paper_daily.library.finder import (
+        find_papers,
+        format_found_papers_markdown,
+        ingest_paper_direct,
+        normalize_paper_url,
+    )
+
+    # 1. URL & ID normalization
+    assert normalize_paper_url("2401.12345") == "https://arxiv.org/abs/2401.12345"
+    assert normalize_paper_url("2401.12345v2") == "https://arxiv.org/abs/2401.12345v2"
+    assert normalize_paper_url("arxiv:2401.99999") == "https://arxiv.org/abs/2401.99999"
+    assert normalize_paper_url("10.1145/3613904.3642456") == "https://doi.org/10.1145/3613904.3642456"
+
+    # 2. Mock online search backends (arXiv and DBLP)
+    sample_arxiv_xml = """<?xml version="1.0" encoding="UTF-8"?>
+    <feed xmlns="http://www.w3.org/2005/Atom" xmlns:arxiv="http://arxiv.org/schemas/atom">
+      <entry>
+        <id>http://arxiv.org/abs/2602.13530v1</id>
+        <title>REMem: Reasoning with Episodic Memory in Language Agent</title>
+        <summary>A foundational study on episodic memory architecture for LLM agents. Code: https://github.com/agent/remem</summary>
+        <author><name>Yiheng Shu</name></author>
+        <published>2026-02-15T00:00:00Z</published>
+        <arxiv:comment>Accepted to ICLR 2026</arxiv:comment>
+      </entry>
+      <entry>
+        <id>http://arxiv.org/abs/2501.99999v1</id>
+        <title>Language Agent Planning with World Models</title>
+        <summary>Planning algorithms for autonomous code agents.</summary>
+        <author><name>Jane Doe</name></author>
+        <published>2025-01-10T00:00:00Z</published>
+      </entry>
+    </feed>
+    """
+
+    class MockResp:
+        def __init__(self, text, status_code=200):
+            self.text = text
+            self.status_code = status_code
+
+        def json(self):
+            import json
+            return json.loads(self.text)
+
+    def mock_requests_get(url, *args, **kwargs):
+        if "export.arxiv.org" in url:
+            return MockResp(sample_arxiv_xml)
+        if "dblp.org" in url:
+            return MockResp(
+                json.dumps(
+                    {
+                        "result": {
+                            "hits": {
+                                "hit": [
+                                    {
+                                        "info": {
+                                            "title": "Autonomous Coding Agent Architecture Benchmark.",
+                                            "authors": {"author": [{"text": "Alice"}]},
+                                            "year": "2026",
+                                            "venue": "ICSE 2026",
+                                            "ee": "https://doi.org/10.1145/icse2026",
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                )
+            )
+        return MockResp("{}", status_code=404)
+
+    monkeypatch.setattr("requests.get", mock_requests_get)
+
+    cfg = OmegaConf.create({
+        "executor": {"source": ["arxiv"], "reranker": "local"},
+        "reranker": {"local": {"method": "tfidf"}, "max_sim_alpha": 0.45},
+    })
+
+    found = find_papers("episodic memory agent", top_k=2, config=cfg)
+    assert len(found) >= 1
+    top1 = found[0]
+    assert "REMem" in top1["title"]
+    assert top1["venue"] == "ICLR 2026"
+    assert top1["year"] == 2026
+    assert top1["code_url"] == "https://github.com/agent/remem"
+    assert top1["score"] > 0
+
+    # Test Markdown formatting
+    md = format_found_papers_markdown(found, "episodic memory agent")
+    assert "REMem" in md
+    assert "一键入库指令" in md
+    assert "paper-library ingest" in md
+
+    # 3. Direct Ingestion into active library (Obsidian)
+    vault_dir = tmp_path / "test_vault"
+    vault_dir.mkdir(parents=True, exist_ok=True)
+    store_file = tmp_path / "paper_store.json"
+
+    ingest_cfg = OmegaConf.create({
+        "executor": {"source": ["arxiv"], "reranker": "local"},
+        "reranker": {"local": {"method": "tfidf"}},
+        "paper_store": {"path": str(store_file)},
+        "obsidian": {
+            "enabled": True,
+            "vault_path": str(vault_dir),
+            "notes_folder": "Literature",
+        },
+        "feishu": {"app_id": "", "dry_run": True},
+    })
+
+    # Mock full text fetch to return sample markdown
+    from paper_daily.pipeline.base import BackendResult
+    monkeypatch.setattr(
+        "paper_daily.pipeline.backends.fulltext_backends.FallbackChain.execute",
+        lambda *args, **kwargs: BackendResult(
+            ok=True,
+            data="# REMem Full Paper\n\nMethod and architecture description.",
+            backend_name="mock",
+        ),
+    )
+
+    ingest_res = ingest_paper_direct(
+        "https://arxiv.org/abs/2602.13530",
+        provider="obsidian",
+        config=ingest_cfg,
+    )
+
+    assert ingest_res["status"] == "success"
+    assert "obsidian://" in ingest_res["note_url"]
+
+    # Verify Markdown note exists in Obsidian vault
+    note_files = list((vault_dir / "Literature").glob("*.md"))
+    assert len(note_files) == 1
+    note_content = note_files[0].read_text(encoding="utf-8")
+    assert "REMem" in note_content
+    assert "一、核心一句话总结" in note_content
+
+    # Verify PaperStore marked paper as ingested
+    from paper_daily.core import PaperStore
+    store = PaperStore(str(store_file))
+    assert store.is_ingested("https://arxiv.org/abs/2602.13530")
+
+
 
 
 

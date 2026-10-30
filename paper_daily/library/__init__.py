@@ -9,3 +9,13 @@ from .console import (  # noqa: F401
     load_console_settings,
     parse_console_text,
 )
+from .finder import (  # noqa: F401
+    find_papers,
+    format_found_papers_markdown,
+    ingest_paper_direct,
+    normalize_paper_url,
+    search_and_rank_papers,
+    search_arxiv,
+    search_dblp,
+    search_semantic_scholar,
+)
