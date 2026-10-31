@@ -1,8 +1,11 @@
 """Shared daily report for email and WeChat Official Account drafts."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from html import escape
+from pathlib import Path
+import re
+from typing import Any
 
 from ..core.annotator import locate_spans
 from ..protocol import Paper
@@ -13,6 +16,7 @@ class DailyReport:
     title: str
     html: str
     digest: str
+    inline_images: dict[str, str] = field(default_factory=dict)
 
 
 def _text(value: object, limit: int = 1200) -> str:
@@ -79,6 +83,7 @@ def build_daily_report(
     report_date: date | None = None,
     max_chars: int | None = None,
     trending_items: list | None = None,
+    include_posters: bool = True,
 ) -> DailyReport:
     """Build a self-contained report; max_chars is only needed by WeChat."""
     report_date = report_date or date.today()
@@ -89,6 +94,7 @@ def build_daily_report(
         f"<p>今日精选 {len(papers)} 篇论文，附研究问题进展与 AI 批注。</p>",
     ]
     footer = ["<p>由 Feishu Paper Daily 自动生成，请核验论文原文。</p>", "</section>"]
+    inline_images: dict[str, str] = {}
 
     brief_parts = []
     for brief in question_briefs or []:
@@ -127,6 +133,18 @@ def build_daily_report(
         if paper.url:
             url = escape(paper.url, quote=True)
             item.append(f'<p><a href="{url}">查看论文原文</a></p>')
+
+        poster_path = getattr(paper, "poster_path", None)
+        if include_posters and poster_path and Path(poster_path).is_file():
+            clean_slug = re.sub(r"[^a-zA-Z0-9_]", "_", str(getattr(paper, "arxiv_id", "") or f"paper_{index}")).strip("_")
+            cid = f"poster_{index}_{clean_slug}"
+            inline_images[cid] = str(poster_path)
+            item.append(
+                f'<div style="margin:16px 0 20px 0;text-align:center;">'
+                f'<img src="cid:{cid}" style="max-width:100%;height:auto;border-radius:8px;border:1px solid #e1e4e8;box-shadow:0 2px 10px rgba(0,0,0,0.06);display:block;margin:0 auto;" alt="方法架构与流程图" />'
+                f'<p style="margin:6px 0 0 0;font-size:12px;color:#6a737d;line-height:1.4;">▲ 方法架构与核心流程图 (Framework / Pipeline Overview)</p>'
+                f'</div>'
+            )
 
         if getattr(paper, "critical_digest", None):
             from ..core.digest import format_digest_html
@@ -171,4 +189,4 @@ def build_daily_report(
             content_parts.append(notice)
     html = "".join(header + content_parts + footer)
     digest = f"今日精选 {len(papers)} 篇论文，{len(question_briefs or [])} 个研究问题有新进展。"[:120]
-    return DailyReport(title=title[:32], html=html, digest=digest)
+    return DailyReport(title=title[:32], html=html, digest=digest, inline_images=inline_images)

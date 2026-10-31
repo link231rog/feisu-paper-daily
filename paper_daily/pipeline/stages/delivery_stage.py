@@ -139,7 +139,13 @@ class DeliveryStage(PipelineStage):
                 else:
                     report = build_daily_report(context.reranked_papers, context.question_briefs, trending_items=context.trending_items)
                     logger.info(f"Sending daily report email to {receiver_val} via {email_cfg.get('smtp_server', 'smtp.qq.com')}...")
-                    send_email(context.config, report.html, report.title, attachments=email_attachments)
+                    send_email(
+                        context.config,
+                        report.html,
+                        report.title,
+                        attachments=email_attachments,
+                        inline_images=getattr(report, "inline_images", None),
+                    )
                     logger.info(f"Daily report email sent successfully to {receiver_val}")
                     self.executor.paper_store.mark_channel_delivered("email", today_str)
                     context.delivered_channels.append("email")

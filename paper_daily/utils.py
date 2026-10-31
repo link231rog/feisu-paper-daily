@@ -49,6 +49,7 @@ def send_email(
     html: str,
     subject: str | None = None,
     attachments: list[str | Any] | None = None,
+    inline_images: dict[str, str | Any] | list[tuple[str, str | Any]] | None = None,
 ) -> None:
     from email import encoders
     from email.mime.base import MIMEBase
@@ -69,8 +70,64 @@ def send_email(
         return formataddr((Header(name, "utf-8").encode(), addr))
 
     valid_files = [Path(p) for p in (attachments or []) if p and Path(p).is_file()]
-    if valid_files:
-        msg: Any = MIMEMultipart("mixed")
+    valid_inlines: list[tuple[str, Path]] = []
+    if inline_images:
+        items = inline_images.items() if isinstance(inline_images, dict) else inline_images
+        for cid, p in items:
+            path_obj = Path(p) if p else None
+            if path_obj and path_obj.is_file():
+                valid_inlines.append((str(cid), path_obj))
+
+    if valid_inlines:
+        related_part: Any = MIMEMultipart("related")
+        related_part.attach(MIMEText(html, "html", "utf-8"))
+        for cid, img_path in valid_inlines:
+            mime_type, _ = mimetypes.guess_type(img_path.name)
+            if mime_type and "/" in mime_type:
+                maintype, subtype = mime_type.split("/", 1)
+            elif img_path.suffix.lower() in (".jpg", ".jpeg"):
+                maintype, subtype = "image", "jpeg"
+            elif img_path.suffix.lower() == ".webp":
+                maintype, subtype = "image", "webp"
+            else:
+                maintype, subtype = "image", "png"
+            part = MIMEBase(maintype, subtype)
+            part.set_payload(img_path.read_bytes())
+            encoders.encode_base64(part)
+            part.add_header("Content-ID", f"<{cid}>")
+            part.add_header(
+                "Content-Disposition",
+                "inline",
+                filename=("utf-8", "", img_path.name),
+            )
+            related_part.attach(part)
+
+        if valid_files:
+            msg: Any = MIMEMultipart("mixed")
+            msg.attach(related_part)
+            for file_path in valid_files:
+                mime_type, _ = mimetypes.guess_type(file_path.name)
+                if mime_type and "/" in mime_type:
+                    maintype, subtype = mime_type.split("/", 1)
+                elif file_path.suffix.lower() == ".mp3":
+                    maintype, subtype = "audio", "mpeg"
+                elif file_path.suffix.lower() == ".m4a":
+                    maintype, subtype = "audio", "mp4"
+                else:
+                    maintype, subtype = "application", "octet-stream"
+                part = MIMEBase(maintype, subtype)
+                part.set_payload(file_path.read_bytes())
+                encoders.encode_base64(part)
+                part.add_header(
+                    "Content-Disposition",
+                    "attachment",
+                    filename=("utf-8", "", file_path.name),
+                )
+                msg.attach(part)
+        else:
+            msg = related_part
+    elif valid_files:
+        msg = MIMEMultipart("mixed")
         msg.attach(MIMEText(html, "html", "utf-8"))
         for file_path in valid_files:
             mime_type, _ = mimetypes.guess_type(file_path.name)

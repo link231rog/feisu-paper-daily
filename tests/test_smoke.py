@@ -1055,6 +1055,8 @@ def test_zotero_and_notion_library_restoration(monkeypatch):
 
 def test_email_delivery_with_mp3_attachment(tmp_path, monkeypatch):
     """Verify send_email constructs MIME multipart with MP3 audio attachment and sanitizes credentials."""
+    from paper_daily.channels.daily_report import build_daily_report
+    from paper_daily.protocol import Paper
     from paper_daily.utils import send_email
 
     mp3_file = tmp_path / "briefing.mp3"
@@ -1104,6 +1106,34 @@ def test_email_delivery_with_mp3_attachment(tmp_path, monkeypatch):
     assert record["to"] == ["receiver1@qq.com", "receiver2@qq.com"]
     assert "audio/mpeg" in record["body"]
     assert "briefing.mp3" in record["body"]
+
+    # Test CID inline images for framework diagrams
+    poster_png = tmp_path / "framework.png"
+    poster_png.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 30)
+    p_visual = Paper(
+        source="arxiv",
+        title="Visual RL Paper",
+        authors=["Alice"],
+        abstract="abs",
+        url="http://arxiv/1",
+        arxiv_id="2610.12345",
+    )
+    p_visual.poster_path = str(poster_png)
+    report_with_img = build_daily_report([p_visual])
+    assert "cid:poster_1_2610_12345" in report_with_img.html
+    assert len(report_with_img.inline_images) == 1
+
+    send_email(
+        cfg,
+        html=report_with_img.html,
+        subject="[Paper Daily] Visual Report",
+        attachments=[str(mp3_file)],
+        inline_images=report_with_img.inline_images,
+    )
+    assert len(sent_messages) == 2
+    rec2 = sent_messages[1]
+    assert "image/png" in rec2["body"]
+    assert "<poster_1_2610_12345>" in rec2["body"]
 
 
 def test_biorxiv_medrxiv_chemrxiv_retrievers(monkeypatch):

@@ -500,6 +500,7 @@ def build_digest_wechat_article(
         report_date=report_date,
         max_chars=max_chars,
         trending_items=trending_items,
+        include_posters=False,
     )
     wechat_html = _apply_inline_tag_styles(convert_links_to_wechat_footnotes(raw_report.html))
     return DailyReport(
