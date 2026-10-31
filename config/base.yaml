@@ -109,7 +109,7 @@ agent_reach:
 
 poster:
   enabled: false # Optional visual framework diagram / academic poster generation
-  engine: "gpt-image" # "gpt-image" (OpenAI-compatible image generation via sub.umapis.com) | "source_figures" | "paper2poster"
+  engine: "paper2poster" # "paper2poster" (structured academic poster HTML->PNG) | "gpt-image" | "source_figures"
   api_base: "https://sub.umapis.com/v1"
   api_key: null
   model: "gpt-image-2.5-sunburst"

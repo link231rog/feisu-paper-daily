@@ -85,7 +85,7 @@ agent_reach:
 
 poster:
   enabled: ${oc.env:POSTER_ENABLED,false}
-  engine: ${oc.env:POSTER_ENGINE,"gpt-image"}
+  engine: ${oc.env:POSTER_ENGINE,"paper2poster"}
   api_base: ${oc.env:POSTER_API_BASE,"https://sub.umapis.com/v1"}
   api_key: ${oc.env:POSTER_API_KEY,null}
   model: ${oc.env:POSTER_MODEL,"gpt-image-2.5-sunburst"}

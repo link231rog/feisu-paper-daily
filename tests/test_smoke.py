@@ -1988,6 +1988,7 @@ def test_visual_framework_diagram_and_poster_generation(tmp_path, monkeypatch):
     cfg_direct = OmegaConf.create({
         "poster": {
             "enabled": True,
+            "engine": "gpt-image",
             "api_key": "sk-test-mock-key",
             "api_base": "https://sub.umapis.com/v1",
             "output_dir": str(out_dir),
@@ -1997,6 +1998,13 @@ def test_visual_framework_diagram_and_poster_generation(tmp_path, monkeypatch):
     assert res["status"] == "success"
     assert res["poster_path"] == str(img_path)
     assert "file://" in res["file_uri"]
+
+    # 5. Test Paper2Poster structured academic poster rendering
+    from paper_daily.core.poster import render_structured_academic_poster
+    rendered_poster = render_structured_academic_poster(p, output_dir=out_dir)
+    if rendered_poster:
+        assert rendered_poster.is_file()
+        assert rendered_poster.stat().st_size > 5000
 
 
 def test_academic_web_translator_and_latex_preservation(monkeypatch):

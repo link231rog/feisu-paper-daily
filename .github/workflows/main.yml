@@ -98,6 +98,7 @@ jobs:
           NOTEBOOKLM_MODE: ${{ vars.NOTEBOOKLM_MODE || 'persistent' }}
           NOTEBOOKLM_AUDIO_LANGUAGE: ${{ vars.NOTEBOOKLM_AUDIO_LANGUAGE || 'zh' }}
           POSTER_ENABLED: ${{ vars.POSTER_ENABLED || 'false' }}
+          POSTER_ENGINE: ${{ vars.POSTER_ENGINE || 'paper2poster' }}
           POSTER_API_KEY: ${{ secrets.POSTER_API_KEY }}
           POSTER_API_BASE: ${{ vars.POSTER_API_BASE || 'https://sub.umapis.com/v1' }}
           POSTER_MODEL: ${{ vars.POSTER_MODEL || 'gpt-image-2.5-sunburst' }}
