@@ -47,15 +47,16 @@ def _resolve_poster_proxies(config: Any) -> list[Optional[dict[str, str]]]:
     if explicit_proxy:
         proxies_list.append({"http": explicit_proxy, "https": explicit_proxy})
 
-    # 2. Direct connection (e.g. GitHub Actions cloud environment)
+    # 2. Direct connection (default for cloud / GitHub Actions)
     proxies_list.append(None)
 
-    # 3. Common local proxies (Clash Verge / V2Ray)
-    for local_port in ["7897", "7890"]:
-        local_p = f"http://127.0.0.1:{local_port}"
-        p_dict = {"http": local_p, "https": local_p}
-        if p_dict not in proxies_list:
-            proxies_list.append(p_dict)
+    # 3. Common local proxies only when running on local development machine (not GitHub Actions)
+    if "GITHUB_ACTIONS" not in os.environ:
+        for local_port in ["7897", "7890"]:
+            local_p = f"http://127.0.0.1:{local_port}"
+            p_dict = {"http": local_p, "https": local_p}
+            if p_dict not in proxies_list:
+                proxies_list.append(p_dict)
 
     return proxies_list
 

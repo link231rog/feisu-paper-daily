@@ -13,8 +13,7 @@ on:
   repository_dispatch:
     types: [paper-daily, paper_daily, ingest]
   schedule:
-    - cron: '15 1 * * *' # 09:15 Beijing Time (01:15 UTC): Full daily literature recommendation
-    - cron: '0 7,11 * * *' # 15:00, 19:00 Beijing Time (07:00, 11:00 UTC): Scheduled ingestion
+    - cron: '15 1 * * *' # 09:15 Beijing Time (01:15 UTC): Daily literature recommendation & ingestion (Once per day)
 
 permissions:
   contents: read
@@ -107,19 +106,14 @@ jobs:
             printf "%s\n" "$CUSTOM_CONFIG" > config/custom.yaml
           fi
 
-          # Schedule breakdown:
-          # - 09:00 Beijing Time (01:00 UTC): Full pipeline (ingest checked + daily literature recommendation)
-          # - 15:00 & 19:00 Beijing Time (07:00 & 11:00 UTC): Scheduled ingestion of user-checked papers
-          CURRENT_HOUR=$(date -u +%H)
+          # Schedule:
+          # - 09:15 Beijing Time (01:15 UTC): Daily single push (full pipeline)
           IS_INGEST_ONLY="${{ inputs.ingest_only || github.event.client_payload.ingest_only }}"
           if [ "$IS_INGEST_ONLY" = "true" ] || [ "${{ github.event.action }}" = "ingest" ]; then
             echo "Running in ingest-only mode (external dispatch/manual)"
             export INGEST_ONLY="true"
-          elif [ "$GITHUB_EVENT_NAME" = "schedule" ] && [ "$CURRENT_HOUR" -ge 5 ]; then
-            echo "Running scheduled ingestion at $(date) (UTC hour $CURRENT_HOUR, ingest-only)"
-            export INGEST_ONLY="true"
           else
-            echo "Running full pipeline at $(date) (UTC hour $CURRENT_HOUR)"
+            echo "Running daily full pipeline at $(date)"
           fi
 
           uv run paper_daily/main.py

@@ -1923,6 +1923,7 @@ def test_visual_framework_diagram_and_poster_generation(tmp_path, monkeypatch):
     p.inline_annotations = [{"quote": "Raw redundant quote", "comment": "Comment"}]
 
     created_blocks = []
+    patched_blocks = []
 
     def mock_call_api(method, path, params=None, data=None):
         if method == "GET" and path.endswith("/blocks"):
@@ -1930,7 +1931,10 @@ def test_visual_framework_diagram_and_poster_generation(tmp_path, monkeypatch):
         if method == "POST" and "children" in path:
             children = (data or {}).get("children") or []
             created_blocks.extend(children)
-            return {"children": [{"block_id": f"b_{i}"} for i in range(len(children))]}
+            return {"children": [{"block_id": f"b_{i}", "block_type": c.get("block_type")} for i, c in enumerate(children)]}
+        if method == "PATCH" and "replace_image" in (data or {}):
+            patched_blocks.append((path, data))
+            return {"msg": "success"}
         return {}
 
     monkeypatch.setattr(feishu, "_call_api", mock_call_api)
@@ -1938,10 +1942,10 @@ def test_visual_framework_diagram_and_poster_generation(tmp_path, monkeypatch):
 
     feishu.create_or_update_daily_report([p])
 
-    # Verify that an image block (block_type: 27) was mounted
+    # Verify that an image block (block_type: 27) was mounted and patched with token
     img_block = next((b for b in created_blocks if b.get("block_type") == 27), None)
     assert img_block is not None
-    assert img_block["image"]["token"] == "img_token_123"
+    assert any("replace_image" in data and data["replace_image"]["token"] == "img_token_123" for _, data in patched_blocks)
 
     # Verify that redundant inline_annotations and raw quotes were cleanly omitted
     has_inline_quote = any(

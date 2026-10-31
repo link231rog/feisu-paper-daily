@@ -833,6 +833,74 @@ class FeishuClient:
             return {"file_token": file_token, "width": w, "height": h}
         return None
 
+    def _upload_and_patch_docx_image(self, doc_id: str, block_id: str, image_path: str) -> Optional[str]:
+        """Uploads an image file to Feishu Drive under block_id and patches the block with replace_image."""
+        if self.dry_run or not image_path or not os.path.isfile(image_path) or not block_id:
+            return None
+        try:
+            import pymupdf
+            doc = pymupdf.open(image_path)
+            page = doc[0]
+            w, h = int(page.rect.width), int(page.rect.height)
+            doc.close()
+        except Exception:
+            w, h = 1024, 576
+
+        file_token: Optional[str] = None
+        if self._has_lark_cli:
+            cmd = [
+                "lark-cli", "docs", "+media-upload",
+                "--as", "bot",
+                "--doc-id", str(doc_id),
+                "--parent-node", str(block_id),
+                "--parent-type", "docx_image",
+                "--file", str(image_path),
+                "--format", "json",
+            ]
+            res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+            if res.returncode == 0 and res.stdout.strip():
+                try:
+                    res_json = json.loads(res.stdout)
+                    file_token = res_json.get("data", {}).get("file_token")
+                except Exception:
+                    pass
+
+        if not file_token and self.app_id and self.app_secret:
+            token = self._get_tenant_token()
+            upload_url = f"{FEISHU_BASE_URL}/drive/v1/medias/upload_all"
+            filename = os.path.basename(image_path)
+            try:
+                with open(image_path, "rb") as f_img:
+                    file_bytes = f_img.read()
+                data = {
+                    "file_name": filename,
+                    "parent_type": "docx_image",
+                    "parent_node": str(block_id),
+                    "size": len(file_bytes),
+                }
+                files = {"file": (filename, file_bytes, "image/png")}
+                auth_headers = {"Authorization": f"Bearer {token}"}
+                resp = requests.post(upload_url, headers=auth_headers, data=data, files=files, timeout=60)
+                if resp.status_code == 200:
+                    res_json = resp.json()
+                    if res_json.get("code") == 0:
+                        file_token = res_json.get("data", {}).get("file_token")
+            except Exception as exc:
+                logger.warning(f"Failed to upload docx image {image_path} to Feishu: {exc}")
+
+        if file_token:
+            try:
+                self._call_api(
+                    "PATCH",
+                    f"/docx/v1/documents/{doc_id}/blocks/{block_id}",
+                    data={"replace_image": {"token": str(file_token), "width": int(w), "height": int(h)}},
+                )
+                logger.info(f"Mounted visual framework image ({file_token}) in block {block_id}")
+                return str(file_token)
+            except Exception as exc:
+                logger.warning(f"Failed to patch docx image block {block_id}: {exc}")
+        return None
+
     def create_or_update_daily_report(
         self,
         papers: list[Paper],
@@ -943,11 +1011,29 @@ class FeishuClient:
             curr_idx = target_index
             for i in range(0, len(blocks_to_insert), batch_size):
                 chunk = blocks_to_insert[i : i + batch_size]
-                self._call_api(
+                payload_chunk = []
+                image_pending: list[tuple[int, str]] = []
+                for c_idx, b in enumerate(chunk):
+                    if b.get("block_type") == 27 and "_local_image_path" in b:
+                        local_p = b["_local_image_path"]
+                        image_pending.append((c_idx, local_p))
+                        payload_chunk.append({"block_type": 27, "image": {"token": ""}})
+                    else:
+                        payload_chunk.append(b)
+
+                res = self._call_api(
                     "POST",
                     f"/docx/v1/documents/{doc_id}/blocks/{doc_id}/children",
-                    data={"children": chunk, "index": curr_idx}
+                    data={"children": payload_chunk, "index": curr_idx}
                 )
+                created_children = (res.get("children") or []) if isinstance(res, dict) else []
+                for c_idx, local_p in image_pending:
+                    if c_idx < len(created_children):
+                        img_blk = created_children[c_idx]
+                        img_blk_id = img_blk.get("block_id")
+                        if img_blk_id and os.path.isfile(local_p):
+                            self._upload_and_patch_docx_image(doc_id, img_blk_id, local_p)
+
                 if curr_idx != -1:
                     curr_idx += len(chunk)
 
@@ -1083,18 +1169,12 @@ class FeishuClient:
             # Visual Framework Diagram / Poster mounting
             has_visual_poster = False
             if getattr(p, "poster_path", None) and os.path.isfile(str(p.poster_path)):
-                uploaded = self.upload_image_to_drive(doc_id, str(p.poster_path))
-                if uploaded and uploaded.get("file_token"):
-                    has_visual_poster = True
-                    p.poster_url = str(uploaded["file_token"])
-                    paper_blocks.append({
-                        "block_type": 27,
-                        "image": {
-                            "token": str(uploaded["file_token"]),
-                            "width": int(uploaded.get("width", 1024)),
-                            "height": int(uploaded.get("height", 576)),
-                        }
-                    })
+                has_visual_poster = True
+                paper_blocks.append({
+                    "block_type": 27,
+                    "image": {"token": ""},
+                    "_local_image_path": str(p.poster_path),
+                })
 
             # Critical-Paper-Digest or fallback TL;DR
             if getattr(p, "critical_digest", None):
