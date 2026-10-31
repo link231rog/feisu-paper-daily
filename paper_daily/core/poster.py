@@ -173,20 +173,76 @@ def generate_diagram_with_gpt_image(
     return None
 
 
+def _resolve_arxiv_id(paper: Paper) -> Optional[str]:
+    """Resolves clean arXiv ID from paper.arxiv_id or URL patterns."""
+    if paper.arxiv_id and re.match(r"^\d{4}\.\d{4,5}(v\d+)?$", paper.arxiv_id.strip()):
+        return paper.arxiv_id.strip().split("v")[0]
+
+    urls_to_check = [paper.url or "", paper.pdf_url or ""]
+    for u in urls_to_check:
+        if not u:
+            continue
+        m = re.search(r"(?:arxiv\.org/(?:abs|pdf|html)|huggingface\.co/papers)/(\d{4}\.\d{4,5})(?:v\d+)?", u)
+        if m:
+            return m.group(1)
+    return None
+
+
 def extract_source_method_figure(paper: Paper, output_dir: Path | str = "data/posters") -> Optional[Path]:
     """Attempts to extract the author's original Method/Pipeline figure from arXiv source."""
-    if not paper.arxiv_id:
+    arxiv_id = _resolve_arxiv_id(paper)
+    if not arxiv_id:
         return None
 
     out_path = Path(output_dir)
     out_path.mkdir(parents=True, exist_ok=True)
-    slug = _sanitize_slug(paper.arxiv_id)
+    slug = _sanitize_slug(arxiv_id)
     dest_file = out_path / f"{slug}_method_fig.png"
 
     if dest_file.is_file() and dest_file.stat().st_size > 5000:
         return dest_file
 
-    # Check for installed paper2assets source_figures script
+    # 1. Native lightweight tar.gz extraction from arXiv source (runs anywhere without extra skills/scripts)
+    try:
+        import io
+        import tarfile
+
+        src_url = f"https://arxiv.org/src/{arxiv_id}"
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        r_src = requests.get(src_url, headers=headers, timeout=25)
+        if r_src.status_code == 200 and len(r_src.content) > 1000:
+            with tarfile.open(fileobj=io.BytesIO(r_src.content)) as tar:
+                members = [
+                    m for m in tar.getmembers()
+                    if m.isfile() and any(m.name.lower().endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".webp"])
+                ]
+                if members:
+                    # Score images by architecture/framework keyword hints
+                    def _score_member(m: Any) -> tuple[int, int]:
+                        n = m.name.lower()
+                        score = 0
+                        for kw in ("system", "diagram", "framework", "architecture", "overview", "pipeline", "model", "method"):
+                            if kw in n:
+                                score += 10
+                        if "fig1" in n or "figure1" in n or "fig_1" in n:
+                            score += 8
+                        elif "fig" in n or "figure" in n:
+                            score += 3
+                        return (score, m.size)
+
+                    members.sort(key=_score_member, reverse=True)
+                    best_m = members[0]
+                    # Only accept if it has reasonable size (> 10KB)
+                    if best_m.size > 10000:
+                        extracted = tar.extractfile(best_m)
+                        if extracted:
+                            dest_file.write_bytes(extracted.read())
+                            logger.info(f"Extracted arXiv author method diagram '{best_m.name}' to: {dest_file}")
+                            return dest_file
+    except Exception as src_err:
+        logger.debug(f"Native arXiv source figure extraction failed for {arxiv_id}: {src_err}")
+
+    # 2. Check for installed paper2assets source_figures script as fallback
     candidate_scripts = [
         Path.home() / ".claude/skills/paper2assets/scripts/source_figures.py",
         Path.home() / ".agents/skills/paper2assets/scripts/source_figures.py",
@@ -204,7 +260,7 @@ def extract_source_method_figure(paper: Paper, output_dir: Path | str = "data/po
             sys.executable,
             str(script_path),
             "--arxiv",
-            str(paper.arxiv_id),
+            str(arxiv_id),
             "--outdir",
             tmp_dir,
         ]
