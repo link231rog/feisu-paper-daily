@@ -44,6 +44,7 @@ email:
   smtp_server: null
   smtp_port: 465
   sender_password: null
+  template_path: "templates/daily_report.md" # Optional custom markdown template path for daily report & email
 
 wechat:
   enabled: false # Create drafts in WeChat Official Account draft box; never auto-publish

@@ -2086,6 +2086,77 @@ def test_academic_web_translator_and_latex_preservation(monkeypatch):
     assert zh_orig == "Completely offline fallback."
 
 
+def test_markdown_daily_report_template_and_customization(tmp_path):
+    """Verify Markdown-first daily report engine, user-customizable template, and fallback."""
+    from paper_daily.channels.daily_report import (
+        build_daily_report,
+        markdown_to_email_html,
+        render_report_markdown,
+    )
+    from paper_daily.protocol import Paper
+
+    p = Paper(
+        source="arxiv",
+        title="Scalable Attention Routing",
+        authors=["Alice", "Bob"],
+        abstract="We present scalable attention routing.",
+        url="https://arxiv.org/abs/2610.99999",
+        arxiv_id="2610.99999",
+    )
+    p.critical_digest = {
+        "delta": "全新稀疏注意力机制",
+        "qualitative_grades": {
+            "method_reusability": {"grade": "High"},
+            "claim_support": {"grade": "High"},
+            "baseline_fairness": {"grade": "High"},
+        },
+        "mechanism": {"pipeline": "Input -> Router -> Attention", "core_formula": "A = softmax(QK^T)"},
+        "evidence_and_cost": {"metrics": "Speedup 2.5x"},
+        "action_or_check": "建议验证长上下文表现",
+    }
+    p.review_badge = "[强烈推荐复用]"
+
+    # 1. Test default workspace template (templates/daily_report.md)
+    rep_default = build_daily_report([p])
+    assert "论文研究日报" in rep_default.title
+    assert "Scalable Attention Routing" in rep_default.markdown
+    assert "全新稀疏注意力机制" in rep_default.markdown
+    assert "强烈推荐复用" in rep_default.markdown
+    assert "<h1" in rep_default.html
+    assert "style=" in rep_default.html  # Verify premailer inlined CSS
+
+    # 2. Test user-customized template
+    custom_tmpl = tmp_path / "my_custom_report.md"
+    custom_tmpl.write_text(
+        "# [Custom Header] {{ title }}\n\n"
+        "Total Papers: {{ papers|length }}\n\n"
+        "{% for p in papers %}\n"
+        "## {{ loop.index }}. {{ p.title }}\n"
+        "- Link: [Read Paper]({{ p.url }})\n"
+        "- My Review: {{ p.review_badge }}\n"
+        "- Mechanism: {{ p.pipeline }}\n"
+        "{% endfor %}\n\n"
+        "Footer Note: Custom Signature\n",
+        encoding="utf-8",
+    )
+
+    rep_custom = build_daily_report([p], template_path=custom_tmpl)
+    assert "[Custom Header]" in rep_custom.markdown
+    assert "Total Papers: 1" in rep_custom.markdown
+    assert "Footer Note: Custom Signature" in rep_custom.markdown
+    assert "[Custom Header]" in rep_custom.html
+    assert "Custom Signature" in rep_custom.html
+
+    # 3. Test safe fallback when custom template has syntax error
+    broken_tmpl = tmp_path / "broken.md"
+    broken_tmpl.write_text("{% for p in papers %} Missing endfor tag!", encoding="utf-8")
+    rep_broken = build_daily_report([p], template_path=broken_tmpl)
+    # Should safely fall back to default template without crashing
+    assert "Scalable Attention Routing" in rep_broken.markdown
+    assert "论文研究日报" in rep_broken.title
+    assert rep_broken.html is not None
+
+
 
 
 

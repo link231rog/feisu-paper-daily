@@ -36,10 +36,12 @@ paper_daily/
 │   └── stages/            # 独立执行阶段 (Ingest, Fetch, Rerank, Enrich, Digest, Delivery)
 ├── channels/              # 多渠道排版、音频合成与推送适配器
 │   ├── audio.py           # MP3 双人播客（NotebookLM 风格）/ 学术早报 / 微信 60s 语音合成
-│   ├── daily_report.py    # 邮件与通用 HTML 日报构建器
+│   ├── daily_report.py    # Markdown 驱动的统一学术日报引擎与邮件 HTML 内联样式渲染器
 │   ├── feishu.py          # 飞书云文档/知识库日报、全双语精读笔记与顶部音频块挂载
 │   ├── telegram.py        # Telegram HTML 消息分片推送与原生 sendAudio 音频播放器
 │   └── wechat.py          # 微信公众号三模式推文、内联 CSS、外链转脚注与语音/封面素材上传
+templates/                 # 用户可自由编辑的日报/邮件 Markdown 模板
+└── daily_report.md        # 统一学术日报模板 (支持 Jinja2 插槽、图文卡片与自定义排版)
 ├── library/               # 跨平台文献库同步、批注还原与初始化向导
 │   ├── bridge.py          # paper-library 命令行检索、批注还原与混合排序
 │   ├── console.py         # 飞书 / Obsidian / Notion / Zotero 控制台指令与自定义 Skill 解析

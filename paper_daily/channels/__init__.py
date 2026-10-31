@@ -10,7 +10,12 @@ from .audio import (
     generate_daily_audio_bundle,
     synthesize_segments_to_mp3,
 )
-from .daily_report import DailyReport, build_daily_report
+from .daily_report import (
+    DailyReport,
+    build_daily_report,
+    markdown_to_email_html,
+    render_report_markdown,
+)
 from .feishu import FeishuClient, normalize_reading_status
 from .notebooklm import NotebookLMBundle, group_papers_by_topic, run_notebooklm_pipeline
 from .telegram import format_telegram_messages, send_telegram_audio, send_telegram_daily_report

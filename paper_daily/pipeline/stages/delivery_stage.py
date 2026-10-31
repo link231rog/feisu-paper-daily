@@ -137,7 +137,12 @@ class DeliveryStage(PipelineStage):
                     logger.info(f"Daily report email already sent today ({today_str}); skipping.")
                     delivered = True
                 else:
-                    report = build_daily_report(context.reranked_papers, context.question_briefs, trending_items=context.trending_items)
+                    report = build_daily_report(
+                        context.reranked_papers,
+                        context.question_briefs,
+                        trending_items=context.trending_items,
+                        config=context.config,
+                    )
                     logger.info(f"Sending daily report email to {receiver_val} via {email_cfg.get('smtp_server', 'smtp.qq.com')}...")
                     send_email(
                         context.config,

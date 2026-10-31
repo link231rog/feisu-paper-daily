@@ -34,6 +34,7 @@ email:
   smtp_server: ${oc.env:SMTP_SERVER,smtp.qq.com}
   smtp_port: ${oc.env:SMTP_PORT,465}
   sender_password: ${oc.env:SENDER_PASSWORD,null}
+  template_path: ${oc.env:EMAIL_TEMPLATE_PATH,"templates/daily_report.md"}
 
 wechat:
   enabled: ${oc.env:WECHAT_ENABLED,false}
