@@ -113,6 +113,7 @@ class DeliveryStage(PipelineStage):
                     question_briefs=context.question_briefs,
                     corpus=context.corpus,
                     audio_path=feishu_audio_paths if feishu_audio_paths else None,
+                    force_today=force_today,
                 )
                 logger.info(f"Feishu daily report updated successfully: {doc_url}")
                 self.executor.paper_store.mark_channel_delivered("feishu", today_str)

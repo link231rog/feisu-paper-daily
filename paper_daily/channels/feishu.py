@@ -841,6 +841,7 @@ class FeishuClient:
         question_briefs: Optional[list[dict]] = None,
         corpus: Optional[list[CorpusPaper]] = None,
         audio_path: Optional[str] = None,
+        force_today: bool = False,
     ) -> str:
         """Publishes one standalone, date-scoped daily report in Feishu Docx."""
         if self.dry_run:
@@ -915,6 +916,25 @@ class FeishuClient:
             start_i = root_children.index(briefs_header_id)
             end_i = root_children.index(trending_header_id) if trending_header_id and trending_header_id in root_children else len(root_children)
             old_brief_block_ids = root_children[start_i:end_i]
+
+        old_paper_block_ids: list[str] = []
+        if force_today and paper_header_id and paper_header_id in root_children:
+            start_p = root_children.index(paper_header_id)
+            end_p = len(root_children)
+            if briefs_header_id and briefs_header_id in root_children:
+                end_p = root_children.index(briefs_header_id)
+            elif trending_header_id and trending_header_id in root_children:
+                end_p = root_children.index(trending_header_id)
+            old_paper_block_ids = root_children[start_p:end_p]
+
+        if old_paper_block_ids:
+            logger.info(f"force_today enabled: replacing {len(old_paper_block_ids)} existing paper blocks in document {doc_id}...")
+            self.delete_document_blocks(doc_id, old_paper_block_ids)
+            root_children = self._get_root_children(doc_id)
+            existing_urls.clear()
+            existing_titles.clear()
+            paper_header_id = None
+            existing_card_count = 0
 
         def insert_blocks(blocks_to_insert: list[dict[str, Any]], target_index: int = -1) -> None:
             if not blocks_to_insert:
