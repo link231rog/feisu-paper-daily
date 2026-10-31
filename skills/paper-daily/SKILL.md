@@ -67,6 +67,12 @@ Ask the user in chat (or using `question` / `AskUserQuestion` tool):
      - `POSTER_API_KEY` (如 `sk-...`)
      - `POSTER_API_BASE` (默认 `https://sub.umapis.com/v1`)
      - `POSTER_MODEL` (默认 `gpt-image-2.5-sunburst`)
+   - **Academic Translation (可选学术长文双语翻译)**:
+     - `TRANSLATION_ENABLED` (`true` / `false`，默认 `true`)
+     - `TRANSLATION_ENGINE` (`web` 免密极速 Bing/Google 双轨，默认推荐 | `bing` | `google` | `llm`)
+     - `TRANSLATION_CONCURRENCY` (默认 `5` 并发线程)
+     - `TRANSLATION_LAYOUT` (`quote` 默认引言排版 `> 译文` | `inline` 行内紧随)
+     - 若切换为 `llm` 大模型模式可选: `TRANSLATION_API_BASE`, `TRANSLATION_API_KEY`, `TRANSLATION_MODEL`
 3. **Initial Research Tags & Questions**:
    - Tags (e.g. `LLM Agents, Memory, Reinforcement Learning`)
    - 1~2 core questions (e.g. `How to compress episodic memory with bounded tokens?`)

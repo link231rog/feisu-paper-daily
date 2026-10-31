@@ -67,8 +67,10 @@ jobs:
           DISPATCH_PAYLOAD: ${{ toJson(github.event.client_payload) }}
           SEMANTIC_SCHOLAR_API_KEY: ${{ secrets.SEMANTIC_SCHOLAR_API_KEY }}
           TRANSLATION_ENABLED: ${{ vars.TRANSLATION_ENABLED || 'true' }}
-          TRANSLATION_API_BASE: ${{ vars.TRANSLATION_API_BASE || 'https://openrouter.ai/api/v1' }}
           TRANSLATION_ENGINE: ${{ vars.TRANSLATION_ENGINE || 'web' }}
+          TRANSLATION_CONCURRENCY: ${{ vars.TRANSLATION_CONCURRENCY || '5' }}
+          TRANSLATION_LAYOUT: ${{ vars.TRANSLATION_LAYOUT || 'quote' }}
+          TRANSLATION_API_BASE: ${{ vars.TRANSLATION_API_BASE || 'https://openrouter.ai/api/v1' }}
           TRANSLATION_API_KEY: ${{ secrets.TRANSLATION_API_KEY }}
           TRANSLATION_BACKUP_API_KEY: ${{ secrets.TRANSLATION_BACKUP_API_KEY }}
           TRANSLATION_MODEL: ${{ vars.TRANSLATION_MODEL || 'nvidia/nemotron-3-ultra-550b-a55b:free' }}

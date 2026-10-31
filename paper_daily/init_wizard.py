@@ -313,6 +313,26 @@ CREDENTIAL_SPECS: dict[str, list[dict[str, Any]]] = {
             "required": True,
         },
     ],
+    "translation": [
+        {
+            "env": "TRANSLATION_ENABLED",
+            "prompt": "是否开启长文全文中英双语翻译 (true/false)",
+            "default": "true",
+            "required": False,
+        },
+        {
+            "env": "TRANSLATION_ENGINE",
+            "prompt": "翻译引擎模式 (web: 免密极速 Bing/Google 双轨 / llm: 调用大模型)",
+            "default": "web",
+            "required": False,
+        },
+        {
+            "env": "TRANSLATION_CONCURRENCY",
+            "prompt": "翻译并发线程数",
+            "default": "5",
+            "required": False,
+        },
+    ],
 }
 
 

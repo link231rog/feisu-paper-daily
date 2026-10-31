@@ -179,7 +179,24 @@ audio:
   upload_wechat_voice: true      # 生成 60 秒浓缩版并上传微信公众号语音素材库
 ```
 
-### 5. 运行测试
+### 5. 可选学术长文双语翻译与视觉框架图配置
+
+在 `config/custom.yaml` 或 `.env` 中按需定制翻译引擎与视觉架构图：
+
+```yaml
+translation:
+  enabled: true                  # 开启精读入库长文全文中英双语对照
+  engine: "web"                  # "web" (默认推荐: 免密极速 Bing/Google 双轨) | "bing" | "google" | "llm"
+  concurrency: 5                 # 并发翻译线程数 (整篇长文 10 秒左右完成，公式无损)
+  layout: "quote"                # "quote" (引言排版 `> 译文`) | "inline" (段落下紧随)
+
+poster:
+  enabled: false                 # 开启学术框架全景图生成
+  engine: "gpt-image"            # "gpt-image" (调用 sub.umapis.com) | "source_figures"
+  model: "gpt-image-2.5-sunburst"
+```
+
+### 6. 运行测试
 
 ```bash
 uv run pytest tests/test_smoke.py
