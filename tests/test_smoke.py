@@ -1965,6 +1965,93 @@ def test_visual_framework_diagram_and_poster_generation(tmp_path, monkeypatch):
     assert "file://" in res["file_uri"]
 
 
+def test_academic_web_translator_and_latex_preservation(monkeypatch):
+    """Verify free web translation engine with LaTeX formula preservation, concurrency, and error fallback."""
+    from paper_daily.core.translator import (
+        AcademicTranslator,
+        protect_latex_and_tokens,
+        restore_latex_and_tokens,
+    )
+
+    # 1. Formula & token protection and restoration
+    raw_md = (
+        "The objective is defined as $\\mathcal{L} = \\alpha \\mathcal{L}_1 + \\beta \\mathcal{L}_2$, "
+        "where `alpha = 0.5` is set. Furthermore: $$\\sum_{i=1}^n x_i = 1$$ holds."
+    )
+    protected, placeholders = protect_latex_and_tokens(raw_md)
+    assert "XINLMATH" in protected
+    assert "XCODESPAN" in protected
+    assert "XDISPMATH" in protected
+    restored = restore_latex_and_tokens(protected, placeholders)
+    assert restored == raw_md
+
+    # 2. Mock web translation requests (Bing & Google)
+    class MockWebResp:
+        def __init__(self, status_code, json_data=None, text=""):
+            self.status_code = status_code
+            self._json = json_data
+            self.text = text
+
+        def json(self):
+            return self._json
+
+    def mock_get(url, **kwargs):
+        if "cn.bing.com/Translator" in url:
+            html = 'IG:"TEST_IG_123" data-iid="translator.999" params_AbusePreventionHelper = [1793,"test_token",3600000];'
+            return MockWebResp(200, text=html)
+        if "translate.google.com" in url:
+            params = kwargs.get("params", {})
+            q = params.get("q", "")
+            return MockWebResp(200, json_data=[[[f"谷歌译文: {q}", q, None, None]]])
+        return MockWebResp(404)
+
+    def mock_post(url, **kwargs):
+        if "ttranslatev3" in url:
+            data = kwargs.get("data", {})
+            q = data.get("text", "")
+            return MockWebResp(200, json_data=[{"translations": [{"text": f"必应译文: {q}"}]}])
+        return MockWebResp(404)
+
+    monkeypatch.setattr("requests.Session.get", lambda self, url, **kw: mock_get(url, **kw))
+    monkeypatch.setattr("requests.Session.post", lambda self, url, **kw: mock_post(url, **kw))
+
+    translator = AcademicTranslator({"enabled": True, "engine": "web", "concurrency": 3})
+
+    # Test single paragraph translation
+    zh = translator.translate_paragraph("Diffusion models achieve strong empirical results under $\\lambda > 0$.")
+    assert "必应译文" in zh
+    assert "$\\lambda > 0$" in zh
+
+    # Test full text bilingual markdown generation
+    doc = (
+        "# 1. Introduction\n\n"
+        "We propose a novel framework for scalable multimodal generation.\n\n"
+        "$$\\min_\\theta \\mathbb{E}[\\|f_\\theta(x) - y\\|^2]$$\n\n"
+        "Our method demonstrates superior performance over strong baselines."
+    )
+    bilingual = translator.make_bilingual_markdown(doc)
+    assert "# 1. Introduction" in bilingual
+    assert "$$\\min_\\theta" in bilingual
+    assert "> 必应译文" in bilingual
+    assert "Our method demonstrates" in bilingual
+
+    # 3. Test fallback to Google when Bing fails
+    def mock_post_fail(url, **kwargs):
+        return MockWebResp(500)
+
+    monkeypatch.setattr("requests.Session.post", lambda self, url, **kw: mock_post_fail(url, **kw))
+    zh_google = translator.translate_paragraph("Testing fallback to Google.")
+    assert "谷歌译文" in zh_google
+
+    # 4. Test total fallback to original text when all engines fail
+    def mock_get_fail(url, **kwargs):
+        return MockWebResp(500)
+
+    monkeypatch.setattr("requests.Session.get", lambda self, url, **kw: mock_get_fail(url, **kw))
+    zh_orig = translator.translate_paragraph("Completely offline fallback.")
+    assert zh_orig == "Completely offline fallback."
+
+
 
 
 

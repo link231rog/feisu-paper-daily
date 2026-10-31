@@ -118,6 +118,13 @@ poster:
   output_dir: "data/posters"
   attach_feishu: true # Mount visual framework diagram in Feishu daily report
 
+translation:
+  enabled: true # Enable bilingual translation for ingested paper full text
+  engine: "web" # "web" (free Bing/Google auto-fallback, no API key needed) | "bing" | "google" | "llm"
+  concurrency: 5 # Concurrent translation requests
+  layout: "quote" # "quote" (> 译文) | "inline"
+  batch_size: 5
+
 llm:
   api:
     key: null # API Key of your LLM API. Example: sk-xxx

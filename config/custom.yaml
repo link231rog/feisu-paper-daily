@@ -107,6 +107,8 @@ llm:
 
 translation:
   enabled: ${oc.env:TRANSLATION_ENABLED,true}
+  engine: ${oc.env:TRANSLATION_ENGINE,web}
+  concurrency: ${oc.env:TRANSLATION_CONCURRENCY,5}
   api_base: ${oc.env:TRANSLATION_API_BASE,https://openrouter.ai/api/v1}
   api_key: ${oc.env:TRANSLATION_API_KEY,null}
   backup_api_key: ${oc.env:TRANSLATION_BACKUP_API_KEY,null}

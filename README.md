@@ -28,7 +28,7 @@ paper_daily/
 │   ├── poster.py          # 学术框架图与海报生成 (GPT-Image 生图 / 原文 Method 图提取 / Paper2Poster)
 │   ├── research.py        # DeepResearch 查询规划、多跳引文追踪与问题证据综述
 │   ├── textutil.py        # 鲁棒 JSON 解析与文本工具
-│   └── translator.py      # 学术摘要中英双语翻译
+│   └── translator.py      # 学术长文中英双语翻译 (免密高速 Bing/Google 双轨 + LaTeX 公式保护)
 ├── pipeline/              # 模块化 DAG 流水线引擎与有序容灾降级链 (方案 B)
 │   ├── base.py            # Backend, FallbackChain, PipelineContext, PipelineStage 核心抽象
 │   ├── engine.py          # 6 阶段流水线调度引擎与生命周期钩子
