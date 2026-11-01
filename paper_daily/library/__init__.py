@@ -10,6 +10,7 @@ from .console import (  # noqa: F401
     parse_console_text,
 )
 from .finder import (  # noqa: F401
+    extract_figures_for_paper_direct,
     find_papers,
     format_found_papers_markdown,
     generate_poster_for_paper_direct,

@@ -166,6 +166,14 @@ When the Coding Agent only needs a visual pipeline/framework diagram for a paper
 uv run paper-library poster "<url_or_arxiv_id>" [--json]
 ```
 Returns local image path and `file://` URI for immediate visual inspection in terminal or markdown preview.
+
+### Step 4: VLM Figure & Table Quality Evaluation (Exemplar Extraction)
+When the Coding Agent wants to discover, rate, and extract high-quality architecture diagrams or benchmark comparison tables from a paper:
+```bash
+uv run paper-library figures "<url_or_arxiv_id>" [--min-score 4.0] [--json]
+```
+Extracts candidate graphics, scores them via multimodal VLM (clarity, information density, visual appeal, 1.0-5.0 scale), and saves exemplar figures (>= 4.0/5.0) to `data/exemplars/<arxiv_id>/` with metadata manifest.
+
 This command:
 1. Resolves full text via ordered fallback chains (`arXiv HTML` -> `PyMuPDF` -> `Agent-Reach` -> `Trafilatura`).
 2. Generates structured 5-section reading notes (core summary, motivation, method, experiments, takeaways) and detail annotations.

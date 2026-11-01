@@ -13,6 +13,12 @@ from .digest import (
     rerank_by_composite_score,
     run_critical_paper_digest,
 )
+from .figures import (
+    evaluate_figure_with_vlm,
+    extract_and_evaluate_paper_figures,
+    extract_candidate_figures,
+    format_exemplars_markdown,
+)
 from .interest import build_corpus_from_topics, get_interest_corpus, taste_corpus
 from .llm import LLMRouter
 from .paper_store import PaperStore
@@ -42,12 +48,16 @@ __all__ = [
     "compute_review_confidence",
     "contains_quote",
     "enrich_papers_with_baselines",
+    "evaluate_figure_with_vlm",
+    "extract_and_evaluate_paper_figures",
     "extract_baselines",
+    "extract_candidate_figures",
     "extract_json",
     "fetch_ar5iv_targeted_sections",
     "fetch_arxiv_targeted_sections",
     "format_digest_feishu_elements",
     "format_digest_html",
+    "format_exemplars_markdown",
     "format_rubric_summary_line",
     "generate_paper_poster",
     "get_interest_corpus",

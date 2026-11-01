@@ -92,6 +92,23 @@ class DigestStage(PipelineStage):
                 except Exception as exc:
                     logger.warning(f"Failed to generate framework diagram for '{p.title[:40]}': {exc}")
 
+        # 5. VLM-powered Figure & Table Quality Evaluation & Exemplar Extraction (Option B)
+        figures_cfg = context.config.get("figures") or {}
+        fig_enabled = str(figures_cfg.get("enabled", True)).lower() in ("true", "1") or os.environ.get("FIGURES_ENABLED", "").lower() in ("true", "1")
+        if fig_enabled:
+            from ...core.figures import extract_and_evaluate_paper_figures
+
+            max_eval = int(figures_cfg.get("max_papers_to_evaluate", 3))
+            target_papers = (context.deep_read_papers or context.reranked_papers)[:max_eval]
+            logger.info(f"Evaluating and extracting exemplar figures via VLM for top {len(target_papers)} papers...")
+            for p in target_papers:
+                try:
+                    exemplars = extract_and_evaluate_paper_figures(p, context.config)
+                    if exemplars:
+                        logger.info(f"Extracted {len(exemplars)} exemplar figures for '{p.title[:35]}'")
+                except Exception as fig_err:
+                    logger.warning(f"Figure evaluation error for '{p.title[:35]}': {fig_err}")
+
         self.executor.write_trace(context.ranked_papers, context.reranked_papers, context.funnel)
 
         logger.info(f"=== Recommended Papers ({len(context.reranked_papers)} papers) ===")

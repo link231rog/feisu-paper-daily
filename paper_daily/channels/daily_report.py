@@ -180,6 +180,15 @@ DEFAULT_MARKDOWN_TEMPLATE = """# {{ title }}
 *▲ 方法架构与核心流程图 (Framework / Pipeline Overview)*
 {% endif %}
 
+{% if paper.exemplar_figures %}
+{% for fig in paper.exemplar_figures %}
+{% if fig.cid %}
+![{{ fig.caption }}](cid:{{ fig.cid }})
+*▲ [{{ fig.category_zh }}] {{ fig.caption }} (VLM 评分: {{ fig.overall_score }}/5.0)*
+{% endif %}
+{% endfor %}
+{% endif %}
+
 {% if paper.has_digest %}
 > **[审稿评级]**：**{{ paper.review_badge }}** *(复用度: {{ paper.r_grade }} | 证据支撑: {{ paper.s_grade }} | 基线公平: {{ paper.f_grade }})*
 {% if paper.rubric_summary %}> **[四维评分]**：{{ paper.rubric_summary }}{% endif %}
@@ -364,6 +373,27 @@ def _prepare_view_models(
         mech = cd.get("mechanism") or {}
         ev = cd.get("evidence_and_cost") or {}
 
+        # Exemplar figures (Option B)
+        exemplars = getattr(p, "exemplar_figures", None) or []
+        exemplar_views: list[dict[str, Any]] = []
+        for fig_idx, fig in enumerate(exemplars, 1):
+            fig_path = fig.get("file_path")
+            fig_cid = None
+            if include_posters and fig_path and Path(fig_path).is_file():
+                fig_slug = re.sub(r"[^a-zA-Z0-9_]", "_", str(getattr(p, "arxiv_id", "") or f"paper_{index}")).strip("_")
+                fig_cid = f"exemplar_{index}_{fig_idx}_{fig_slug}"
+                inline_images[fig_cid] = str(fig_path)
+            exemplar_views.append({
+                "category": fig.get("category", "other"),
+                "category_zh": fig.get("category_zh", "核心图表"),
+                "caption": fig.get("caption", ""),
+                "overall_score": fig.get("overall_score", 4.0),
+                "clarity_score": fig.get("clarity_score", 4),
+                "cid": fig_cid,
+                "file_path": fig_path,
+                "strengths": fig.get("strengths", []),
+            })
+
         p_view: dict[str, Any] = {
             "index": index,
             "title": _text(p.title, 500),
@@ -375,6 +405,7 @@ def _prepare_view_models(
             "tier_badge": tier_badge,
             "poster_cid": poster_cid,
             "poster_path": str(poster_path) if poster_path else None,
+            "exemplar_figures": exemplar_views,
             "has_digest": bool(cd),
             "review_badge": p.review_badge or "[仅作了解]",
             "r_grade": grades.get("method_reusability", {}).get("grade", "N/A"),

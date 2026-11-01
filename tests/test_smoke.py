@@ -2165,6 +2165,136 @@ def test_markdown_daily_report_template_and_customization(tmp_path):
     assert rep_broken.html is not None
 
 
+def test_vlm_figure_quality_evaluation_and_exemplar_extraction(tmp_path, monkeypatch):
+    """Verify VLM-powered figure extraction, multimodal quality scoring, manifest saving, and report integration (Option B)."""
+    import io
+    import tarfile
+    from paper_daily.core.figures import (
+        evaluate_figure_with_vlm,
+        extract_and_evaluate_paper_figures,
+        extract_candidate_figures,
+        format_exemplars_markdown,
+    )
+    from paper_daily.library.finder import extract_figures_for_paper_direct
+    from paper_daily.protocol import Paper
+
+    # 1. Prepare a mock tar.gz containing an architecture diagram and an ablation plot
+    dummy_png_bytes = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x01\x90\x00\x00\x01\x00\x08\x06\x00\x00\x00\x1f\x15c4" + (b"\x00" * 15000)
+    tar_buf = io.BytesIO()
+    with tarfile.open(fileobj=tar_buf, mode="w:gz") as tar:
+        tinfo1 = tarfile.TarInfo(name="model_framework_diagram.png")
+        tinfo1.size = len(dummy_png_bytes)
+        tar.addfile(tinfo1, io.BytesIO(dummy_png_bytes))
+
+        dummy_png2 = dummy_png_bytes + b"\x01"
+        tinfo2 = tarfile.TarInfo(name="main_results_table.png")
+        tinfo2.size = len(dummy_png2)
+        tar.addfile(tinfo2, io.BytesIO(dummy_png2))
+
+        tinfo_tiny = tarfile.TarInfo(name="icon_small.png")
+        tinfo_tiny.size = 200
+        tar.addfile(tinfo_tiny, io.BytesIO(b"\x00" * 200))
+    tar_bytes = tar_buf.getvalue()
+
+    class MockResp:
+        def __init__(self, content, status_code=200):
+            self.content = content
+            self.status_code = status_code
+
+    # Mock arXiv source download
+    def mock_get(url, **kwargs):
+        if "arxiv.org/src" in url:
+            return MockResp(tar_bytes)
+        return MockResp(b"", 404)
+
+    monkeypatch.setattr("requests.get", mock_get)
+
+    p = Paper(
+        source="arxiv",
+        title="Reasoning Agent with World Model Planning",
+        authors=["Alice", "Bob"],
+        abstract="Novel decision model framework.",
+        url="https://arxiv.org/abs/2601.99999",
+        arxiv_id="2601.99999",
+    )
+
+    # Test candidate figure extraction
+    candidates = extract_candidate_figures(p, temp_dir=tmp_path / "cands")
+    assert len(candidates) == 2  # icon_small should be filtered out
+    names = [name for _, name in candidates]
+    assert any("framework" in n for n in names)
+    assert any("results" in n for n in names)
+
+    # 2. Mock VLM evaluation response
+    class MockVLMResp:
+        def __init__(self, payload, status_code=200):
+            self._payload = payload
+            self.status_code = status_code
+
+        def json(self):
+            return self._payload
+
+    def mock_post(url, **kwargs):
+        if "chat/completions" in url:
+            json_body = kwargs.get("json", {})
+            img_desc = "framework"
+            msg = {
+                "role": "assistant",
+                "content": (
+                    '{\n'
+                    '  "category": "architecture",\n'
+                    '  "clarity_score": 5,\n'
+                    '  "information_density": 5,\n'
+                    '  "visual_appeal": 4,\n'
+                    '  "overall_score": 4.6,\n'
+                    '  "caption": "世界模型与规划动作双阶段决策架构图",\n'
+                    '  "strengths": ["模块划分清晰", "流程流向直观"],\n'
+                    '  "is_exemplar": true\n'
+                    '}'
+                ),
+            }
+            return MockVLMResp({"choices": [{"message": msg}]})
+        return MockVLMResp({}, 404)
+
+    monkeypatch.setattr("requests.post", mock_post)
+    monkeypatch.setenv("OPENAI_API_KEY", "test_key_123")
+
+    # Test evaluate_figure_with_vlm
+    ev = evaluate_figure_with_vlm(candidates[0][0], p, config={})
+    assert ev["category"] == "architecture"
+    assert ev["category_zh"] == "系统架构/流程图"
+    assert ev["overall_score"] == 4.6
+    assert ev["is_exemplar"] is True
+    assert "双阶段" in ev["caption"]
+
+    # 3. Test extract_and_evaluate_paper_figures end-to-end
+    out_exemplars_dir = tmp_path / "exemplars"
+    res_figures = extract_and_evaluate_paper_figures(
+        p,
+        config={},
+        min_score=4.0,
+        max_candidates=3,
+        max_selected=2,
+        output_dir=out_exemplars_dir,
+    )
+    assert len(res_figures) >= 1
+    assert p.exemplar_figures is not None
+    assert (out_exemplars_dir / "2601_99999" / "exemplars_manifest.json").is_file()
+
+    # 4. Test format_exemplars_markdown
+    md = format_exemplars_markdown(res_figures)
+    assert "优质图表与基准摘录" in md
+    assert "系统架构/流程图" in md
+    assert "4.6/5.0" in md
+
+    # 5. Test CLI finder integration
+    direct_res = extract_figures_for_paper_direct("2601.99999", min_score=4.0, config={})
+    assert direct_res["status"] == "success"
+    assert direct_res["count"] >= 1
+    assert "figures" in direct_res
+
+
+
 
 
 

@@ -1450,6 +1450,11 @@ def main() -> None:
     p_poster.add_argument("url", help="Paper URL or arXiv ID (e.g. 2401.12345)")
     p_poster.add_argument("--json", action="store_true", help="Output raw JSON for agent parsing")
 
+    p_figures = sub.add_parser("figures", help="Extract, evaluate with VLM, and filter high-quality exemplar figures & tables from a paper (Option B)")
+    p_figures.add_argument("url", help="Paper URL or arXiv ID (e.g. 2401.12345)")
+    p_figures.add_argument("--min-score", type=float, default=4.0, help="Quality threshold (1.0 - 5.0, default: 4.0)")
+    p_figures.add_argument("--json", action="store_true", help="Output raw JSON for agent parsing")
+
     args = parser.parse_args()
     if args.cmd == "init":
         from ..init_wizard import handle_init_cli
@@ -1552,6 +1557,16 @@ def main() -> None:
                 print(f"🔗 本地链接: {res.get('file_uri')} ({res.get('size_kb')} KB)")
             else:
                 print(f"[生成失败] {res.get('message')}")
+    elif args.cmd == "figures":
+        from .finder import extract_figures_for_paper_direct
+
+        res = extract_figures_for_paper_direct(args.url, min_score=args.min_score, config=cfg)
+        if args.json:
+            print(json.dumps(res, ensure_ascii=False, indent=2))
+        else:
+            print(f"[优质图表抽取与 VLM 质量评测] {res.get('title')}")
+            print(f"共发现 {res.get('count', 0)} 处优秀图表/表格 (阈值 >= {args.min_score} 分):\n")
+            print(res.get("markdown", ""))
 
 
 if __name__ == "__main__":

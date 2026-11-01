@@ -119,6 +119,14 @@ poster:
   output_dir: "data/posters"
   attach_feishu: true # Mount visual framework diagram in Feishu daily report
 
+figures:
+  enabled: true # Optional VLM figure quality evaluation & exemplar extraction (Option B)
+  min_score: 4.0 # Quality score threshold (1-5 scale) to qualify as exemplar
+  max_candidates_per_paper: 5 # Max candidate figures to evaluate per paper
+  max_selected_per_paper: 2 # Max top exemplar figures to retain per paper
+  vlm_model: "nvidia/nemotron-3.5-super-vl:free" # Multimodal VLM for visual quality evaluation
+  output_dir: "data/exemplars"
+
 translation:
   enabled: true # Enable bilingual translation for ingested paper full text
   engine: "web" # "web" (free Bing/Google auto-fallback, no API key needed) | "bing" | "google" | "llm"

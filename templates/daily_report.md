@@ -36,6 +36,15 @@
 *▲ 方法架构与核心流程图 (Framework / Pipeline Overview)*
 {% endif %}
 
+{% if paper.exemplar_figures %}
+{% for fig in paper.exemplar_figures %}
+{% if fig.cid %}
+![{{ fig.caption }}](cid:{{ fig.cid }})
+*▲ [{{ fig.category_zh }}] {{ fig.caption }} (VLM 评分: {{ fig.overall_score }}/5.0)*
+{% endif %}
+{% endfor %}
+{% endif %}
+
 {% if paper.has_digest %}
 > **[审稿评级]**：**{{ paper.review_badge }}** *(复用度: {{ paper.r_grade }} | 证据支撑: {{ paper.s_grade }} | 基线公平: {{ paper.f_grade }})*
 {% if paper.rubric_summary %}> **[四维评分]**：{{ paper.rubric_summary }}{% endif %}

@@ -525,3 +525,51 @@ def generate_poster_for_paper_direct(
         "url": clean_url,
         "message": "Failed to generate or extract framework diagram. Check POSTER_API_KEY or network connectivity.",
     }
+
+
+def extract_figures_for_paper_direct(
+    url_or_id: str,
+    min_score: float = 4.0,
+    config: Any = None,
+) -> dict[str, Any]:
+    """Extracts and evaluates high-quality exemplar figures and tables from a paper (Option B)."""
+    from .bridge import _load_runtime_config
+    from ..core.figures import extract_and_evaluate_paper_figures, format_exemplars_markdown
+    from ..executor import Executor
+
+    clean_url = normalize_paper_url(url_or_id)
+    if not clean_url:
+        raise ValueError("A valid paper URL or arXiv ID must be provided.")
+
+    cfg = config or _load_runtime_config()
+    executor = Executor(cfg)
+
+    p = Paper(
+        source="arxiv" if "arxiv.org" in clean_url else "web",
+        title=f"Paper ({clean_url})",
+        authors=[],
+        abstract="",
+        url=clean_url,
+        arxiv_id=clean_url.split("abs/")[-1].split("pdf/")[-1].removesuffix(".pdf") if "arxiv.org" in clean_url else None,
+    )
+
+    try:
+        raw_text = executor.fetch_paper_full_text(clean_url)
+        if raw_text:
+            p.full_text = raw_text
+            first_lines = [l.strip("# \t") for l in raw_text.splitlines() if l.strip()]
+            if first_lines and len(first_lines[0]) > 5:
+                p.title = first_lines[0][:120]
+    except Exception:
+        pass
+
+    figures = extract_and_evaluate_paper_figures(p, cfg, min_score=min_score)
+    return {
+        "status": "success",
+        "url": clean_url,
+        "title": p.title,
+        "count": len(figures),
+        "figures": figures,
+        "markdown": format_exemplars_markdown(figures),
+    }
+

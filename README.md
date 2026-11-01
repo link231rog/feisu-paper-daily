@@ -22,6 +22,7 @@ paper_daily/
 │   ├── annotator.py       # 摘要行内三色高亮批注与字符偏移定位
 │   ├── baseline.py        # 对比基线提取与个人文献库双向回链
 │   ├── digest.py          # Critical-Paper-Digest 审稿级摘要与 4D Rubric 量化评分
+│   ├── figures.py         # 多模态 VLM 图表与表格质量评测、语义分类与优质图集摘录 (方案 B)
 │   ├── interest.py        # 多生态个人文献库（飞书/Obsidian/Notion/Zotero）兴趣语料构建
 │   ├── llm.py             # 多 Key 轮询、并发限流与多任务 LLM 路由器
 │   ├── paper_store.py     # 跨源去重、已推送记录与负向反馈（移出待选）持久化
@@ -159,6 +160,9 @@ uv run paper-library ingest "https://arxiv.org/abs/2602.13530" --provider auto -
 
 # 3. 独立提取或生成论文核心机制架构全景图 (支持 GPT-Image 与原作者 Method 图)
 uv run paper-library poster "https://arxiv.org/abs/2602.13530"
+
+# 4. 基于多模态 VLM 自动评测并摘录高分优质图表与基准对比表 (Option B)
+uv run paper-library figures "https://arxiv.org/abs/2602.13530" --min-score 4.0
 ```
 
 ### 4. 开启可选 MP3 音频播客推送

@@ -76,6 +76,7 @@ class Paper:
     matched_anchor_title: Optional[str] = None  # Highest-matching positive corpus paper title
     poster_path: Optional[str] = None  # Path to generated/extracted framework diagram or academic poster
     poster_url: Optional[str] = None  # Remote or uploaded URL / media token
+    exemplar_figures: Optional[list[dict[str, Any]]] = None  # VLM-evaluated high-quality figures/tables (Option B)
 
     def __post_init__(self) -> None:
         if not self.code_url or not self.project_url:

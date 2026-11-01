@@ -94,6 +94,13 @@ poster:
   max_papers: ${oc.env:POSTER_MAX_PAPERS,3}
   attach_feishu: ${oc.env:POSTER_ATTACH_FEISHU,true}
 
+figures:
+  enabled: ${oc.env:FIGURES_ENABLED,true}
+  min_score: ${oc.env:FIGURES_MIN_SCORE,4.0}
+  vlm_model: ${oc.env:FIGURES_VLM_MODEL,"nvidia/nemotron-3.5-super-vl:free"}
+  max_candidates_per_paper: ${oc.env:FIGURES_MAX_CANDIDATES,5}
+  max_selected_per_paper: ${oc.env:FIGURES_MAX_SELECTED,2}
+
 llm:
   api:
     key: ${oc.env:OPENAI_API_KEY,null}
