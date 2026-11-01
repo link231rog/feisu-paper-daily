@@ -181,6 +181,7 @@ feishu:
   master_index_node_token: null
   tag_graph_node_token: null
   engineering_parent_node_token: null
+  gallery_node_token: null # Optional Wiki node token for 《🖼️ 学术图表资产与架构画廊》
   dry_run: false
   create_tasks: true
 

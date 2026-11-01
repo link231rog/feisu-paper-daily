@@ -18,6 +18,7 @@ from .figures import (
     extract_and_evaluate_paper_figures,
     extract_candidate_figures,
     format_exemplars_markdown,
+    get_cached_exemplar_figures,
 )
 from .interest import build_corpus_from_topics, get_interest_corpus, taste_corpus
 from .llm import LLMRouter
@@ -60,6 +61,7 @@ __all__ = [
     "format_exemplars_markdown",
     "format_rubric_summary_line",
     "generate_paper_poster",
+    "get_cached_exemplar_figures",
     "get_interest_corpus",
     "judge_ranking",
     "locate_spans",

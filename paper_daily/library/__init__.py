@@ -20,4 +20,5 @@ from .finder import (  # noqa: F401
     search_arxiv,
     search_dblp,
     search_semantic_scholar,
+    sync_library_figures_to_feishu_gallery,
 )

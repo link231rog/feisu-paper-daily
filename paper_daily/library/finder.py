@@ -573,3 +573,103 @@ def extract_figures_for_paper_direct(
         "markdown": format_exemplars_markdown(figures),
     }
 
+
+def sync_library_figures_to_feishu_gallery(
+    config: Any = None,
+    provider: str = "feishu",
+    min_score: float = 3.8,
+    refresh: bool = False,
+) -> dict[str, Any]:
+    """Scans literature library notes, evaluates figures, and syncs to Feishu 《🖼️ 学术图表资产与架构画廊》."""
+    import re
+    from .bridge import _load_runtime_config, sync_library_notes
+    from ..channels.feishu import FeishuClient
+    from ..core.figures import extract_and_evaluate_paper_figures, get_cached_exemplar_figures
+    from ..core.poster import generate_paper_poster
+
+    cfg = config or _load_runtime_config()
+    feishu_cfg = cfg.get("feishu") or {}
+    if not feishu_cfg.get("app_id"):
+        return {"status": "error", "message": "feishu.app_id is required in config to sync Feishu gallery"}
+
+    client = FeishuClient(feishu_cfg)
+    doc_id, gallery_url = client.get_or_create_gallery_document()
+
+    notes = sync_library_notes(cfg, provider=provider, refresh=refresh)
+    synced_papers = []
+    total_figs = 0
+
+    for idx, n in enumerate(notes, 1):
+        title = n.get("title") or "Unknown Paper"
+        obj_token = n.get("id")
+        note_url = n.get("url") or (f"https://feishu.cn/wiki/{obj_token}" if obj_token else "")
+
+        # Try to resolve arXiv ID from blocks
+        found_arxiv_id = None
+        if obj_token:
+            try:
+                blocks = client.get_document_blocks(obj_token)
+                for b in blocks:
+                    for k, v in b.items():
+                        if isinstance(v, dict) and "elements" in v:
+                            for e in v["elements"]:
+                                tr = e.get("text_run", {})
+                                candidate = tr.get("text_element_style", {}).get("link", {}).get("url", "") or tr.get("content", "")
+                                m_arxiv = re.search(r"(\d{4}\.\d{4,5})", candidate)
+                                if m_arxiv:
+                                    found_arxiv_id = m_arxiv.group(1)
+                                    break
+                    if found_arxiv_id:
+                        break
+            except Exception:
+                pass
+
+        paper_url = f"https://arxiv.org/abs/{found_arxiv_id}" if found_arxiv_id else (n.get("url") or "")
+        p = Paper(
+            source="arxiv" if found_arxiv_id else "feishu",
+            title=title,
+            authors=["Researcher"],
+            abstract=n.get("summary") or "Literature Library Note",
+            url=paper_url,
+            arxiv_id=found_arxiv_id,
+        )
+
+        # 1. Retrieve cached or extract new exemplar figures
+        figs = get_cached_exemplar_figures(p)
+        if not figs and found_arxiv_id:
+            try:
+                figs = extract_and_evaluate_paper_figures(p, config=cfg, min_score=min_score)
+            except Exception as e:
+                logger.debug(f"Figure extraction error for {found_arxiv_id}: {e}")
+        p.exemplar_figures = figs or []
+
+        # 2. Check or generate poster
+        try:
+            poster_cfg = cfg.get("poster") or {}
+            if str(poster_cfg.get("enabled", True)).lower() in ("true", "1") or os.environ.get("POSTER_ENABLED", "").lower() in ("true", "1"):
+                p_img = generate_paper_poster(p, cfg)
+                if p_img and p_img.is_file():
+                    p.poster_path = str(p_img)
+        except Exception:
+            pass
+
+        if p.exemplar_figures or p.poster_path:
+            res_url = client.append_to_figure_gallery(p, note_url=note_url)
+            if res_url:
+                synced_papers.append({
+                    "title": title,
+                    "arxiv_id": found_arxiv_id,
+                    "figures_count": len(p.exemplar_figures),
+                    "has_poster": bool(p.poster_path),
+                })
+                total_figs += len(p.exemplar_figures)
+
+    return {
+        "status": "success",
+        "gallery_url": gallery_url,
+        "gallery_doc_id": doc_id,
+        "synced_papers_count": len(synced_papers),
+        "total_figures_count": total_figs,
+        "papers": synced_papers,
+    }
+

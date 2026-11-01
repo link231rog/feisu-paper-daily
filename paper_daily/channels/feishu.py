@@ -388,6 +388,7 @@ class FeishuClient:
         self.tag_graph_node_token = config.get("tag_graph_node_token")
         self.engineering_parent_node_token = config.get("engineering_parent_node_token")
         self.console_node_token = config.get("console_node_token")
+        self.gallery_node_token = config.get("gallery_node_token")
         self.reading_note_tags: dict[str, list[str]] = {}
         dry_run_val = config.get("dry_run", False)
         if isinstance(dry_run_val, str):
@@ -688,6 +689,88 @@ class FeishuClient:
         doc_id = doc_res.get("document", {}).get("document_id")
         return doc_id, f"https://feishu.cn/docx/{doc_id}"
 
+    def get_or_create_gallery_document(self) -> tuple[str, str]:
+        """Gets or creates the centralized 《🖼️ 学术图表资产与架构画廊》 document in Feishu Wiki space or Drive."""
+        title = "🖼️ 学术图表资产与架构画廊"
+
+        # 1. Custom gallery node token if configured
+        if getattr(self, "gallery_node_token", None):
+            obj_token, url = self.get_obj_token_from_node_token(str(self.gallery_node_token))
+            if obj_token:
+                return obj_token, url or f"https://feishu.cn/wiki/{self.gallery_node_token}"
+
+        # 2. Search or create under Wiki space
+        if self.wiki_space_id:
+            parent_token = self.notes_parent_node_token or ""
+            try:
+                params = {"page_size": 50}
+                if parent_token:
+                    params["parent_node_token"] = str(parent_token)
+                res = self._call_api(
+                    "GET",
+                    f"/wiki/v2/spaces/{self.wiki_space_id}/nodes",
+                    params=params,
+                )
+                for item in res.get("items", []):
+                    if item.get("title") == title:
+                        node_token = item.get("node_token")
+                        return item.get("obj_token"), item.get("url") or f"https://feishu.cn/wiki/{node_token}"
+            except Exception as exc:
+                logger.warning(f"Error checking gallery document in Wiki: {exc}")
+
+            # Create origin node in Wiki
+            node_payload = {
+                "obj_type": "docx",
+                "node_type": "origin",
+                "parent_node_token": str(parent_token),
+                "title": title,
+            }
+            node_res = self._call_api(
+                "POST",
+                f"/wiki/v2/spaces/{self.wiki_space_id}/nodes",
+                params={"space_id": str(self.wiki_space_id)},
+                data=node_payload,
+            )
+            node = node_res.get("node", {})
+            doc_id = node.get("obj_token")
+            gallery_url = node.get("url") or f"https://feishu.cn/wiki/{node.get('node_token')}"
+
+            if doc_id:
+                self._ensure_doc_permissions(doc_id)
+                init_blocks = [
+                    {
+                        "block_type": 19,
+                        "callout": {
+                            "background_color": 1,
+                            "emoji_id": "🖼️",
+                            "elements": [
+                                {"text_run": {"content": "🖼️ 学术图表资产与架构画廊 (Research Figures & Architecture Gallery)\n", "text_element_style": {"bold": True}}},
+                                {"text_run": {"content": "自动汇聚并归档已精读学术文献中的高评分系统架构图、流程示意图、实验对比表与核心机制图，呈现可直接复用的顶会研究视觉范式与排版参考。\n"}}
+                            ]
+                        }
+                    }
+                ]
+                try:
+                    self.insert_document_blocks(doc_id, init_blocks)
+                except Exception:
+                    pass
+            return doc_id, gallery_url
+
+        # 3. Drive folder fallback
+        target_folder = self.notes_folder_token or self.daily_folder_token or ""
+        if target_folder:
+            res = self._call_api("GET", "/drive/v1/files", params={"folder_token": target_folder, "page_size": 200})
+            for item in res.get("files", []):
+                if item.get("name") == title and item.get("type") == "docx":
+                    token = item.get("token")
+                    return token, item.get("url") or f"https://feishu.cn/docx/{token}"
+        create_payload = {"title": title}
+        if target_folder:
+            create_payload["folder_token"] = target_folder
+        doc_res = self._call_api("POST", "/docx/v1/documents", data=create_payload)
+        doc_id = doc_res.get("document", {}).get("document_id")
+        return doc_id, f"https://feishu.cn/docx/{doc_id}"
+
     def _get_root_children(self, document_id: str) -> list[str]:
         """Returns the current ordered list of child block IDs for the document root."""
         root_res = self._call_api("GET", f"/docx/v1/documents/{document_id}/blocks/{document_id}")
@@ -901,6 +984,48 @@ class FeishuClient:
                 logger.warning(f"Failed to patch docx image block {block_id}: {exc}")
         return None
 
+    def insert_document_blocks(
+        self,
+        doc_id: str,
+        blocks_to_insert: list[dict[str, Any]],
+        target_index: int = -1,
+    ) -> list[dict[str, Any]]:
+        """Inserts a list of blocks into a document at target_index, automatically uploading any block 27 images with _local_image_path."""
+        if not blocks_to_insert or not doc_id:
+            return []
+        batch_size = 50
+        curr_idx = target_index
+        all_created: list[dict[str, Any]] = []
+        for i in range(0, len(blocks_to_insert), batch_size):
+            chunk = blocks_to_insert[i : i + batch_size]
+            payload_chunk = []
+            image_pending: list[tuple[int, str]] = []
+            for c_idx, b in enumerate(chunk):
+                if b.get("block_type") == 27 and "_local_image_path" in b:
+                    local_p = b["_local_image_path"]
+                    image_pending.append((c_idx, local_p))
+                    payload_chunk.append({"block_type": 27, "image": {"token": ""}})
+                else:
+                    payload_chunk.append(b)
+
+            res = self._call_api(
+                "POST",
+                f"/docx/v1/documents/{doc_id}/blocks/{doc_id}/children",
+                data={"children": payload_chunk, "index": curr_idx}
+            )
+            created_children = (res.get("children") or []) if isinstance(res, dict) else []
+            all_created.extend(created_children)
+            for c_idx, local_p in image_pending:
+                if c_idx < len(created_children):
+                    img_blk = created_children[c_idx]
+                    img_blk_id = img_blk.get("block_id")
+                    if img_blk_id and os.path.isfile(local_p):
+                        self._upload_and_patch_docx_image(doc_id, img_blk_id, local_p)
+
+            if curr_idx != -1:
+                curr_idx += len(chunk)
+        return all_created
+
     def create_or_update_daily_report(
         self,
         papers: list[Paper],
@@ -1005,37 +1130,7 @@ class FeishuClient:
             existing_card_count = 0
 
         def insert_blocks(blocks_to_insert: list[dict[str, Any]], target_index: int = -1) -> None:
-            if not blocks_to_insert:
-                return
-            batch_size = 50
-            curr_idx = target_index
-            for i in range(0, len(blocks_to_insert), batch_size):
-                chunk = blocks_to_insert[i : i + batch_size]
-                payload_chunk = []
-                image_pending: list[tuple[int, str]] = []
-                for c_idx, b in enumerate(chunk):
-                    if b.get("block_type") == 27 and "_local_image_path" in b:
-                        local_p = b["_local_image_path"]
-                        image_pending.append((c_idx, local_p))
-                        payload_chunk.append({"block_type": 27, "image": {"token": ""}})
-                    else:
-                        payload_chunk.append(b)
-
-                res = self._call_api(
-                    "POST",
-                    f"/docx/v1/documents/{doc_id}/blocks/{doc_id}/children",
-                    data={"children": payload_chunk, "index": curr_idx}
-                )
-                created_children = (res.get("children") or []) if isinstance(res, dict) else []
-                for c_idx, local_p in image_pending:
-                    if c_idx < len(created_children):
-                        img_blk = created_children[c_idx]
-                        img_blk_id = img_blk.get("block_id")
-                        if img_blk_id and os.path.isfile(local_p):
-                            self._upload_and_patch_docx_image(doc_id, img_blk_id, local_p)
-
-                if curr_idx != -1:
-                    curr_idx += len(chunk)
+            self.insert_document_blocks(doc_id, blocks_to_insert, target_index=target_index)
 
         # 3. Filter and append academic papers
         papers_to_add: list[Paper] = []
@@ -2269,6 +2364,28 @@ class FeishuClient:
 
 {takeaways}""")
 
+            from ..core.figures import get_cached_exemplar_figures
+            exemplars = getattr(paper, "exemplar_figures", None) or get_cached_exemplar_figures(paper)
+            if exemplars:
+                fig_md_parts = ["\n\n## 六、论文精选图表与关键基准 (Exemplar Figures)\n"]
+                for idx, fig in enumerate(exemplars, 1):
+                    fp = fig.get("file_path")
+                    if not fp or not os.path.isfile(str(fp)):
+                        continue
+                    cat = fig.get("category_zh") or "核心图表"
+                    cap = fig.get("caption") or f"图表 {idx}"
+                    score = fig.get("overall_score") or 4.0
+                    clarity = fig.get("clarity_score") or 4
+                    strengths = ", ".join(fig.get("strengths") or [])
+                    fig_md_parts.append(
+                        f"### 🎨 图表 {idx} [{cat}]: 综合评分 {score}/5.0 (清晰度: {clarity}/5)\n\n"
+                        f"![{cap}]({fp})\n\n"
+                        f"*📌 说明: {cap}*\n\n"
+                        + (f"*✨ 视觉亮点: {strengths}*\n\n" if strengths else "")
+                    )
+                if len(fig_md_parts) > 1:
+                    parts.append("".join(fig_md_parts))
+
             reserved_keys = {
                 "core_summary",
                 "motivation",
@@ -2519,6 +2636,141 @@ class FeishuClient:
             logger.info(f"Appended paper '{paper.title}' to Tag Knowledge Graph document")
         except Exception as exc:
             logger.error(f"Failed to append to tag graph document: {exc}")
+
+    def append_to_figure_gallery(
+        self,
+        paper: Paper,
+        note_url: Optional[str] = None,
+        force: bool = False,
+    ) -> Optional[str]:
+        """Appends a paper's high-score exemplar figures and visual poster to the central Feishu gallery."""
+        if self.dry_run:
+            return None
+
+        from ..core.figures import get_cached_exemplar_figures
+
+        exemplars = getattr(paper, "exemplar_figures", None) or get_cached_exemplar_figures(paper)
+        poster_path = getattr(paper, "poster_path", None)
+        has_poster = poster_path and os.path.isfile(str(poster_path))
+        if not exemplars and not has_poster:
+            return None
+
+        doc_id, gallery_url = self.get_or_create_gallery_document()
+        if not doc_id:
+            return None
+
+        self._ensure_doc_permissions(doc_id)
+
+        # Check existing blocks to avoid duplicate entries unless force=True
+        if not force:
+            try:
+                existing_blocks = self.get_document_blocks(doc_id)
+                arxiv_id = getattr(paper, "arxiv_id", None)
+                for b in existing_blocks:
+                    for k, v in b.items():
+                        if isinstance(v, dict) and "elements" in v:
+                            for e in v["elements"]:
+                                tr = e.get("text_run", {})
+                                c = tr.get("content", "")
+                                if (arxiv_id and arxiv_id in c) or (paper.title and paper.title[:30] in c):
+                                    logger.info(f"Paper '{paper.title[:30]}' already present in Feishu gallery; skipping.")
+                                    return gallery_url
+            except Exception as scan_err:
+                logger.debug(f"Gallery existing blocks check: {scan_err}")
+
+        full_title = paper.title_with_venue() if hasattr(paper, "title_with_venue") else paper.title
+        tag_list = [t for t in (getattr(paper, "tags", None) or ["Research"]) if t]
+        tags_str = " ".join(f"[#{p}]" for p in tag_list)
+        abs_text = str(paper.abstract or "")
+        delta_str = (
+            (paper.critical_digest.get("delta") if getattr(paper, "critical_digest", None) and isinstance(paper.critical_digest, dict) else None)
+            or getattr(paper, "tldr_zh", None)
+            or getattr(paper, "tldr", None)
+            or ((abs_text[:120] + "...") if abs_text else "暂无简介")
+        )
+
+        blocks_to_insert: list[dict[str, Any]] = [
+            {"block_type": 22, "divider": {}},
+            {
+                "block_type": 4,  # Heading 2
+                "heading2": {
+                    "elements": [
+                        {"text_run": {"content": f"📄 {full_title}", "text_element_style": {"bold": True}}}
+                    ]
+                }
+            },
+            {
+                "block_type": 2,  # Normal text
+                "text": {
+                    "elements": [
+                        {"text_run": {"content": f"• 🏷️ 匹配专题: {tags_str}\n"}},
+                        {"text_run": {"content": "• 🔗 论文直达: "}},
+                        {"text_run": {"content": f"{paper.url or 'N/A'}\n", "text_element_style": {"link": {"url": paper.url or ""}} if paper.url else {}}},
+                        {"text_run": {"content": "• 📘 精读笔记直达: "}},
+                        {"text_run": {"content": f"{note_url or '已入库'}\n", "text_element_style": {"link": {"url": note_url or ""}} if note_url else {}}},
+                        {"text_run": {"content": f"• 💡 核心机制增量 (Delta): {delta_str}\n"}},
+                    ]
+                }
+            }
+        ]
+
+        # 1. Append 16:9 Paper2Poster if available
+        if has_poster:
+            blocks_to_insert.append({
+                "block_type": 5,
+                "heading3": {
+                    "elements": [
+                        {"text_run": {"content": "🎨 16:9 综合学术海报 (Paper2Poster Framework)", "text_element_style": {"bold": True}}}
+                    ]
+                }
+            })
+            blocks_to_insert.append({
+                "block_type": 27,
+                "image": {"token": ""},
+                "_local_image_path": str(poster_path)
+            })
+
+        # 2. Append each exemplar figure
+        for idx, fig in enumerate(exemplars, 1):
+            fp = fig.get("file_path")
+            if not fp or not os.path.isfile(str(fp)):
+                continue
+            cat = fig.get("category_zh") or "核心图表"
+            score = fig.get("overall_score") or 4.0
+            clarity = fig.get("clarity_score") or 4
+            cap = fig.get("caption") or f"图表 {idx}"
+            strengths = ", ".join(fig.get("strengths") or [])
+
+            blocks_to_insert.append({
+                "block_type": 5,
+                "heading3": {
+                    "elements": [
+                        {"text_run": {"content": f"🏷️ [{cat}] {cap} (评分: {score}/5.0 | 清晰度: {clarity}/5)", "text_element_style": {"bold": True}}}
+                    ]
+                }
+            })
+            blocks_to_insert.append({
+                "block_type": 27,
+                "image": {"token": ""},
+                "_local_image_path": str(fp)
+            })
+            if strengths:
+                blocks_to_insert.append({
+                    "block_type": 2,
+                    "text": {
+                        "elements": [
+                            {"text_run": {"content": f"• ✨ 视觉亮点: {strengths}\n", "text_element_style": {"italic": True}}}
+                        ]
+                    }
+                })
+
+        try:
+            self.insert_document_blocks(doc_id, blocks_to_insert, target_index=-1)
+            logger.info(f"Appended {len(exemplars)} figures from '{paper.title[:30]}' to Feishu gallery: {gallery_url}")
+            return gallery_url
+        except Exception as exc:
+            logger.warning(f"Failed to append figures to Feishu gallery: {exc}")
+            return None
 
     def get_reading_status(self, document_id: str) -> Optional[str]:
         """Inspects the reading lifecycle status of a document."""

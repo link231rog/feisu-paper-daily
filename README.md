@@ -163,6 +163,9 @@ uv run paper-library poster "https://arxiv.org/abs/2602.13530"
 
 # 4. 基于多模态 VLM 自动评测并摘录高分优质图表与基准对比表 (Option B)
 uv run paper-library figures "https://arxiv.org/abs/2602.13530" --min-score 4.0
+
+# 5. 一键同步并维护飞书知识库顶层《🖼️ 学术图表资产与架构画廊》中心看板
+uv run paper-library gallery --min-score 3.8
 ```
 
 ### 4. 开启可选 MP3 音频播客推送

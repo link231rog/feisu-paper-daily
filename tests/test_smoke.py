@@ -2294,6 +2294,115 @@ def test_vlm_figure_quality_evaluation_and_exemplar_extraction(tmp_path, monkeyp
     assert "figures" in direct_res
 
 
+def test_feishu_figure_gallery_and_reading_note_section_six(tmp_path, monkeypatch):
+    """Verify Feishu central figure gallery creation, note section six integration, and batch sync."""
+    from paper_daily.channels.feishu import FeishuClient
+    from paper_daily.library.finder import sync_library_figures_to_feishu_gallery
+    from paper_daily.protocol import Paper
+
+    # 1. Create a dummy test image
+    test_img = tmp_path / "test_arch.png"
+    test_img.write_bytes(b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x01\x00\x00\x00\x01\x00\x08\x06\x00\x00\x00\x1f\x15c4" + b"\x00" * 500)
+
+    p = Paper(
+        source="arxiv",
+        title="Reasoning Agent with World Models",
+        authors=["Alice", "Bob"],
+        abstract="A framework for autonomous agent planning.",
+        url="https://arxiv.org/abs/2602.12345",
+        arxiv_id="2602.12345",
+        venue="ICLR 2026",
+    )
+    p.poster_path = str(test_img)
+    p.exemplar_figures = [
+        {
+            "file_path": str(test_img),
+            "file_name": "test_arch.png",
+            "category_zh": "系统架构/流程图",
+            "overall_score": 4.8,
+            "clarity_score": 5,
+            "caption": "双阶段世界模型推理架构图",
+            "strengths": ["高自明性", "流程流向直观"],
+        }
+    ]
+
+    client = FeishuClient({
+        "app_id": "cli_mock_id",
+        "app_secret": "sec_mock_key",
+        "wiki_space_id": "sp_mock_123",
+        "notes_parent_node_token": "parent_mock_456",
+        "dry_run": False,
+    })
+    client._has_lark_cli = False
+    client._tenant_token = "mock_token"
+
+    created_blocks: list[dict] = []
+    patched_images: list[tuple] = []
+    wiki_nodes: list[dict] = []
+
+    def mock_call_api(method, path, params=None, data=None):
+        if "/wiki/v2/spaces/sp_mock_123/nodes" in path:
+            if method == "GET":
+                return {"items": []}
+            if method == "POST":
+                node = {
+                    "node_token": "gallery_node_token_999",
+                    "obj_token": "gallery_doc_id_888",
+                    "title": data.get("title", ""),
+                    "url": "https://feishu.cn/wiki/gallery_node_token_999"
+                }
+                wiki_nodes.append(node)
+                return {"node": node}
+        if "/docx/v1/documents/gallery_doc_id_888/blocks/gallery_doc_id_888/children" in path:
+            children = data.get("children", [])
+            resp_children = []
+            for idx, c in enumerate(children):
+                b_id = f"blk_{len(created_blocks) + idx}"
+                created_blocks.append((b_id, c))
+                resp_children.append({"block_id": b_id, "block_type": c.get("block_type")})
+            return {"children": resp_children}
+        if "/docx/v1/documents" in path and method == "GET":
+            return {"items": []}
+        if "/docx/v1/documents" in path and method == "PATCH":
+            patched_images.append((path, data))
+            return {"code": 0}
+        return {"code": 0}
+
+    monkeypatch.setattr(client, "_call_api", mock_call_api)
+
+    def mock_post(url, **kwargs):
+        class Resp:
+            status_code = 200
+            def json(self):
+                return {"code": 0, "data": {"file_token": "img_tok_abc"}}
+        return Resp()
+
+    monkeypatch.setattr("requests.post", mock_post)
+
+    # 2. Test get_or_create_gallery_document
+    doc_id, gallery_url = client.get_or_create_gallery_document()
+    assert doc_id == "gallery_doc_id_888"
+    assert "gallery_node_token_999" in gallery_url
+
+    # 3. Test append_to_figure_gallery
+    res_url = client.append_to_figure_gallery(p, note_url="https://feishu.cn/wiki/test_note", force=True)
+    assert res_url == gallery_url
+    assert any("双阶段世界模型推理架构图" in str(b) for _, b in created_blocks)
+    assert any("img_tok_abc" in str(p_data) for _, p_data in patched_images)
+
+    # 4. Test reading note Markdown contains Section 六
+    note_md = client._build_reading_note_markdown(
+        paper=p,
+        sections={"core_summary": "Summary"},
+        current_status="⏳ 待精读",
+        today="2026-11-01",
+        is_app_note=False,
+    )
+    assert "## 六、论文精选图表与关键基准 (Exemplar Figures)" in note_md
+    assert "综合评分 4.8/5.0" in note_md
+    assert "test_arch.png" in note_md
+
+
 
 
 

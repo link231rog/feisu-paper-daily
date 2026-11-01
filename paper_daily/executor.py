@@ -1093,6 +1093,22 @@ class Executor:
                     )
                     full_text_md = self.translate_full_text_to_bilingual(raw_text) if raw_text else None
 
+                    try:
+                        from .core.figures import extract_and_evaluate_paper_figures
+                        figs = extract_and_evaluate_paper_figures(paper, config=self.config)
+                        if figs:
+                            paper.exemplar_figures = figs
+                    except Exception as f_err:
+                        logger.debug(f"Figure extraction skipped in ingest_checked_papers: {f_err}")
+
+                    try:
+                        from .core.poster import generate_paper_poster
+                        p_img = generate_paper_poster(paper, self.config)
+                        if p_img and p_img.is_file():
+                            paper.poster_path = str(p_img)
+                    except Exception as p_err:
+                        logger.debug(f"Poster skipped in ingest_checked_papers: {p_err}")
+
                 note_url = ""
                 if client is not None:
                     note_url = client.create_reading_note(paper, sections=sections, full_text_markdown=full_text_md)
@@ -1115,6 +1131,10 @@ class Executor:
                         tags=tags,
                         core_summary=sections.get("core_summary", "")
                     )
+                    try:
+                        client.append_to_figure_gallery(paper, note_url=note_url)
+                    except Exception as g_err:
+                        logger.debug(f"Gallery append skipped in ingest_checked_papers: {g_err}")
 
                     if feishu_cfg.get("create_tasks", True):
                         try:
@@ -1291,6 +1311,16 @@ class Executor:
             except Exception as p_err:
                 logger.debug(f"Poster generation skipped in ingest_paper_by_url: {p_err}")
 
+        if not is_github_or_tool:
+            try:
+                from .core.figures import extract_and_evaluate_paper_figures
+                figs = extract_and_evaluate_paper_figures(paper, config=self.config)
+                if figs:
+                    paper.exemplar_figures = figs
+                    logger.info(f"Attached {len(figs)} exemplar figures to reading note: {paper.title[:30]}")
+            except Exception as f_err:
+                logger.debug(f"Figure extraction skipped in ingest_paper_by_url: {f_err}")
+
         full_text_md = None
         if not is_github_or_tool and clean_url:
             raw_text = self.fetch_paper_full_text(clean_url)
@@ -1323,6 +1353,10 @@ class Executor:
                     tags=tags,
                     core_summary=sections.get("core_summary", "")
                 )
+                try:
+                    client.append_to_figure_gallery(paper, note_url=note_url)
+                except Exception as g_err:
+                    logger.debug(f"Gallery append skipped in ingest_paper_by_url: {g_err}")
 
                 if feishu_cfg.get("create_tasks", True):
                     try:

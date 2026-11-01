@@ -179,6 +179,7 @@ feishu:
   master_index_node_token: ${oc.env:FEISHU_MASTER_INDEX_NODE_TOKEN,null}
   tag_graph_node_token: ${oc.env:FEISHU_TAG_GRAPH_NODE_TOKEN,null}
   engineering_parent_node_token: ${oc.env:FEISHU_ENGINEERING_PARENT_NODE_TOKEN,null}
+  gallery_node_token: ${oc.env:FEISHU_GALLERY_NODE_TOKEN,null}
   dry_run: false
 
 console:

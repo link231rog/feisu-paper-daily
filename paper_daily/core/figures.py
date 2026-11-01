@@ -348,6 +348,34 @@ def _fallback_heuristic_eval(image_path: Path) -> dict[str, Any]:
     }
 
 
+def get_cached_exemplar_figures(
+    paper: Paper,
+    output_dir: Path | str = "data/exemplars",
+) -> list[dict[str, Any]]:
+    """Loads previously extracted and evaluated exemplar figures from manifest cache without calling VLM."""
+    arxiv_id = _resolve_arxiv_id(paper)
+    slug = _sanitize_slug(arxiv_id or paper.title[:24])
+    manifest_file = Path(output_dir) / slug / "exemplars_manifest.json"
+    if manifest_file.is_file():
+        try:
+            with open(manifest_file, "r", encoding="utf-8") as f:
+                cached = json.load(f)
+            figs = cached.get("figures") or []
+            valid_figs = []
+            for fg in figs:
+                fp = fg.get("file_path")
+                if fp and os.path.isfile(str(fp)):
+                    valid_figs.append(fg)
+                elif fp and fp.endswith(".pdf") and os.path.isfile(fp[:-4] + ".png"):
+                    fg["file_path"] = fp[:-4] + ".png"
+                    fg["file_name"] = os.path.basename(fg["file_path"])
+                    valid_figs.append(fg)
+            return valid_figs
+        except Exception:
+            pass
+    return []
+
+
 def extract_and_evaluate_paper_figures(
     paper: Paper,
     config: DictConfig | dict[str, Any] | None = None,
@@ -398,8 +426,10 @@ def extract_and_evaluate_paper_figures(
             ev = evaluate_figure_with_vlm(img_path, paper, config=cfg)
             score = float(ev.get("overall_score", 0.0))
             if score >= min_score:
-                # Save into destination
-                dest_name = f"{slug}_{Path(orig_name).name}"
+                # Save into destination with correct image extension (even if orig_name was vector .pdf)
+                dest_ext = Path(img_path).suffix or ".png"
+                stem = re.sub(r"[^\w\-_.]", "_", Path(orig_name).stem)
+                dest_name = f"{slug}_{stem}{dest_ext}"
                 dest_file = paper_out_dir / dest_name
                 import shutil
                 shutil.copy2(img_path, dest_file)

@@ -1455,6 +1455,12 @@ def main() -> None:
     p_figures.add_argument("--min-score", type=float, default=4.0, help="Quality threshold (1.0 - 5.0, default: 4.0)")
     p_figures.add_argument("--json", action="store_true", help="Output raw JSON for agent parsing")
 
+    p_gallery = sub.add_parser("gallery", help="Sync and maintain the central 《🖼️ 学术图表资产与架构画廊》 in Feishu Wiki / Knowledge Base")
+    p_gallery.add_argument("--provider", default="feishu", choices=["feishu", "obsidian", "auto"], help="Library provider to scan (default: feishu)")
+    p_gallery.add_argument("--min-score", type=float, default=3.8, help="Minimum figure quality rating (1.0-5.0, default: 3.8)")
+    p_gallery.add_argument("--refresh", action="store_true", help="Force re-extraction and VLM evaluation")
+    p_gallery.add_argument("--json", action="store_true", help="Output raw JSON summary")
+
     args = parser.parse_args()
     if args.cmd == "init":
         from ..init_wizard import handle_init_cli
@@ -1567,6 +1573,28 @@ def main() -> None:
             print(f"[优质图表抽取与 VLM 质量评测] {res.get('title')}")
             print(f"共发现 {res.get('count', 0)} 处优秀图表/表格 (阈值 >= {args.min_score} 分):\n")
             print(res.get("markdown", ""))
+    elif args.cmd == "gallery":
+        from .finder import sync_library_figures_to_feishu_gallery
+
+        res = sync_library_figures_to_feishu_gallery(
+            config=cfg,
+            provider=args.provider,
+            min_score=args.min_score,
+            refresh=args.refresh,
+        )
+        if args.json:
+            print(json.dumps(res, ensure_ascii=False, indent=2))
+        else:
+            if res.get("status") == "success":
+                print(f"[飞书学术图表画廊同步完成]")
+                print(f"🖼️ 画廊文档直达: {res.get('gallery_url')}")
+                print(f"📊 已同步论文数: {res.get('synced_papers_count', 0)}")
+                print(f"🎨 累计精选图表数: {res.get('total_figures_count', 0)}")
+                for p in res.get("papers", [])[:10]:
+                    has_p = " (含综合海报)" if p.get("has_poster") else ""
+                    print(f"  • {p['title'][:45]}... (图表: {p['figures_count']} 幅{has_p})")
+            else:
+                print(f"[画廊同步提示] {res.get('message')}")
 
 
 if __name__ == "__main__":

@@ -174,6 +174,13 @@ uv run paper-library figures "<url_or_arxiv_id>" [--min-score 4.0] [--json]
 ```
 Extracts candidate graphics, scores them via multimodal VLM (clarity, information density, visual appeal, 1.0-5.0 scale), and saves exemplar figures (>= 4.0/5.0) to `data/exemplars/<arxiv_id>/` with metadata manifest.
 
+### Step 5: Central Feishu Figure & Architecture Gallery Sync
+Synchronize all high-score exemplar figures and visual posters across the user's literature library to the central Feishu Wiki gallery document:
+```bash
+uv run paper-library gallery [--min-score 3.8] [--provider feishu] [--json]
+```
+Returns the live Feishu Wiki gallery document link (e.g. `《🖼️ 学术图表资产与架构画廊》`), summarizing synced papers and total figure assets.
+
 This command:
 1. Resolves full text via ordered fallback chains (`arXiv HTML` -> `PyMuPDF` -> `Agent-Reach` -> `Trafilatura`).
 2. Generates structured 5-section reading notes (core summary, motivation, method, experiments, takeaways) and detail annotations.
