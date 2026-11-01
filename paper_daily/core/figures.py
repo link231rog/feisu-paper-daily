@@ -75,11 +75,11 @@ def extract_candidate_figures(
                 with tarfile.open(fileobj=io.BytesIO(r_src.content)) as tar:
                     members = [
                         m for m in tar.getmembers()
-                        if m.isfile() and any(m.name.lower().endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".webp"])
+                        if m.isfile() and any(m.name.lower().endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".webp", ".pdf"])
                     ]
                     for m in members:
                         # Skip tiny images or icons
-                        if m.size < 12000:  # < 12 KB
+                        if m.size < 8000:  # < 8 KB
                             continue
                         name_lower = m.name.lower()
                         if any(skip in name_lower for skip in ["icon", "logo", "banner", "math", "bullet"]):
@@ -88,7 +88,22 @@ def extract_candidate_figures(
                         extracted = tar.extractfile(m)
                         if not extracted:
                             continue
-                        img_bytes = extracted.read()
+                        raw_bytes = extracted.read()
+
+                        # Convert vector PDF figures to PNG via PyMuPDF if needed
+                        if name_lower.endswith(".pdf"):
+                            try:
+                                import fitz
+                                doc = fitz.open(stream=raw_bytes, filetype="pdf")
+                                if len(doc) == 0:
+                                    continue
+                                pix = doc[0].get_pixmap(dpi=150)
+                                img_bytes = pix.tobytes("png")
+                            except Exception:
+                                continue
+                        else:
+                            img_bytes = raw_bytes
+
                         img_hash = hashlib.md5(img_bytes).hexdigest()
                         if img_hash in seen_hashes:
                             continue
@@ -99,7 +114,8 @@ def extract_candidate_figures(
                         if w < 180 or h < 120:
                             continue
 
-                        safe_name = re.sub(r"[^\w\-_.]", "_", Path(m.name).name)
+                        base_name = Path(m.name).stem + ".png" if name_lower.endswith(".pdf") else Path(m.name).name
+                        safe_name = re.sub(r"[^\w\-_.]", "_", base_name)
                         out_file = dest_path / f"{_sanitize_slug(arxiv_id)}_{safe_name}"
                         out_file.write_bytes(img_bytes)
                         candidates.append((out_file, m.name))
@@ -107,11 +123,16 @@ def extract_candidate_figures(
             logger.debug(f"arXiv source figure extraction encountered error for {arxiv_id}: {exc}")
 
     # 2. Secondary: PyMuPDF PDF extraction fallback
-    if not candidates and (paper.pdf_url or (paper.url and paper.url.endswith(".pdf"))):
+    resolved_pdf_url = (
+        paper.pdf_url
+        or (f"https://arxiv.org/pdf/{arxiv_id}.pdf" if arxiv_id else None)
+        or (paper.url if paper.url and paper.url.endswith(".pdf") else None)
+    )
+    if not candidates and resolved_pdf_url:
         try:
             import fitz
 
-            pdf_url = paper.pdf_url or paper.url
+            pdf_url = resolved_pdf_url
             headers = {"User-Agent": "Mozilla/5.0"}
             r_pdf = requests.get(pdf_url, headers=headers, timeout=35)
             if r_pdf.status_code == 200 and len(r_pdf.content) > 5000:
