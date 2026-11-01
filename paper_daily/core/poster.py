@@ -312,6 +312,7 @@ def render_structured_academic_poster(
     paper: Paper,
     output_dir: Path | str = "data/posters",
     author_figure: Optional[Path] = None,
+    force: bool = False,
 ) -> Optional[Path]:
     """Renders a structured, publication-grade academic poster image (Paper2Poster style) from paper data.
 
@@ -326,7 +327,7 @@ def render_structured_academic_poster(
     slug = _sanitize_slug(paper.arxiv_id or paper.title)
     dest_file = out_path / f"{slug}_poster.png"
 
-    if dest_file.is_file() and dest_file.stat().st_size > 10000:
+    if not force and dest_file.is_file() and dest_file.stat().st_size > 10000:
         logger.info(f"Reusing cached structured academic poster: {dest_file}")
         return dest_file
 
@@ -345,9 +346,9 @@ def render_structured_academic_poster(
         try:
             b64_fig = base64.b64encode(Path(fig_file).read_bytes()).decode("ascii")
             img_tag = (
-                f'<div style="text-align:center;margin:10px 0;background:#ffffff;border:1px solid #cbd5e1;border-radius:6px;padding:6px;">'
-                f'<img src="data:image/png;base64,{b64_fig}" style="max-width:100%;max-height:260px;object-fit:contain;display:block;margin:0 auto;" alt="Method Diagram"/>'
-                f'<div style="font-size:11px;color:#64748b;margin-top:4px;">▲ 核心方法架构图 (Extracted from arXiv Source)</div></div>'
+                f'<div class="figure-container">'
+                f'<img src="data:image/png;base64,{b64_fig}" class="method-fig" alt="Method Diagram"/>'
+                f'<div class="fig-caption">▲ 原文核心方法流程图 (Figure extracted from arXiv Source)</div></div>'
             )
         except Exception as b64_err:
             logger.debug(f"Failed to base64-encode author figure for poster: {b64_err}")
@@ -393,9 +394,22 @@ def render_structured_academic_poster(
     from .digest import format_rubric_summary_line
     rubric_line = e(format_rubric_summary_line(paper))
 
-    problem = e(paper.tldr or paper.abstract or paper.judge_reason or "见论文原文摘要")[:400]
-    delta = e(cd.get("delta") or paper.tldr_zh or paper.tldr or "提出针对性增量优化机制")[:400]
-    pipeline = e(pipeline_val or "Input → Feature Extraction → Reasoning → Verification → Output")[:400]
+    problem_text = paper.tldr_zh or paper.tldr or paper.abstract or paper.judge_reason or "见论文原文摘要"
+    problem = e(problem_text)[:480]
+
+    delta_text = cd.get("delta") or paper.tldr_zh or paper.tldr or "提出针对性增量优化机制"
+    delta = e(delta_text)[:480]
+
+    # Render pipeline steps as visual chips
+    raw_steps = [s.strip() for s in re.split(r"→|->|➔|-->", pipeline_val) if s.strip()]
+    if len(raw_steps) >= 2:
+        chips = []
+        for idx, st in enumerate(raw_steps, 1):
+            chips.append(f'<div class="step-chip"><span class="step-num">{idx}</span><span class="step-text">{e(st)}</span></div>')
+        pipeline_html = '<div class="pipeline-flow">' + ' <div class="flow-arrow">➔</div> '.join(chips) + '</div>'
+    else:
+        pipeline_html = f'<div class="pipeline-box">{e(pipeline_val or "Input → Feature Extraction → Reasoning → Verification → Output")}</div>'
+
     core_formula = e(core_formula_val)
     symbol_dict = e(symbol_dict_val)
 
@@ -408,22 +422,26 @@ def render_structured_academic_poster(
     if symbol_dict and symbol_dict not in ("N/A", "N/A (需查正文)"):
         formula_block += f'<div style="font-size:11.5px;color:#64748b;margin-top:2px;">• 符号释义：{symbol_dict}</div>'
 
-    metrics = e(metrics_val or "见原文实验评估章节，多项基准达成显著增益")[:350]
-    costs = e(costs_val or "低额外推理开销，已验证典型失败边界")[:350]
-    action = e(cd.get("action_or_check", "该机制可直接迁移至本地 Agent 任务编排与决策路由中") if isinstance(cd, dict) else "该机制可直接迁移至本地 Agent 任务编排与决策路由中")[:400]
+    metrics = e(metrics_val or "见原文实验评估章节，多项基准达成显著增益")[:400]
+    costs = e(costs_val or "低额外推理开销，已验证典型失败边界")[:400]
+    action = e(cd.get("action_or_check", "该机制可直接迁移至本地 Agent 任务编排与决策路由中") if isinstance(cd, dict) else "该机制可直接迁移至本地 Agent 任务编排与决策路由中")[:450]
 
     code_badge = "<span style='font-size:12px;font-weight:600;padding:3px 8px;border-radius:5px;background:#fffbeb;color:#b45309;border:1px solid #fde68a;'>已附开源代码</span>" if getattr(paper, "code_url", None) else ""
+    score_display = f"{paper.composite_score:.1f}" if getattr(paper, "composite_score", None) else (f"{paper.score:.1f}" if getattr(paper, "score", None) else "8.2")
 
     html_content = f"""<!DOCTYPE html>
 <html>
 <head>
 <meta charset='utf-8'/>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;700;800&display=swap" rel="stylesheet">
 <style>
   * {{ box-sizing: border-box; }}
   body {{
-    margin: 0; padding: 24px;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif;
-    background: #f8fafc;
+    margin: 0; padding: 20px;
+    font-family: 'Inter', 'Noto Sans SC', 'Noto Sans CJK SC', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'WenQuanYi Micro Hei', 'WenQuanYi Zen Hei', sans-serif;
+    background: #f1f5f9;
     color: #1e293b;
     width: 1600px;
     height: 1000px;
@@ -436,35 +454,36 @@ def render_structured_academic_poster(
     height: 100%;
     display: flex;
     flex-direction: column;
-    padding: 24px 32px;
+    padding: 22px 28px;
     box-shadow: 0 10px 25px rgba(0,0,0,0.05);
   }}
   .header {{
     border-bottom: 2px solid #e2e8f0;
-    padding-bottom: 16px;
-    margin-bottom: 18px;
+    padding-bottom: 14px;
+    margin-bottom: 16px;
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
   }}
-  .title-area {{ max-width: 1220px; }}
-  h1 {{ margin: 0 0 6px 0; font-size: 25px; color: #0f172a; line-height: 1.3; font-weight: 700; }}
-  .meta-line {{ font-size: 13.5px; color: #64748b; margin-bottom: 8px; }}
+  .title-area {{ max-width: 1240px; }}
+  h1 {{ margin: 0 0 6px 0; font-size: 24px; color: #0f172a; line-height: 1.32; font-weight: 800; }}
+  .meta-line {{ font-size: 13.5px; color: #64748b; margin-bottom: 8px; font-weight: 500; }}
   .badges {{ display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }}
   .badge {{
-    font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 5px; border: 1px solid transparent;
+    font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 5px; border: 1px solid transparent;
   }}
-  .badge-primary {{ background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }}
-  .badge-success {{ background: #f0fdf4; color: #15803d; border-color: #bbf7d0; }}
+  .badge-success {{ background: #ecfdf5; color: #065f46; border-color: #a7f3d0; }}
+  .badge-primary {{ background: #eff6ff; color: #1e40af; border-color: #bfdbfe; }}
+  .badge-amber {{ background: #fffbeb; color: #92400e; border-color: #fde68a; }}
   
   .grid {{
     flex: 1;
     display: grid;
     grid-template-columns: 1fr 1.35fr 1fr;
-    gap: 18px;
+    gap: 16px;
     overflow: hidden;
   }}
-  .col {{ display: flex; flex-direction: column; gap: 14px; }}
+  .col {{ display: flex; flex-direction: column; gap: 14px; height: 100%; }}
   .card {{
     background: #f8fafc;
     border: 1px solid #e2e8f0;
@@ -474,19 +493,90 @@ def render_structured_academic_poster(
     flex-direction: column;
     gap: 8px;
   }}
+  .card-delta {{
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+  }}
   .card-title {{
     font-size: 14.5px; font-weight: 700; color: #0f172a;
-    border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;
+    border-bottom: 1px solid #e2e8f0; padding-bottom: 6px;
     display: flex; align-items: center; justify-content: space-between;
   }}
-  .card-body {{ font-size: 13px; line-height: 1.6; color: #334155; }}
+  .card-body {{ font-size: 13px; line-height: 1.62; color: #334155; }}
+  .pipeline-flow {{
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-bottom: 6px;
+  }}
+  .step-chip {{
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 4px;
+    padding: 3px 8px;
+    font-size: 12px;
+    color: #1e40af;
+    font-weight: 600;
+  }}
+  .step-num {{
+    background: #2563eb;
+    color: #ffffff;
+    border-radius: 50%;
+    width: 16px;
+    height: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 700;
+  }}
+  .flow-arrow {{
+    color: #94a3b8;
+    font-size: 12px;
+  }}
   .pipeline-box {{
     background: #eff6ff; border-left: 3px solid #3b82f6; border-radius: 4px;
     padding: 8px 10px; font-size: 12px; font-family: monospace; color: #1e3a8a;
   }}
+  .figure-container {{
+    text-align: center;
+    margin: 8px 0;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 10px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+  }}
+  .method-fig {{
+    max-width: 100%;
+    max-height: 350px;
+    object-fit: contain;
+    display: block;
+    margin: 0 auto;
+    border-radius: 4px;
+  }}
+  .fig-caption {{
+    font-size: 11.5px;
+    color: #64748b;
+    margin-top: 6px;
+    font-weight: 500;
+  }}
   .footer {{
     border-top: 1px solid #e2e8f0;
-    margin-top: 14px; padding-top: 8px;
+    margin-top: 12px; padding-top: 8px;
     display: flex; justify-content: space-between;
     font-size: 11.5px; color: #94a3b8;
   }}
@@ -499,17 +589,18 @@ def render_structured_academic_poster(
         <h1>{title}</h1>
         <div class='meta-line'>{authors} · {venue_year}</div>
         <div class='badges'>
-          <span class='badge badge-success'>{review_badge}</span>
+          <span class='badge badge-success'>★ 评级: {review_badge}</span>
+          <span class='badge badge-primary'>综合得分: {score_display} / 10</span>
           <span class='badge badge-primary'>复用度: {r_grade}</span>
           <span class='badge badge-primary'>证据支撑: {s_grade}</span>
-          <span class='badge badge-primary'>基线公平: {f_grade}</span>
+          <span class='badge badge-amber'>基线公平: {f_grade}</span>
           {code_badge}
-          <span style='font-size:12px;color:#1e40af;'>{rubric_line}</span>
+          <span style='font-size:12px;color:#1e40af;margin-left:4px;'>{rubric_line}</span>
         </div>
       </div>
       <div style='text-align: right;'>
-        <div style='font-size: 18px; font-weight: 800; color: #0052cc;'>PAPER2POSTER</div>
-        <div style='font-size: 11px; color: #64748b; letter-spacing: 0.5px;'>ACADEMIC RESEARCH POSTER</div>
+        <div style='font-size: 19px; font-weight: 900; color: #1d4ed8; letter-spacing: 0.5px;'>PAPER2POSTER</div>
+        <div style='font-size: 11px; color: #64748b; letter-spacing: 0.8px;'>ACADEMIC RESEARCH POSTER</div>
       </div>
     </div>
     
@@ -520,18 +611,18 @@ def render_structured_academic_poster(
           <div class='card-title'>📌 核心痛点与研究背景</div>
           <div class='card-body'>{problem}</div>
         </div>
-        <div class='card' style='border-left: 4px solid #10b981; flex: 1;'>
-          <div class='card-title'>💡 核心机制增量 (Delta)</div>
-          <div class='card-body'>{delta}</div>
+        <div class='card card-delta' style='border-left: 4px solid #10b981; flex: 1;'>
+          <div class='card-title' style='color:#065f46;'>💡 核心机制增量 (Method Delta)</div>
+          <div class='card-body' style='color:#14532d; font-weight: 500;'>{delta}</div>
         </div>
       </div>
       
       <!-- Column 2 -->
       <div class='col'>
-        <div class='card' style='border-left: 4px solid #6366f1; height: 100%;'>
-          <div class='card-title'>⚙️ 系统架构与方法链路</div>
-          <div class='card-body'>
-            <div class='pipeline-box'>{pipeline}</div>
+        <div class='card' style='border-left: 4px solid #6366f1; height: 100%; display: flex; flex-direction: column;'>
+          <div class='card-title'>⚙️ 系统架构与方法链路 (Architecture)</div>
+          <div class='card-body' style='flex: 1; display: flex; flex-direction: column;'>
+            {pipeline_html}
             {img_tag}
             {formula_block}
           </div>
@@ -543,13 +634,13 @@ def render_structured_academic_poster(
         <div class='card' style='border-left: 4px solid #f59e0b;'>
           <div class='card-title'>📊 实验真相与代价 (Truth & Cost)</div>
           <div class='card-body'>
-            <strong>真实实验提升：</strong><br/>{metrics}<br/><br/>
-            <strong>代价与局限边界：</strong><br/>{costs}
+            <div style='margin-bottom:8px;'><strong>📈 真实实验提升：</strong><br/>{metrics}</div>
+            <div><strong>⚠️ 代价与局限边界：</strong><br/>{costs}</div>
           </div>
         </div>
-        <div class='card' style='border-left: 4px solid #8b5cf6; flex: 1;'>
-          <div class='card-title'>🎯 启发与落地建议 (Actionable Insights)</div>
-          <div class='card-body'>{action}</div>
+        <div class='card' style='border-left: 4px solid #8b5cf6; flex: 1; background: #faf5ff; border-color: #e9d5ff;'>
+          <div class='card-title' style='color:#6b21a8;'>🎯 启发与落地建议 (Actionable Insights)</div>
+          <div class='card-body' style='color:#581c87; font-weight: 500;'>{action}</div>
         </div>
       </div>
     </div>
@@ -576,6 +667,7 @@ def render_structured_academic_poster(
             "--disable-dev-shm-usage",
             "--hide-scrollbars",
             "--window-size=1600,1000",
+            "--virtual-time-budget=2000",
             f"--screenshot={dest_file}",
             tmp_html_path,
         ]
@@ -597,7 +689,7 @@ def render_structured_academic_poster(
     return None
 
 
-def generate_paper_poster(paper: Paper, config: Any) -> Optional[Path]:
+def generate_paper_poster(paper: Paper, config: Any, force: bool = False) -> Optional[Path]:
     """Main entrypoint to generate or extract a visual framework diagram/poster for a paper."""
     poster_cfg = {}
     if hasattr(config, "get"):
@@ -649,7 +741,7 @@ def generate_paper_poster(paper: Paper, config: Any) -> Optional[Path]:
     # 1. Primary: Paper2Poster structured academic poster (Option A)
     result_path: Optional[Path] = None
     if engine in ("paper2poster", "poster", "academic_poster", "auto"):
-        result_path = render_structured_academic_poster(paper, output_dir=output_dir)
+        result_path = render_structured_academic_poster(paper, output_dir=output_dir, force=force)
 
     # 2. AI image generation engine if explicitly requested or as fallback
     if not result_path and (engine == "gpt-image" or (engine in ("paper2poster", "auto") and api_key)):

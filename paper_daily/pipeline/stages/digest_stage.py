@@ -73,6 +73,25 @@ class DigestStage(PipelineStage):
             context.deep_read_papers = [p for p in recalibrated if getattr(p, "recommendation_tier", "deep_read") == "deep_read"]
             context.quick_radar_papers = [p for p in recalibrated if getattr(p, "recommendation_tier", None) == "quick_radar"]
 
+        # 4. Visual Framework Diagram / Poster Generation for top papers (runs with full critical_digest)
+        import os
+        poster_cfg = context.config.get("poster") or {}
+        p_enabled = str(poster_cfg.get("enabled", False)).lower() in ("true", "1") or os.environ.get("POSTER_ENABLED", "").lower() in ("true", "1")
+        if p_enabled:
+            from ...core.poster import generate_paper_poster
+
+            max_posters = int(poster_cfg.get("max_papers", 3))
+            candidates = (context.deep_read_papers or context.reranked_papers)[:max_posters]
+            logger.info(f"Generating framework diagrams / visual posters for top {len(candidates)} papers (after digest)...")
+            for p in candidates:
+                try:
+                    p_img = generate_paper_poster(p, context.config, force=context.force_rerun_today)
+                    if p_img and p_img.is_file():
+                        p.poster_path = str(p_img)
+                        logger.info(f"Attached visual framework diagram to '{p.title[:40]}': {p_img}")
+                except Exception as exc:
+                    logger.warning(f"Failed to generate framework diagram for '{p.title[:40]}': {exc}")
+
         self.executor.write_trace(context.ranked_papers, context.reranked_papers, context.funnel)
 
         logger.info(f"=== Recommended Papers ({len(context.reranked_papers)} papers) ===")

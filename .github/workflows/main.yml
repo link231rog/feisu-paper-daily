@@ -31,6 +31,9 @@ jobs:
       - name: Setup uv
         uses: astral-sh/setup-uv@v5
 
+      - name: Install CJK fonts for poster rendering
+        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk fonts-wqy-zenhei
+
       # data/ holds paper_store.json (pushed/discarded dedup) and research_state.json.
       # Runners are ephemeral, so restore the newest snapshot and save a new one every run.
       - name: Restore pipeline state
