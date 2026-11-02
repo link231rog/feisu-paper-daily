@@ -92,9 +92,17 @@ export const en: Locale = {
     },
   },
   multimedia: {
-    title: 'Multimedia Presentations',
-    pills: ['NotebookLM', 'Edge-TTS', 'MP3 Podcast', 'WeChat Audio', 'PPTX', 'HTML5'],
+    title: 'Multimedia Presentations & Visual Assets',
+    pills: ['AI Architecture Poster (16:9)', 'VLM Figure Gallery', 'NotebookLM Podcast', 'Edge-TTS', 'WeChat Voice', 'PPTX Slides'],
     cards: {
+      poster: {
+        title: 'AI Architecture Poster (Poster Engine)',
+        desc: 'Generates 16:9 widescreen publication-grade vector schematics via gpt-image-2.5-sunburst, mounted natively into Section 3 of reading notes.',
+      },
+      figureGallery: {
+        title: 'VLM Figure Audit & Central Gallery',
+        desc: 'VLM-as-a-Judge automatically evaluates author source figures (score ≥ 4.0), categorizing and archiving top exemplars into the central wiki gallery.',
+      },
       podcast: {
         title: 'Dual-Track Academic Podcasts',
         desc: 'Generates Google NotebookLM official dual-host dialogues or Edge-TTS audio overviews.',
@@ -106,10 +114,6 @@ export const en: Locale = {
       pptx: {
         title: 'Presentation Slides (PPTX)',
         desc: 'Extracts architecture flowcharts and benchmark tables into editable academic slide decks.',
-      },
-      videoPoster: {
-        title: 'Framework Diagrams & Posters',
-        desc: 'Generates GPT-Image architecture diagrams and Paper2Poster visual overviews directly from papers.',
       },
     },
   },

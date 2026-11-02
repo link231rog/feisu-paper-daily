@@ -54,10 +54,11 @@ export interface Locale {
     title: string;
     pills: string[];
     cards: {
+      poster: { title: string; desc: string };
+      figureGallery: { title: string; desc: string };
       podcast: { title: string; desc: string };
       briefing: { title: string; desc: string };
       pptx: { title: string; desc: string };
-      videoPoster: { title: string; desc: string };
     };
   };
   library: {

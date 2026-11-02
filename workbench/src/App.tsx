@@ -39,6 +39,8 @@ const README_RERANK = 'https://github.com/link231rog/feisu-paper-daily#1-文献�
 const README_RUBRIC = 'https://github.com/link231rog/feisu-paper-daily#2-审稿级精读摘要与四维量化评分4d-openreview-rubric';
 const README_AUDIO = 'https://github.com/link231rog/feisu-paper-daily#3-可选-mp3-音频播客与多渠道语音推送';
 const README_WECHAT = 'https://github.com/link231rog/feisu-paper-daily#4-微信公众号排版封面生成与草稿箱发布';
+const README_POSTER = 'https://github.com/link231rog/feisu-paper-daily#5-可选学术长文双语翻译与视觉框架图配置';
+const README_FIGURES = 'https://github.com/link231rog/feisu-paper-daily#3-本地-coding-agent-主动文献检索与零候选一键入库';
 const README_INIT = 'https://github.com/link231rog/feisu-paper-daily#2-交互式初始化向导';
 const SKILL_FILE_URL = 'https://github.com/link231rog/feisu-paper-daily/blob/main/skills/paper-daily/SKILL.md';
 const AUTHOR_HOMEPAGE_URL = 'https://link231rog.github.io/Poster/';
@@ -728,7 +730,17 @@ export default function App() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 border-t border-l border-neutral-200 dark:border-neutral-800">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 border-t border-l border-neutral-200 dark:border-neutral-800">
+              <GridCard
+                title={t.multimedia.cards.poster.title}
+                desc={t.multimedia.cards.poster.desc}
+                href={README_POSTER}
+              />
+              <GridCard
+                title={t.multimedia.cards.figureGallery.title}
+                desc={t.multimedia.cards.figureGallery.desc}
+                href={README_FIGURES}
+              />
               <GridCard
                 title={t.multimedia.cards.podcast.title}
                 desc={t.multimedia.cards.podcast.desc}
@@ -740,15 +752,8 @@ export default function App() {
                 href={README_AUDIO}
               />
               <GridCard
-                dimmed
                 title={t.multimedia.cards.pptx.title}
                 desc={t.multimedia.cards.pptx.desc}
-                href={README_URL}
-              />
-              <GridCard
-                dimmed
-                title={t.multimedia.cards.videoPoster.title}
-                desc={t.multimedia.cards.videoPoster.desc}
                 href={README_URL}
               />
             </div>

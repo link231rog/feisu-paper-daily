@@ -92,9 +92,17 @@ export const zh: Locale = {
     },
   },
   multimedia: {
-    title: '多媒体衍生呈现',
-    pills: ['NotebookLM', 'Edge-TTS', 'MP3 播客', '微信语音', 'PPTX', 'HTML5'],
+    title: '多媒体呈现与图表资产',
+    pills: ['AI 架构海报 (16:9)', 'VLM 论文图表画廊', 'NotebookLM 播客', 'Edge-TTS', '微信 60s 语音', 'PPTX 演示'],
     cards: {
+      poster: {
+        title: 'AI 架构拓扑海报 (Poster 集成)',
+        desc: '调用 gpt-image-2.5-sunburst 生成 16:9 高清矢量科研技术架构拓扑流图，解析数据流与算法机制，原生嵌入精读笔记第 3 节。',
+      },
+      figureGallery: {
+        title: 'VLM 图表资产与中心画廊',
+        desc: '多模态 VLM-as-a-Judge 自动解析 arXiv 源码图表，按消融/对比实验分类并打分（≥4.0），一键沉淀飞书中央画廊看板。',
+      },
       podcast: {
         title: '双轨学术播客',
         desc: '支持 Google NotebookLM 原生双人对谈与 Edge-TTS 语音，提炼核心增量与公式。',
@@ -106,10 +114,6 @@ export const zh: Locale = {
       pptx: {
         title: 'PPT 演示文稿',
         desc: '提取方法流程与实验图表，自动输出可编辑的学术汇报幻灯片。',
-      },
-      videoPoster: {
-        title: '架构全景图与海报',
-        desc: '支持 GPT-Image 机制全景图生成与 Paper2Poster 学术海报，免除冗长摘抄。',
       },
     },
   },
