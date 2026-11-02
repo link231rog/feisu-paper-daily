@@ -2254,8 +2254,88 @@ class FeishuClient:
             except Exception as opt_err:
                 logger.warning(f"Image optimization warning for {doc_id}: {opt_err}")
 
+            # Mount local framework diagram and exemplar figures via native Docx blocks
+            try:
+                self._mount_figures_into_reading_note(doc_id, paper)
+            except Exception as fig_err:
+                logger.warning(f"Figure mounting warning for {doc_id}: {fig_err}")
+
         logger.info(f"Published reading note successfully: {note_url}")
         return note_url
+
+    def _mount_figures_into_reading_note(self, doc_id: str, paper: Paper) -> None:
+        """Mounts local visual framework diagram and exemplar figures directly into the Feishu docx note."""
+        if self.dry_run or not doc_id:
+            return
+
+        from ..core.figures import get_cached_exemplar_figures
+
+        # 1. Mount Section 3 hero framework diagram if available
+        poster_p = getattr(paper, "poster_path", None)
+        if poster_p and os.path.isfile(str(poster_p)):
+            try:
+                root_children = self._get_root_children(doc_id)
+                blocks = self.get_document_blocks(doc_id)
+                sec3_target_idx = -1
+                for idx, cid in enumerate(root_children):
+                    blk = next((b for b in blocks if b.get("block_id") == cid), {})
+                    txt = ""
+                    for k, v in blk.items():
+                        if isinstance(v, dict) and "elements" in v:
+                            txt = "".join([e.get("text_run", {}).get("content", "") for e in v["elements"]])
+                    if "三、核心架构与机制" in txt:
+                        sec3_target_idx = idx + 2
+                        break
+
+                sec3_blocks = [
+                    {"block_type": 27, "image": {"token": ""}, "_local_image_path": str(poster_p)},
+                    {"block_type": 2, "text": {"elements": [{"text_run": {"content": "🎨 核心机制与架构流程全景图\n", "text_element_style": {"italic": True}}}]}}
+                ]
+                self.insert_document_blocks(doc_id, sec3_blocks, target_index=sec3_target_idx)
+                logger.info(f"Mounted framework diagram into Section 3 of reading note {doc_id}")
+            except Exception as exc:
+                logger.warning(f"Failed to mount Section 3 framework diagram: {exc}")
+
+        # 2. Append Section 6 exemplar figures if available
+        exemplars = getattr(paper, "exemplar_figures", None) or get_cached_exemplar_figures(paper)
+        if exemplars:
+            try:
+                existing_blocks = self.get_document_blocks(doc_id)
+                has_sec6 = any("论文精选图表与关键基准" in str(b) for b in existing_blocks)
+                if not has_sec6:
+                    sec6_blocks: list[dict[str, Any]] = [
+                        {"block_type": 22, "divider": {}},
+                        {"block_type": 4, "heading2": {"elements": [{"text_run": {"content": "六、论文精选图表与关键基准 (Exemplar Figures)", "text_element_style": {"bold": True}}}]}}
+                    ]
+                    for idx, fig in enumerate(exemplars, 1):
+                        fp = fig.get("file_path")
+                        if not fp or not os.path.isfile(str(fp)):
+                            continue
+                        cat = fig.get("category_zh") or "核心图表"
+                        score = fig.get("overall_score") or 4.0
+                        clarity = fig.get("clarity_score") or 4
+                        cap = fig.get("caption") or f"图表 {idx}"
+                        strengths = ", ".join(fig.get("strengths") or [])
+
+                        sec6_blocks.append({
+                            "block_type": 5,
+                            "heading3": {"elements": [{"text_run": {"content": f"🏷️ [{cat}] {cap} (评分: {score}/5.0 | 清晰度: {clarity}/5)", "text_element_style": {"bold": True}}}]}
+                        })
+                        sec6_blocks.append({
+                            "block_type": 27,
+                            "image": {"token": ""},
+                            "_local_image_path": str(fp)
+                        })
+                        if strengths:
+                            sec6_blocks.append({
+                                "block_type": 2,
+                                "text": {"elements": [{"text_run": {"content": f"• ✨ 视觉亮点: {strengths}\n", "text_element_style": {"italic": True}}}]}
+                            })
+
+                    self.insert_document_blocks(doc_id, sec6_blocks, target_index=-1)
+                    logger.info(f"Mounted {len(exemplars)} exemplar figures into Section 6 of reading note {doc_id}")
+            except Exception as exc:
+                logger.warning(f"Failed to mount Section 6 exemplar figures: {exc}")
 
     def _build_reading_note_markdown(
         self,
@@ -2334,11 +2414,8 @@ class FeishuClient:
             parts.append(_build_annotation_workspace_markdown(sections, is_app_note=False))
 
             hero_img_md = ""
-            if getattr(paper, "poster_path", None) and os.path.isfile(str(paper.poster_path)):
-                hero_cap = "核心架构与 Pipeline 机制全景图"
-                hero_img_md = f"\n\n![{hero_cap}]({paper.poster_path})\n*{hero_cap}*\n"
-            else:
-                first_img_match = re.search(r"!\[(.*?)\]\((.*?)\)", full_text_markdown or "")
+            if full_text_markdown:
+                first_img_match = re.search(r"!\[(.*?)\]\((https?://.*?)\)", full_text_markdown)
                 if first_img_match:
                     hero_cap = first_img_match.group(1).strip() or "Figure 1: 核心系统架构与工作流设计"
                     hero_src = first_img_match.group(2).strip()
@@ -2363,28 +2440,6 @@ class FeishuClient:
 ## 五、落地启示与思考
 
 {takeaways}""")
-
-            from ..core.figures import get_cached_exemplar_figures
-            exemplars = getattr(paper, "exemplar_figures", None) or get_cached_exemplar_figures(paper)
-            if exemplars:
-                fig_md_parts = ["\n\n## 六、论文精选图表与关键基准 (Exemplar Figures)\n"]
-                for idx, fig in enumerate(exemplars, 1):
-                    fp = fig.get("file_path")
-                    if not fp or not os.path.isfile(str(fp)):
-                        continue
-                    cat = fig.get("category_zh") or "核心图表"
-                    cap = fig.get("caption") or f"图表 {idx}"
-                    score = fig.get("overall_score") or 4.0
-                    clarity = fig.get("clarity_score") or 4
-                    strengths = ", ".join(fig.get("strengths") or [])
-                    fig_md_parts.append(
-                        f"### 🎨 图表 {idx} [{cat}]: 综合评分 {score}/5.0 (清晰度: {clarity}/5)\n\n"
-                        f"![{cap}]({fp})\n\n"
-                        f"*📌 说明: {cap}*\n\n"
-                        + (f"*✨ 视觉亮点: {strengths}*\n\n" if strengths else "")
-                    )
-                if len(fig_md_parts) > 1:
-                    parts.append("".join(fig_md_parts))
 
             reserved_keys = {
                 "core_summary",

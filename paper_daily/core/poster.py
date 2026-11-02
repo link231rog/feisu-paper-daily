@@ -66,32 +66,38 @@ def _resolve_poster_proxies(config: Any) -> list[Optional[dict[str, str]]]:
 
 
 def build_framework_prompt(paper: Paper) -> str:
-    """Builds a precise, legible visual prompt for the framework diagram."""
+    """Builds a high-quality, professional technical prompt for academic framework flowchart generation."""
     title = (paper.title or "Research Paper").strip()
     flow_points: list[str] = []
 
     digest = getattr(paper, "critical_digest", None) or {}
     delta = digest.get("delta") or ""
-    mech = digest.get("mechanism") or ""
+    mech = digest.get("mechanism") or {}
 
-    if mech:
-        # Extract mechanism summary or key modules
-        lines = [line.strip().lstrip("-*# ") for line in str(mech).split("\n") if line.strip()]
-        for line in lines[:3]:
-            flow_points.append(line)
+    pipeline_str = ""
+    if isinstance(mech, dict):
+        pipeline_str = str(mech.get("pipeline") or "")
+    elif isinstance(mech, str):
+        pipeline_str = mech
+
+    if pipeline_str:
+        flow_points.append(f"Core pipeline: {pipeline_str}")
     elif delta:
-        flow_points.append(str(delta)[:180])
+        flow_points.append(f"Delta innovation: {str(delta)[:180]}")
     elif paper.abstract:
-        flow_points.append(paper.abstract[:200])
+        flow_points.append(f"Problem & solution: {paper.abstract[:180]}")
 
-    flow_desc = "; ".join(flow_points) if flow_points else "Input -> Model Processing -> Output"
+    flow_desc = "; ".join(flow_points) if flow_points else "Input Data -> Multi-Stage Processing Modules -> Verification & Policy -> Optimized Output"
 
     prompt = (
-        f"A professional academic architecture diagram and pipeline framework for '{title}'. "
-        f"Components and data flow: {flow_desc}. "
-        "Style: modern scientific architecture diagram, clean vector publication figure, "
-        "crisp legible English labels and directional arrows, high contrast, pure white background, "
-        "no messy text, professional top-tier conference paper style."
+        f"A professional technical architecture flowchart and scientific mechanism diagram for: '{title}'. "
+        f"System workflow logic: {flow_desc}. "
+        "Visual style: high-end top-tier AI conference (NeurIPS/ICLR/CVPR) publication diagram, "
+        "crisp modern flat vector graphic with distinct pastel colored functional blocks "
+        "(Input, Policy Network, Reasoning Router, Memory Store, Decision Engine, Output), "
+        "sharp directional arrows illustrating dataflow and feedback loops, clean legible English labels, "
+        "minimalist enterprise tech aesthetics, pure clean white background, high contrast, wide 16:9 aspect ratio, "
+        "no messy text, no photorealistic humans, highly structured schematic layout."
     )
     return prompt
 
@@ -738,13 +744,8 @@ def generate_paper_poster(paper: Paper, config: Any, force: bool = False) -> Opt
 
     proxies_list = _resolve_poster_proxies(config)
 
-    # 1. Primary: Paper2Poster structured academic poster (Option A)
-    result_path: Optional[Path] = None
-    if engine in ("paper2poster", "poster", "academic_poster", "auto"):
-        result_path = render_structured_academic_poster(paper, output_dir=output_dir, force=force)
-
-    # 2. AI image generation engine if explicitly requested or as fallback
-    if not result_path and (engine == "gpt-image" or (engine in ("paper2poster", "auto") and api_key)):
+    # 1. Primary: If engine is explicitly gpt-image or API key is available, generate modern AI framework flowchart
+    if (engine == "gpt-image" or (engine in ("paper2poster", "auto") and api_key)) and api_key:
         result_path = generate_diagram_with_gpt_image(
             paper,
             api_base=api_base,
@@ -755,9 +756,13 @@ def generate_paper_poster(paper: Paper, config: Any, force: bool = False) -> Opt
             proxies_list=proxies_list,
         )
 
-    # 3. Fallback to raw author figure extraction if poster/image rendering was unavailable
+    # 2. Fallback to raw author figure extraction if AI generation was unavailable
     if not result_path:
         result_path = extract_source_method_figure(paper, output_dir=output_dir)
+
+    # 3. Only fall back to browser poster if explicitly requested as paper2poster and no image was found
+    if not result_path and engine in ("paper2poster", "academic_poster"):
+        result_path = render_structured_academic_poster(paper, output_dir=output_dir, force=force)
 
     if result_path and result_path.is_file():
         paper.poster_path = str(result_path)

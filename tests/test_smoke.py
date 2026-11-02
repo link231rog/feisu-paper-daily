@@ -1889,7 +1889,7 @@ def test_visual_framework_diagram_and_poster_generation(tmp_path, monkeypatch):
     prompt = build_framework_prompt(p)
     assert "Episodic Memory Routing" in prompt
     assert "Context -> Index -> Verification -> Dispatch" in prompt
-    assert "clean vector publication figure" in prompt
+    assert "vector graphic" in prompt
 
     # 2. Mock OpenAI-compatible API for gpt-image-2.5
     out_dir = tmp_path / "posters"
@@ -2390,17 +2390,11 @@ def test_feishu_figure_gallery_and_reading_note_section_six(tmp_path, monkeypatc
     assert any("双阶段世界模型推理架构图" in str(b) for _, b in created_blocks)
     assert any("img_tok_abc" in str(p_data) for _, p_data in patched_images)
 
-    # 4. Test reading note Markdown contains Section 六
-    note_md = client._build_reading_note_markdown(
-        paper=p,
-        sections={"core_summary": "Summary"},
-        current_status="⏳ 待精读",
-        today="2026-11-01",
-        is_app_note=False,
-    )
-    assert "## 六、论文精选图表与关键基准 (Exemplar Figures)" in note_md
-    assert "综合评分 4.8/5.0" in note_md
-    assert "test_arch.png" in note_md
+    # 4. Test reading note mount figures
+    note_blocks_before = len(created_blocks)
+    client._mount_figures_into_reading_note("gallery_doc_id_888", p)
+    assert len(created_blocks) > note_blocks_before
+    assert any("双阶段世界模型推理架构图" in str(b) for _, b in created_blocks)
 
 
 
