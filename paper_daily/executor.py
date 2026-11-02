@@ -1286,6 +1286,10 @@ class Executor:
             )
             sections, tags = self.generate_reading_note_sections(paper_obj, full_text=raw_text)
 
+        # Extract arXiv ID if present
+        aid_match = re.search(r"(?:arxiv\.org/(?:abs|pdf|html)|huggingface\.co/papers)/(\d{4}\.\d{4,5})", clean_url)
+        found_aid = aid_match.group(1) if aid_match else None
+
         paper = Paper(
             source=sources[0] if sources else "web",
             title=title,
@@ -1297,7 +1301,16 @@ class Executor:
             venue=venue,
             tldr=sections.get("core_summary", ""),
             tldr_zh=sections.get("core_summary", ""),
+            arxiv_id=found_aid,
         )
+
+        # Set critical digest context for downstream poster and diagram prompt generation
+        paper.critical_digest = {
+            "delta": sections.get("core_summary") or paper.tldr_zh or "",
+            "mechanism": {"pipeline": sections.get("method") or ""},
+            "evidence_and_cost": {"metrics": sections.get("experiments") or ""},
+            "action_or_check": sections.get("takeaways") or "",
+        }
 
         poster_cfg = self.config.get("poster") or {}
         p_enabled = str(poster_cfg.get("enabled", False)).lower() in ("true", "1") or os.environ.get("POSTER_ENABLED", "").lower() in ("true", "1") or generate_poster

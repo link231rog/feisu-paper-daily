@@ -2769,13 +2769,13 @@ class FeishuClient:
             }
         ]
 
-        # 1. Append 16:9 Paper2Poster if available
+        # 1. Append technical architecture flowchart if available
         if has_poster:
             blocks_to_insert.append({
                 "block_type": 5,
                 "heading3": {
                     "elements": [
-                        {"text_run": {"content": "🎨 16:9 综合学术海报 (Paper2Poster Framework)", "text_element_style": {"bold": True}}}
+                        {"text_run": {"content": "🎨 核心技术架构与工作流全景图 (Architecture & Workflow Flowchart)", "text_element_style": {"bold": True}}}
                     ]
                 }
             })

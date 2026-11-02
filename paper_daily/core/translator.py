@@ -372,14 +372,17 @@ class AcademicTranslator:
                 return idx, self.translate_paragraph(content)
 
             max_workers = min(6, max(2, self.concurrency))
-            deadline = time.time() + 120.0  # Max 2 minutes for the entire full text
+            deadline = time.time() + 60.0  # Max 60 seconds for the entire full text
 
-            with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            pool = ThreadPoolExecutor(max_workers=max_workers)
+            try:
                 futures = {pool.submit(_worker, idx): idx for idx in text_indices}
                 completed_count = 0
                 for f in as_completed(futures):
                     if time.time() > deadline:
-                        logger.warning("Translation reached overall deadline (120s); finishing with partial translations.")
+                        logger.warning("Translation reached overall deadline (60s); finishing with partial translations.")
+                        for pending_f in futures:
+                            pending_f.cancel()
                         break
                     try:
                         idx, res = f.result(timeout=10.0)
@@ -388,6 +391,11 @@ class AcademicTranslator:
                             completed_count += 1
                     except Exception as err:
                         logger.debug(f"Paragraph translation worker error: {err}")
+            finally:
+                try:
+                    pool.shutdown(wait=False, cancel_futures=True)
+                except TypeError:
+                    pool.shutdown(wait=False)
 
             logger.info(f"Finished bilingual translation: {completed_count}/{len(text_indices)} paragraphs translated.")
         else:
