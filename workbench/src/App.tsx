@@ -25,10 +25,6 @@ import {
   Presentation,
   Sun,
   Moon,
-  Cloud,
-  Laptop,
-  Clock,
-  Workflow,
 } from 'lucide-react';
 
 import { locales, type Language, type Theme } from './locales';
@@ -730,16 +726,11 @@ export default function App() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 border-t border-l border-neutral-200 dark:border-neutral-800">
+            <div className="grid grid-cols-1 md:grid-cols-2 border-t border-l border-neutral-200 dark:border-neutral-800">
               <GridCard
                 title={t.multimedia.cards.poster.title}
                 desc={t.multimedia.cards.poster.desc}
                 href={README_POSTER}
-              />
-              <GridCard
-                title={t.multimedia.cards.figureGallery.title}
-                desc={t.multimedia.cards.figureGallery.desc}
-                href={README_FIGURES}
               />
               <GridCard
                 title={t.multimedia.cards.podcast.title}
@@ -752,6 +743,7 @@ export default function App() {
                 href={README_AUDIO}
               />
               <GridCard
+                dimmed
                 title={t.multimedia.cards.pptx.title}
                 desc={t.multimedia.cards.pptx.desc}
                 href={README_URL}
@@ -862,232 +854,126 @@ export default function App() {
               </div>
             </div>
 
-            {/* Two Main Columns: Cloud vs Local */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-              {/* Column 1 · Cloud (GitHub Actions) */}
-              <div className="border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-black p-6 md:p-8 flex flex-col justify-between">
-                <div>
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
-                    <div className="flex items-center gap-2.5">
-                      <div className="p-2 border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-white">
-                        <Cloud className="w-5 h-5 text-blue-500" />
-                      </div>
-                      <h3 className="text-xl font-bold text-neutral-900 dark:text-white">
-                        {t.deploy.cloud.title}
-                      </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 border-t border-l border-neutral-200 dark:border-neutral-800 mb-8">
+              <GridCard
+                title={t.deploy.cards.cloud.title}
+                desc={t.deploy.cards.cloud.desc}
+                href={README_URL}
+              />
+              <GridCard
+                title={t.deploy.cards.local.title}
+                desc={t.deploy.cards.local.desc}
+                href={README_URL}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 border-t border-l border-neutral-200 dark:border-neutral-800 mb-8">
+              <a
+                href={SKILL_FILE_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="group p-6 border-r border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between gap-3 bg-white dark:bg-black hover:bg-neutral-50 dark:hover:bg-neutral-950 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <GitPullRequest className="w-5 h-5 text-neutral-900 dark:text-white shrink-0" />
+                  <div>
+                    <div className="text-lg font-semibold text-neutral-900 dark:text-white">
+                      {t.deploy.steps.fork.title}
                     </div>
-                    <span className="text-xs font-mono px-2 py-0.5 border border-blue-200 dark:border-blue-900/60 bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 self-start sm:self-auto">
-                      {t.deploy.cloud.badge}
-                    </span>
-                  </div>
-                  <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-6 leading-relaxed">
-                    {t.deploy.cloud.desc}
-                  </p>
-
-                  <div className="space-y-4 mb-8">
-                    {t.deploy.cloud.items.map((item, idx) => (
-                      <div key={idx} className="border-l-2 border-neutral-200 dark:border-neutral-800 pl-4 py-1">
-                        <div className="text-sm font-semibold text-neutral-900 dark:text-white">
-                          {item.title}
-                        </div>
-                        <div className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5 leading-relaxed">
-                          {item.desc}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-6">
-                    <a
-                      href={SKILL_FILE_URL}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="group p-3 border border-neutral-200 dark:border-neutral-800 hover:border-black dark:hover:border-white transition-colors flex flex-col justify-between"
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <GitPullRequest className="w-4 h-4 text-neutral-700 dark:text-neutral-300" />
-                        <ArrowUpRight className="w-3.5 h-3.5 text-neutral-400 group-hover:text-black dark:group-hover:text-white transition-colors" />
-                      </div>
-                      <div className="text-xs font-semibold text-neutral-900 dark:text-white">
-                        {t.deploy.cloud.steps.fork.title}
-                      </div>
-                      <div className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5 line-clamp-1">
-                        {t.deploy.cloud.steps.fork.desc}
-                      </div>
-                    </a>
-                    <a
-                      href={README_INIT}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="group p-3 border border-neutral-200 dark:border-neutral-800 hover:border-black dark:hover:border-white transition-colors flex flex-col justify-between"
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <ShieldCheck className="w-4 h-4 text-neutral-700 dark:text-neutral-300" />
-                        <ArrowUpRight className="w-3.5 h-3.5 text-neutral-400 group-hover:text-black dark:group-hover:text-white transition-colors" />
-                      </div>
-                      <div className="text-xs font-semibold text-neutral-900 dark:text-white">
-                        {t.deploy.cloud.steps.wizard.title}
-                      </div>
-                      <div className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5 line-clamp-1">
-                        {t.deploy.cloud.steps.wizard.desc}
-                      </div>
-                    </a>
-                    <a
-                      href={README_INIT}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="group p-3 border border-neutral-200 dark:border-neutral-800 hover:border-black dark:hover:border-white transition-colors flex flex-col justify-between"
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <Send className="w-4 h-4 text-neutral-700 dark:text-neutral-300" />
-                        <ArrowUpRight className="w-3.5 h-3.5 text-neutral-400 group-hover:text-black dark:group-hover:text-white transition-colors" />
-                      </div>
-                      <div className="text-xs font-semibold text-neutral-900 dark:text-white">
-                        {t.deploy.cloud.steps.generate.title}
-                      </div>
-                      <div className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5 line-clamp-1">
-                        {t.deploy.cloud.steps.generate.desc}
-                      </div>
-                    </a>
+                    <div className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
+                      {t.deploy.steps.fork.desc}
+                    </div>
                   </div>
                 </div>
-
-                <div className="border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 p-4 flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="text-xs text-neutral-500 dark:text-neutral-400 mb-1">
-                      {t.deploy.cloud.terminalDesc}
+                <ArrowUpRight className="w-4 h-4 text-neutral-400 dark:text-neutral-600 group-hover:text-black dark:group-hover:text-white transition-colors shrink-0" />
+              </a>
+              <a
+                href={README_INIT}
+                target="_blank"
+                rel="noreferrer"
+                className="group p-6 border-r border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between gap-3 bg-white dark:bg-black hover:bg-neutral-50 dark:hover:bg-neutral-950 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <ShieldCheck className="w-5 h-5 text-neutral-900 dark:text-white shrink-0" />
+                  <div>
+                    <div className="text-lg font-semibold text-neutral-900 dark:text-white">
+                      {t.deploy.steps.wizard.title}
                     </div>
-                    <code className="text-xs sm:text-sm font-mono text-neutral-900 dark:text-white block overflow-x-auto">
-                      $ {t.deploy.cloud.command}
-                    </code>
+                    <div className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
+                      {t.deploy.steps.wizard.desc}
+                    </div>
                   </div>
-                  <button
-                    onClick={() => handleCopy(t.deploy.cloud.command, 'cloud')}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-black text-neutral-900 dark:text-white text-xs font-medium hover:border-black dark:hover:border-white transition-colors shrink-0 cursor-pointer"
-                  >
-                    {copiedCmd === 'cloud' ? (
-                      <Check className="w-3.5 h-3.5 text-emerald-500" />
-                    ) : (
-                      <Copy className="w-3.5 h-3.5" />
-                    )}
-                    <span>
-                      {copiedCmd === 'cloud' ? t.deploy.terminal.copied : t.deploy.terminal.copy}
-                    </span>
-                  </button>
                 </div>
+                <ArrowUpRight className="w-4 h-4 text-neutral-400 dark:text-neutral-600 group-hover:text-black dark:group-hover:text-white transition-colors shrink-0" />
+              </a>
+              <a
+                href={README_INIT}
+                target="_blank"
+                rel="noreferrer"
+                className="group p-6 border-r border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between gap-3 bg-white dark:bg-black hover:bg-neutral-50 dark:hover:bg-neutral-950 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <Send className="w-5 h-5 text-neutral-900 dark:text-white shrink-0" />
+                  <div>
+                    <div className="text-lg font-semibold text-neutral-900 dark:text-white">
+                      {t.deploy.steps.generate.title}
+                    </div>
+                    <div className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
+                      {t.deploy.steps.generate.desc}
+                    </div>
+                  </div>
+                </div>
+                <ArrowUpRight className="w-4 h-4 text-neutral-400 dark:text-neutral-600 group-hover:text-black dark:group-hover:text-white transition-colors shrink-0" />
+              </a>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 border-t border-l border-neutral-200 dark:border-neutral-800">
+              <div className="border-r border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 p-5 flex items-center justify-between gap-4 transition-colors">
+                <div className="min-w-0">
+                  <div className="text-xs text-neutral-500 dark:text-neutral-400 mb-1">
+                    {t.deploy.terminal.initDesc}
+                  </div>
+                  <code className="text-base font-mono text-neutral-900 dark:text-white block overflow-x-auto">
+                    $ {initCommand}
+                  </code>
+                </div>
+                <button
+                  onClick={() => handleCopy(initCommand, 'init')}
+                  className="inline-flex items-center gap-2 px-4 py-2 border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-black text-neutral-900 dark:text-white text-sm font-medium hover:border-black dark:hover:border-white transition-colors shrink-0 cursor-pointer"
+                >
+                  {copiedCmd === 'init' ? (
+                    <Check className="w-4 h-4 text-emerald-500" />
+                  ) : (
+                    <Copy className="w-4 h-4" />
+                  )}
+                  <span>
+                    {copiedCmd === 'init' ? t.deploy.terminal.copied : t.deploy.terminal.copy}
+                  </span>
+                </button>
               </div>
 
-              {/* Column 2 · Local Native (LaunchAgent & n8n & CPA) */}
-              <div className="border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-black p-6 md:p-8 flex flex-col justify-between">
-                <div>
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
-                    <div className="flex items-center gap-2.5">
-                      <div className="p-2 border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-white">
-                        <Laptop className="w-5 h-5 text-emerald-500" />
-                      </div>
-                      <h3 className="text-xl font-bold text-neutral-900 dark:text-white">
-                        {t.deploy.local.title}
-                      </h3>
-                    </div>
-                    <span className="text-xs font-mono px-2 py-0.5 border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 self-start sm:self-auto">
-                      {t.deploy.local.badge}
-                    </span>
+              <div className="border-r border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 p-5 flex items-center justify-between gap-4 transition-colors">
+                <div className="min-w-0">
+                  <div className="text-xs text-neutral-500 dark:text-neutral-400 mb-1">
+                    {t.deploy.terminal.searchDesc}
                   </div>
-                  <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-6 leading-relaxed">
-                    {t.deploy.local.desc}
-                  </p>
-
-                  <div className="space-y-4 mb-8">
-                    {t.deploy.local.items.map((item, idx) => (
-                      <div key={idx} className="border-l-2 border-neutral-200 dark:border-neutral-800 pl-4 py-1">
-                        <div className="text-sm font-semibold text-neutral-900 dark:text-white">
-                          {item.title}
-                        </div>
-                        <div className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5 leading-relaxed">
-                          {item.desc}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-6">
-                    <a
-                      href={README_URL}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="group p-3 border border-neutral-200 dark:border-neutral-800 hover:border-black dark:hover:border-white transition-colors flex flex-col justify-between"
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <Clock className="w-4 h-4 text-neutral-700 dark:text-neutral-300" />
-                        <ArrowUpRight className="w-3.5 h-3.5 text-neutral-400 group-hover:text-black dark:group-hover:text-white transition-colors" />
-                      </div>
-                      <div className="text-xs font-semibold text-neutral-900 dark:text-white">
-                        {t.deploy.local.steps.launchd.title}
-                      </div>
-                      <div className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5 line-clamp-1">
-                        {t.deploy.local.steps.launchd.desc}
-                      </div>
-                    </a>
-                    <a
-                      href={README_URL}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="group p-3 border border-neutral-200 dark:border-neutral-800 hover:border-black dark:hover:border-white transition-colors flex flex-col justify-between"
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <Cpu className="w-4 h-4 text-neutral-700 dark:text-neutral-300" />
-                        <ArrowUpRight className="w-3.5 h-3.5 text-neutral-400 group-hover:text-black dark:group-hover:text-white transition-colors" />
-                      </div>
-                      <div className="text-xs font-semibold text-neutral-900 dark:text-white">
-                        {t.deploy.local.steps.cpa.title}
-                      </div>
-                      <div className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5 line-clamp-1">
-                        {t.deploy.local.steps.cpa.desc}
-                      </div>
-                    </a>
-                    <a
-                      href={README_URL}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="group p-3 border border-neutral-200 dark:border-neutral-800 hover:border-black dark:hover:border-white transition-colors flex flex-col justify-between"
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <Workflow className="w-4 h-4 text-neutral-700 dark:text-neutral-300" />
-                        <ArrowUpRight className="w-3.5 h-3.5 text-neutral-400 group-hover:text-black dark:group-hover:text-white transition-colors" />
-                      </div>
-                      <div className="text-xs font-semibold text-neutral-900 dark:text-white">
-                        {t.deploy.local.steps.n8n.title}
-                      </div>
-                      <div className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5 line-clamp-1">
-                        {t.deploy.local.steps.n8n.desc}
-                      </div>
-                    </a>
-                  </div>
+                  <code className="text-base font-mono text-neutral-900 dark:text-white block overflow-x-auto">
+                    $ {cliCommand}
+                  </code>
                 </div>
-
-                <div className="border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 p-4 flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="text-xs text-neutral-500 dark:text-neutral-400 mb-1">
-                      {t.deploy.local.terminalDesc}
-                    </div>
-                    <code className="text-xs sm:text-sm font-mono text-neutral-900 dark:text-white block overflow-x-auto">
-                      $ {t.deploy.local.command}
-                    </code>
-                  </div>
-                  <button
-                    onClick={() => handleCopy(t.deploy.local.command, 'local')}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-black text-neutral-900 dark:text-white text-xs font-medium hover:border-black dark:hover:border-white transition-colors shrink-0 cursor-pointer"
-                  >
-                    {copiedCmd === 'local' ? (
-                      <Check className="w-3.5 h-3.5 text-emerald-500" />
-                    ) : (
-                      <Copy className="w-3.5 h-3.5" />
-                    )}
-                    <span>
-                      {copiedCmd === 'local' ? t.deploy.terminal.copied : t.deploy.terminal.copy}
-                    </span>
-                  </button>
-                </div>
+                <button
+                  onClick={() => handleCopy(cliCommand, 'search')}
+                  className="inline-flex items-center gap-2 px-4 py-2 border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-black text-neutral-900 dark:text-white text-sm font-medium hover:border-black dark:hover:border-white transition-colors shrink-0 cursor-pointer"
+                >
+                  {copiedCmd === 'search' ? (
+                    <Check className="w-4 h-4 text-emerald-500" />
+                  ) : (
+                    <Copy className="w-4 h-4" />
+                  )}
+                  <span>
+                    {copiedCmd === 'search' ? t.deploy.terminal.copied : t.deploy.terminal.copy}
+                  </span>
+                </button>
               </div>
             </div>
           </motion.section>

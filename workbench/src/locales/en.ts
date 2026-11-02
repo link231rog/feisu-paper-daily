@@ -92,16 +92,12 @@ export const en: Locale = {
     },
   },
   multimedia: {
-    title: 'Multimedia Presentations & Visual Assets',
-    pills: ['AI Architecture Poster (16:9)', 'VLM Figure Gallery', 'NotebookLM Podcast', 'Edge-TTS', 'WeChat Voice', 'PPTX Slides'],
+    title: 'Multimedia Presentations',
+    pills: ['AI Architecture Posters', 'NotebookLM Podcast', 'Edge-TTS', 'WeChat Audio', 'PPTX Slides'],
     cards: {
       poster: {
-        title: 'AI Architecture Poster (Poster Engine)',
-        desc: 'Generates 16:9 widescreen publication-grade vector schematics via gpt-image-2.5-sunburst, mounted natively into Section 3 of reading notes.',
-      },
-      figureGallery: {
-        title: 'VLM Figure Audit & Central Gallery',
-        desc: 'VLM-as-a-Judge automatically evaluates author source figures (score ≥ 4.0), categorizing and archiving top exemplars into the central wiki gallery.',
+        title: 'Architecture Posters (Poster Engine)',
+        desc: 'Generates 16:9 publication-grade vector schematics via gpt-image, natively mounted into reading notes and wiki gallery.',
       },
       podcast: {
         title: 'Dual-Track Academic Podcasts',
@@ -159,78 +155,34 @@ export const en: Locale = {
   },
   deploy: {
     title: 'Deployment & Trigger Integrations',
-    pills: ['Cloud: GitHub Actions', 'Local: macOS LaunchAgent', 'Automation: n8n Workflow', 'Local LLM: CPA Gemini', 'Webhook Dispatch'],
-    cloud: {
-      badge: 'Serverless Cloud · Zero Server Cost',
-      title: 'Cloud Deployment (GitHub Actions)',
-      desc: 'Ideal for zero-server, out-of-the-box daily recommendations. Runs automatically on GitHub Actions with zero hosting expenses.',
-      items: [
-        {
-          title: 'GitHub Actions Scheduling',
-          desc: 'Fork the repo, configure secrets, and receive daily digests automatically at 09:15 with zero hosting cost.',
-        },
-        {
-          title: 'Webhook & Dynamic Dispatch',
-          desc: 'Triggers on-demand runs via repository_dispatch with dynamic ad-hoc research questions and tags.',
-        },
-        {
-          title: 'Agent-Native Zero-Install Fork',
-          desc: 'Import SKILL.md into any coding agent to automatically fork the repository and set up GitHub Secrets.',
-        },
-      ],
-      terminalDesc: 'Dispatch remote GitHub Actions pipeline',
-      command: 'uv run paper-library trigger',
-      steps: {
-        fork: {
-          title: 'Import SKILL.md',
-          desc: 'Single skill file with zero local code',
-        },
-        wizard: {
-          title: 'Agent Remote Fork',
-          desc: 'Remotely forks repo to your personal GitHub',
-        },
-        generate: {
-          title: 'Inject Secrets & Schedule',
-          desc: 'Automates Actions secrets and schedules free runs',
-        },
+    pills: ['GitHub Actions', 'macOS LaunchAgent', 'n8n Workflow', 'Local CPA (Gemini)', 'Webhook'],
+    cards: {
+      cloud: {
+        title: 'Cloud Deployment (GitHub Actions)',
+        desc: 'Fork the repo and configure secrets for scheduled runs on GitHub Actions with dynamic webhook triggers and zero server costs.',
+      },
+      local: {
+        title: 'Local Execution (LaunchAgent & n8n)',
+        desc: 'Native macOS launchd daemon with wake catchup and n8n workflow integration, directly connecting to local CPA (Gemini 3.8 Flash).',
       },
     },
-    local: {
-      badge: 'Local Private Execution · High Concurrency',
-      title: 'Local Environment (LaunchAgent & n8n)',
-      desc: 'Ideal for leveraging local high-performance LLMs (CPA Gemini) and native desktop or low-code automation without quota limits.',
-      items: [
-        {
-          title: 'macOS LaunchAgent Daemon',
-          desc: 'Native launchd background daemon at 09:15 with automatic wake-from-sleep catchup and local log persistence.',
-        },
-        {
-          title: 'Local CPA (Gemini 3.8 Flash)',
-          desc: 'Connects directly to 127.0.0.1:8317 with zero rate limits, sub-second latency, and quota-free analysis.',
-        },
-        {
-          title: 'n8n Workflow Automation',
-          desc: 'Pre-configured workflow JSON featuring Cron scheduling, Webhook endpoints, and local CLI execution.',
-        },
-      ],
-      terminalDesc: 'Execute Paper Daily locally on host environment',
-      command: 'uv run paper-library trigger --local',
-      steps: {
-        launchd: {
-          title: 'LaunchAgent Daemon',
-          desc: 'Load plist with launchctl, automatic wake catchup',
-        },
-        cpa: {
-          title: 'CPA Gemini Bridge',
-          desc: 'Fast local reasoning via port 8317',
-        },
-        n8n: {
-          title: 'n8n Workflow Import',
-          desc: 'Import JSON for instant low-code automation',
-        },
+    steps: {
+      fork: {
+        title: 'Import SKILL.md',
+        desc: 'Single skill file with zero local code or dependencies',
+      },
+      wizard: {
+        title: 'Agent Remote Fork',
+        desc: 'Remotely forks repo to your personal GitHub account',
+      },
+      generate: {
+        title: 'Configure Secrets & Run',
+        desc: 'Injects Actions secrets and schedules 100% serverless',
       },
     },
     terminal: {
+      initDesc: 'Interactive multi-select setup and credential configuration',
+      searchDesc: 'Direct local execution / agent search',
       copied: 'Copied',
       copy: 'Copy',
     },

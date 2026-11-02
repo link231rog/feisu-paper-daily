@@ -55,7 +55,6 @@ export interface Locale {
     pills: string[];
     cards: {
       poster: { title: string; desc: string };
-      figureGallery: { title: string; desc: string };
       podcast: { title: string; desc: string };
       briefing: { title: string; desc: string };
       pptx: { title: string; desc: string };
@@ -83,33 +82,18 @@ export interface Locale {
   deploy: {
     title: string;
     pills: string[];
-    cloud: {
-      badge: string;
-      title: string;
-      desc: string;
-      items: Array<{ title: string; desc: string }>;
-      terminalDesc: string;
-      command: string;
-      steps: {
-        fork: { title: string; desc: string };
-        wizard: { title: string; desc: string };
-        generate: { title: string; desc: string };
-      };
+    cards: {
+      cloud: { title: string; desc: string };
+      local: { title: string; desc: string };
     };
-    local: {
-      badge: string;
-      title: string;
-      desc: string;
-      items: Array<{ title: string; desc: string }>;
-      terminalDesc: string;
-      command: string;
-      steps: {
-        launchd: { title: string; desc: string };
-        cpa: { title: string; desc: string };
-        n8n: { title: string; desc: string };
-      };
+    steps: {
+      fork: { title: string; desc: string };
+      wizard: { title: string; desc: string };
+      generate: { title: string; desc: string };
     };
     terminal: {
+      initDesc: string;
+      searchDesc: string;
       copied: string;
       copy: string;
     };

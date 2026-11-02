@@ -92,16 +92,12 @@ export const zh: Locale = {
     },
   },
   multimedia: {
-    title: '多媒体呈现与图表资产',
-    pills: ['AI 架构海报 (16:9)', 'VLM 论文图表画廊', 'NotebookLM 播客', 'Edge-TTS', '微信 60s 语音', 'PPTX 演示'],
+    title: '多媒体衍生呈现',
+    pills: ['AI 架构海报', 'NotebookLM 播客', 'Edge-TTS', '微信语音', 'PPTX'],
     cards: {
       poster: {
-        title: 'AI 架构拓扑海报 (Poster 集成)',
-        desc: '调用 gpt-image-2.5-sunburst 生成 16:9 高清矢量科研技术架构拓扑流图，解析数据流与算法机制，原生嵌入精读笔记第 3 节。',
-      },
-      figureGallery: {
-        title: 'VLM 图表资产与中心画廊',
-        desc: '多模态 VLM-as-a-Judge 自动解析 arXiv 源码图表，按消融/对比实验分类并打分（≥4.0），一键沉淀飞书中央画廊看板。',
+        title: '架构海报 (Poster 集成)',
+        desc: '基于 gpt-image 生成 16:9 高清架构拓扑流图，解析数据流与算法机制，原生嵌入精读笔记并沉淀画廊。',
       },
       podcast: {
         title: '双轨学术播客',
@@ -159,78 +155,34 @@ export const zh: Locale = {
   },
   deploy: {
     title: '接入触发与部署',
-    pills: ['云端: GitHub Actions', '本地: macOS LaunchAgent', '自动化: n8n 工作流', '本地模型: CPA Gemini', 'Webhook 调度'],
-    cloud: {
-      badge: '云端免服调度 · 0 服务器成本',
-      title: '云端部署 (GitHub Actions)',
-      desc: '适合开箱即用、无需本地机器常驻的开发者与团队。依托 GitHub Actions 自动化定时运行，全免服低成本。',
-      items: [
-        {
-          title: 'GitHub Actions 定时托管',
-          desc: 'Fork 仓库填入渠道密钥，每天定时（默认 09:15）自动检索、评测与推送日报。',
-        },
-        {
-          title: 'Webhook 与事件触发',
-          desc: '支持通过 repository_dispatch 远程触发，动态传入当次关心的临时研究问题与过滤规则。',
-        },
-        {
-          title: 'Agent-Native 零安装 Fork',
-          desc: '仅需将单个 SKILL.md 导入 AI Agent，Agent 全自动远程 Fork 仓库并配置云端 Secrets。',
-        },
-      ],
-      terminalDesc: '远程触发云端 GitHub Actions 调度',
-      command: 'uv run paper-library trigger',
-      steps: {
-        fork: {
-          title: '引入 SKILL.md',
-          desc: '单个 Skill 文件，本地零安装依赖与代码',
-        },
-        wizard: {
-          title: 'Agent 远程 Fork',
-          desc: '免 clone 自动将仓库 Fork 到个人 GitHub',
-        },
-        generate: {
-          title: '写入云端密钥并触发',
-          desc: '自动配置 Actions Secrets 并在云端定时免费调度',
-        },
+    pills: ['GitHub Actions', 'macOS LaunchAgent', 'n8n 工作流', '本地模型 (CPA)', 'Webhook'],
+    cards: {
+      cloud: {
+        title: '云端部署 (GitHub Actions)',
+        desc: 'Fork 仓库填好密钥即可在 GitHub Actions 定时全免服运行，支持 Webhook 动态触发与远程调度。',
+      },
+      local: {
+        title: '本地运行 (LaunchAgent & n8n)',
+        desc: 'macOS 原生守护进程开机常驻、休眠唤醒自动补发，支持导入 n8n 工作流并直连本地 CPA (Gemini 3.8 Flash)。',
       },
     },
-    local: {
-      badge: '本地常驻执行 · 私有模型与自动化',
-      title: '本地环境 (LaunchAgent & n8n)',
-      desc: '适合拥有本地大模型（如 CPA Gemini）或已搭建自动化编排（n8n）的高性能场景，私密高速且零额度限制。',
-      items: [
-        {
-          title: 'macOS LaunchAgent 常驻守护',
-          desc: '系统原生 launchd 定时唤醒，合盖休眠唤醒后自动补发执行，日志持久化于本地。',
-        },
-        {
-          title: '本地常驻 CPA (Gemini 3.8 Flash)',
-          desc: '直连 127.0.0.1:8317，无需外网额度与代理瓶颈，单篇秒级产出结构化评测。',
-        },
-        {
-          title: 'n8n 自动化工作流编排',
-          desc: '预置一键导入工作流 JSON，内置 Cron 09:15 定时节点与 Webhook 外部调用端点。',
-        },
-      ],
-      terminalDesc: '直接在宿主机拉起本地 Paper Daily 流水线',
-      command: 'uv run paper-library trigger --local',
-      steps: {
-        launchd: {
-          title: 'LaunchAgent 守护',
-          desc: 'launchctl 载入 plist，合盖唤醒自动补发',
-        },
-        cpa: {
-          title: 'CPA Gemini 直连',
-          desc: '连接本地 8317 端口秒级推理与裁判',
-        },
-        n8n: {
-          title: 'n8n 导入工作流',
-          desc: 'Import JSON 即刻拥有低代码定时与 Webhook',
-        },
+    steps: {
+      fork: {
+        title: '下载 / 引入 SKILL.md',
+        desc: '只需单个 Skill 文件，本地零安装依赖与代码',
+      },
+      wizard: {
+        title: 'Agent 自动远程 Fork',
+        desc: '免 clone 自动将仓库远程 Fork 到个人 GitHub',
+      },
+      generate: {
+        title: '写入云端密钥并触发',
+        desc: '自动配置 Actions Secrets 并在云端定时免费调度',
       },
     },
     terminal: {
+      initDesc: '交互式多选引导与渠道密钥初始化',
+      searchDesc: '本地直接拉起运行 / Agent 检索',
       copied: '已复制',
       copy: '复制',
     },
