@@ -1,0 +1,73 @@
+{
+  "name": "Paper Daily - Local Scheduled & Webhook Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "15 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger-01",
+      "name": "Daily 09:15 Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [220, 260]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "paper-daily",
+        "options": {}
+      },
+      "id": "webhook-trigger-01",
+      "name": "Webhook Trigger (POST /webhook/paper-daily)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 460],
+      "webhookId": "paper-daily-trigger"
+    },
+    {
+      "parameters": {
+        "command": "/bin/bash /Users/huangzixuan/Documents/Dev/feisu-paper-daily/scripts/run_daily_local.sh"
+      },
+      "id": "execute-command-01",
+      "name": "Execute Local Paper Daily Runner",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [540, 360]
+    }
+  ],
+  "connections": {
+    "Daily 09:15 Trigger": {
+      "main": [
+        [
+          {
+            "node": "Execute Local Paper Daily Runner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Trigger (POST /webhook/paper-daily)": {
+      "main": [
+        [
+          {
+            "node": "Execute Local Paper Daily Runner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

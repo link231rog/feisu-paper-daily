@@ -2397,6 +2397,28 @@ def test_feishu_figure_gallery_and_reading_note_section_six(tmp_path, monkeypatc
     assert any("双阶段世界模型推理架构图" in str(b) for _, b in created_blocks)
 
 
+def test_paper_library_trigger_local(monkeypatch, capsys):
+    from paper_daily.library.bridge import main as bridge_main
+    import subprocess
+
+    called_cmd = []
+    def mock_run(cmd, *args, **kwargs):
+        called_cmd.extend(cmd)
+        class Res:
+            returncode = 0
+        return Res()
+
+    monkeypatch.setattr(subprocess, "run", mock_run)
+    monkeypatch.setattr("sys.argv", ["paper-library", "trigger", "--local", "--json"])
+    bridge_main()
+
+    out = capsys.readouterr().out
+    assert "local" in out
+    assert '"returncode": 0' in out
+    assert any("run_daily_local.sh" in str(c) or "paper-daily" in str(c) for c in called_cmd)
+
+
+
 
 
 

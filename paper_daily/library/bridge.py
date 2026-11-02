@@ -1417,6 +1417,7 @@ def main() -> None:
     p_search.add_argument("--json", action="store_true", help="Output raw JSON")
 
     p_trig = sub.add_parser("trigger", help="Trigger remote GitHub Actions pipeline via repository_dispatch (for Hermes, Grok bot, curl)")
+    p_trig.add_argument("--local", action="store_true", help="Execute the pipeline directly in the local environment instead of dispatching to GitHub Actions")
     p_trig.add_argument("--repo", default=None, help="GitHub repository e.g. 'owner/repo' (defaults to git config or link231rog/feisu-paper-daily)")
     p_trig.add_argument("--token", default=None, help="GitHub personal access token (defaults to GITHUB_TOKEN or gh CLI)")
     p_trig.add_argument("--event", default="paper-daily", choices=["paper-daily", "ingest"], help="Event type: 'paper-daily' (full) or 'ingest' (confirmed ingestion)")
@@ -1514,6 +1515,24 @@ def main() -> None:
         else:
             print("\n\n---\n\n".join(format_restored_note_markdown(n) for n in notes))
     elif args.cmd == "trigger":
+        if getattr(args, "local", False):
+            import subprocess
+            runner_script = Path(__file__).resolve().parent.parent.parent / "scripts" / "run_daily_local.sh"
+            extra_args = []
+            if args.force_today:
+                extra_args.append("force_today=true")
+            cmd = ["/bin/bash", str(runner_script)] + extra_args if runner_script.is_file() else ["uv", "run", "paper-daily"] + extra_args
+            logger.info(f"Executing local Paper Daily pipeline via: {' '.join(cmd)}")
+            res = subprocess.run(cmd)
+            if args.json:
+                print(json.dumps({"status": "success" if res.returncode == 0 else "error", "mode": "local", "returncode": res.returncode}))
+            else:
+                if res.returncode == 0:
+                    print(f"[本地执行完成] 状态码: 0")
+                else:
+                    print(f"[本地执行失败] 状态码: {res.returncode}")
+            return
+
         try:
             res = trigger_pipeline_dispatch(
                 repo=args.repo,
