@@ -22,6 +22,8 @@ export const en: Locale = {
     title: 'Paper Daily',
     subtitle: 'Automated Paper Discovery, Question Tracking & Library Archiving',
     tags: [
+      'Local Engine (LaunchAgent)',
+      'n8n Workflow Support',
       'Serverless via GitHub Actions',
       'Multi-Dimensional Reranking',
       'Agent-Reach Web Reach',
@@ -153,8 +155,16 @@ export const en: Locale = {
   },
   deploy: {
     title: 'Deployment & Trigger Integrations',
-    pills: ['GitHub Actions', 'OpenClaw', 'Hermes', 'Grok Bot', 'Webhook'],
+    pills: ['macOS LaunchAgent', 'n8n Workflow', 'Local CPA (Gemini)', 'GitHub Actions', 'OpenClaw', 'Hermes', 'Webhook'],
     cards: {
+      localEngine: {
+        title: 'Local Engine (LaunchAgent)',
+        desc: 'Native macOS launchd background scheduling with wake catchup. Connects directly to local CPA (Gemini 3.8 Flash) for fast, quota-free paper analysis.',
+      },
+      n8nWorkflow: {
+        title: 'n8n Automation Support',
+        desc: 'Pre-configured workflow JSON featuring Cron scheduling and POST /webhook/paper-daily triggers for low-code automation.',
+      },
       githubActions: {
         title: 'GitHub Actions',
         desc: 'Fork the repo and configure repository secrets for scheduled runs with zero server costs.',

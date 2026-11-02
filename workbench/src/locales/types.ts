@@ -83,6 +83,8 @@ export interface Locale {
     title: string;
     pills: string[];
     cards: {
+      localEngine: { title: string; desc: string };
+      n8nWorkflow: { title: string; desc: string };
       githubActions: { title: string; desc: string };
       agentRetrieval: { title: string; desc: string };
       webhook: { title: string; desc: string };

@@ -205,7 +205,36 @@ poster:
   model: "gpt-image-2.5-sunburst"
 ```
 
-### 6. 运行测试
+### 6. 本地引擎 (macOS LaunchAgent) 与 n8n 自动化工作流调度
+
+除了全免服的 GitHub Actions 云端调度，系统完整支持本地私有运行与自动化编排：
+
+- **macOS 原生常驻调度（LaunchAgent）**：
+  通过系统原生 `launchd` 守护进程实现每日定时触发（默认 09:15），合盖休眠唤醒后自动补发执行：
+  ```bash
+  # 载入并启用本地定时任务
+  launchctl load -w ~/Library/LaunchAgents/com.user.paperdaily.plist
+
+  # 查看定时常驻状态
+  launchctl list | grep paperdaily
+  ```
+- **本地高效大模型 (CPA / Gemini 3.8 Flash)**：
+  本地运行优先复用本机已常驻的 `CLIProxyAPI`（监听在 `http://127.0.0.1:8317/v1`），在 `.env` 中配置使用 `gemini-3.8-flash` 作为生成与评分裁判模型，实现秒级高质量深度研读与图表生成。
+- **n8n 自动化工作流支持**：
+  项目预置了标准的工作流定义文件 `scripts/n8n/paper_daily_n8n_workflow.json`。在 n8n 控制台点击 **Import from File** 即可直接载入，内置：
+  1. **Daily 09:15 Cron 触发节点**
+  2. **POST /webhook/paper-daily HTTP 触发节点**
+  3. **Execute Command 宿主机直接调用节点**
+- **统一双轨 CLI 触发**：
+  ```bash
+  # 1. 本地直接拉起执行（复用本机网络、CPA 额度与本地环境）
+  uv run paper-library trigger --local
+
+  # 2. 远程调度触发（向 GitHub Actions 发送 repository_dispatch 请求）
+  uv run paper-library trigger
+  ```
+
+### 7. 运行测试
 
 ```bash
 uv run pytest tests/test_smoke.py

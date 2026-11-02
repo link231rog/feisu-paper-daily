@@ -853,7 +853,17 @@ export default function App() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 border-t border-l border-neutral-200 dark:border-neutral-800 mb-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 border-t border-l border-neutral-200 dark:border-neutral-800 mb-8">
+              <GridCard
+                title={t.deploy.cards.localEngine.title}
+                desc={t.deploy.cards.localEngine.desc}
+                href={README_URL}
+              />
+              <GridCard
+                title={t.deploy.cards.n8nWorkflow.title}
+                desc={t.deploy.cards.n8nWorkflow.desc}
+                href={README_URL}
+              />
               <GridCard
                 title={t.deploy.cards.githubActions.title}
                 desc={t.deploy.cards.githubActions.desc}

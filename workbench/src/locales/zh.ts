@@ -22,6 +22,8 @@ export const zh: Locale = {
     title: 'Paper Daily',
     subtitle: '自动化文献推荐、问题追踪与文献库沉淀',
     tags: [
+      '本地引擎 (LaunchAgent)',
+      'n8n 自动化工作流',
       'GitHub Actions 免服运行',
       '多维度文献推荐',
       'Agent-Reach 全网声量',
@@ -153,8 +155,16 @@ export const zh: Locale = {
   },
   deploy: {
     title: '接入触发与部署',
-    pills: ['GitHub Actions', 'OpenClaw', 'Hermes', 'Grok Bot', 'Webhook'],
+    pills: ['macOS LaunchAgent', 'n8n 工作流', '本地 CPA (Gemini)', 'GitHub Actions', 'OpenClaw', 'Hermes', 'Webhook'],
     cards: {
+      localEngine: {
+        title: '本地引擎 (LaunchAgent)',
+        desc: 'macOS 原生 launchd 守护定时调度，支持休眠唤醒自动补发；直连本地常驻 CPA (Gemini 3.8 Flash) 实现极速高性能精读与图表生成。',
+      },
+      n8nWorkflow: {
+        title: 'n8n 自动化支持',
+        desc: '提供官方一键导入工作流 JSON，内置 Cron 定时触发与 POST /webhook/paper-daily 端点，方便自建低代码自动化流程。',
+      },
       githubActions: {
         title: 'GitHub Actions',
         desc: 'Fork 仓库填好密钥即可定时运行，无需服务器。',
