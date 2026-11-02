@@ -155,46 +155,78 @@ export const zh: Locale = {
   },
   deploy: {
     title: '接入触发与部署',
-    pills: ['macOS LaunchAgent', 'n8n 工作流', '本地 CPA (Gemini)', 'GitHub Actions', 'OpenClaw', 'Hermes', 'Webhook'],
-    cards: {
-      localEngine: {
-        title: '本地引擎 (LaunchAgent)',
-        desc: 'macOS 原生 launchd 守护定时调度，支持休眠唤醒自动补发；直连本地常驻 CPA (Gemini 3.8 Flash) 实现极速高性能精读与图表生成。',
-      },
-      n8nWorkflow: {
-        title: 'n8n 自动化支持',
-        desc: '提供官方一键导入工作流 JSON，内置 Cron 定时触发与 POST /webhook/paper-daily 端点，方便自建低代码自动化流程。',
-      },
-      githubActions: {
-        title: 'GitHub Actions',
-        desc: 'Fork 仓库填好密钥即可定时运行，无需服务器。',
-      },
-      agentRetrieval: {
-        title: 'Agent 检索',
-        desc: '支持 OpenClaw、Hermes 等通过 CLI 或 Tool 协议直接调用。',
-      },
-      webhook: {
-        title: 'Webhook 触发',
-        desc: '单条请求触发运行，动态传入临时问题与过滤规则。',
+    pills: ['云端: GitHub Actions', '本地: macOS LaunchAgent', '自动化: n8n 工作流', '本地模型: CPA Gemini', 'Webhook 调度'],
+    cloud: {
+      badge: '云端免服调度 · 0 服务器成本',
+      title: '云端部署 (GitHub Actions)',
+      desc: '适合开箱即用、无需本地机器常驻的开发者与团队。依托 GitHub Actions 自动化定时运行，全免服低成本。',
+      items: [
+        {
+          title: 'GitHub Actions 定时托管',
+          desc: 'Fork 仓库填入渠道密钥，每天定时（默认 09:15）自动检索、评测与推送日报。',
+        },
+        {
+          title: 'Webhook 与事件触发',
+          desc: '支持通过 repository_dispatch 远程触发，动态传入当次关心的临时研究问题与过滤规则。',
+        },
+        {
+          title: 'Agent-Native 零安装 Fork',
+          desc: '仅需将单个 SKILL.md 导入 AI Agent，Agent 全自动远程 Fork 仓库并配置云端 Secrets。',
+        },
+      ],
+      terminalDesc: '远程触发云端 GitHub Actions 调度',
+      command: 'uv run paper-library trigger',
+      steps: {
+        fork: {
+          title: '引入 SKILL.md',
+          desc: '单个 Skill 文件，本地零安装依赖与代码',
+        },
+        wizard: {
+          title: 'Agent 远程 Fork',
+          desc: '免 clone 自动将仓库 Fork 到个人 GitHub',
+        },
+        generate: {
+          title: '写入云端密钥并触发',
+          desc: '自动配置 Actions Secrets 并在云端定时免费调度',
+        },
       },
     },
-    steps: {
-      fork: {
-        title: '下载 / 引入 SKILL.md',
-        desc: '只需单个 Skill 文件，本地零安装依赖与代码',
-      },
-      wizard: {
-        title: 'Agent 自动远程 Fork',
-        desc: '免 clone 自动将仓库远程 Fork 到个人 GitHub',
-      },
-      generate: {
-        title: '写入云端密钥并触发',
-        desc: '自动配置 Actions Secrets 并在云端定时免费调度',
+    local: {
+      badge: '本地常驻执行 · 私有模型与自动化',
+      title: '本地环境 (LaunchAgent & n8n)',
+      desc: '适合拥有本地大模型（如 CPA Gemini）或已搭建自动化编排（n8n）的高性能场景，私密高速且零额度限制。',
+      items: [
+        {
+          title: 'macOS LaunchAgent 常驻守护',
+          desc: '系统原生 launchd 定时唤醒，合盖休眠唤醒后自动补发执行，日志持久化于本地。',
+        },
+        {
+          title: '本地常驻 CPA (Gemini 3.8 Flash)',
+          desc: '直连 127.0.0.1:8317，无需外网额度与代理瓶颈，单篇秒级产出结构化评测。',
+        },
+        {
+          title: 'n8n 自动化工作流编排',
+          desc: '预置一键导入工作流 JSON，内置 Cron 09:15 定时节点与 Webhook 外部调用端点。',
+        },
+      ],
+      terminalDesc: '直接在宿主机拉起本地 Paper Daily 流水线',
+      command: 'uv run paper-library trigger --local',
+      steps: {
+        launchd: {
+          title: 'LaunchAgent 守护',
+          desc: 'launchctl 载入 plist，合盖唤醒自动补发',
+        },
+        cpa: {
+          title: 'CPA Gemini 直连',
+          desc: '连接本地 8317 端口秒级推理与裁判',
+        },
+        n8n: {
+          title: 'n8n 导入工作流',
+          desc: 'Import JSON 即刻拥有低代码定时与 Webhook',
+        },
       },
     },
     terminal: {
-      initDesc: '交互式多选引导与渠道密钥初始化',
-      searchDesc: 'Agent 直连检索文献库与个人批注',
       copied: '已复制',
       copy: '复制',
     },

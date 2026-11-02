@@ -82,21 +82,33 @@ export interface Locale {
   deploy: {
     title: string;
     pills: string[];
-    cards: {
-      localEngine: { title: string; desc: string };
-      n8nWorkflow: { title: string; desc: string };
-      githubActions: { title: string; desc: string };
-      agentRetrieval: { title: string; desc: string };
-      webhook: { title: string; desc: string };
+    cloud: {
+      badge: string;
+      title: string;
+      desc: string;
+      items: Array<{ title: string; desc: string }>;
+      terminalDesc: string;
+      command: string;
+      steps: {
+        fork: { title: string; desc: string };
+        wizard: { title: string; desc: string };
+        generate: { title: string; desc: string };
+      };
     };
-    steps: {
-      fork: { title: string; desc: string };
-      wizard: { title: string; desc: string };
-      generate: { title: string; desc: string };
+    local: {
+      badge: string;
+      title: string;
+      desc: string;
+      items: Array<{ title: string; desc: string }>;
+      terminalDesc: string;
+      command: string;
+      steps: {
+        launchd: { title: string; desc: string };
+        cpa: { title: string; desc: string };
+        n8n: { title: string; desc: string };
+      };
     };
     terminal: {
-      initDesc: string;
-      searchDesc: string;
       copied: string;
       copy: string;
     };
