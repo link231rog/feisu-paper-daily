@@ -7,16 +7,19 @@
           "interval": [
             {
               "field": "cronExpression",
-              "expression": "15 9 * * *"
+              "expression": "0 9 * * *"
             }
           ]
         }
       },
       "id": "schedule-trigger-01",
-      "name": "Daily 09:15 Trigger",
+      "name": "Daily 09:00 Trigger",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
-      "position": [220, 260]
+      "position": [
+        220,
+        260
+      ]
     },
     {
       "parameters": {
@@ -28,7 +31,10 @@
       "name": "Webhook Trigger (POST /webhook/paper-daily)",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [220, 460],
+      "position": [
+        220,
+        460
+      ],
       "webhookId": "paper-daily-trigger"
     },
     {
@@ -39,7 +45,10 @@
       "name": "Execute Local Paper Daily Runner",
       "type": "n8n-nodes-base.executeCommand",
       "typeVersion": 1,
-      "position": [540, 360]
+      "position": [
+        540,
+        360
+      ]
     }
   ],
   "connections": {

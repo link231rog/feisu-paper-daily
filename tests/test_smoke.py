@@ -2418,6 +2418,43 @@ def test_paper_library_trigger_local(monkeypatch, capsys):
     assert any("run_daily_local.sh" in str(c) or "paper-daily" in str(c) for c in called_cmd)
 
 
+def test_scheduler_parse_time_and_status():
+    from paper_daily.library.scheduler import parse_schedule_time, get_schedule_status, format_schedule_status
+    import pytest
+
+    # 1. Valid times
+    assert parse_schedule_time("09:00") == (9, 0)
+    assert parse_schedule_time("9:15") == (9, 15)
+    assert parse_schedule_time("9") == (9, 0)
+    assert parse_schedule_time("18:30") == (18, 30)
+
+    # 2. Invalid times
+    with pytest.raises(ValueError):
+        parse_schedule_time("24:00")
+    with pytest.raises(ValueError):
+        parse_schedule_time("09:60")
+    with pytest.raises(ValueError):
+        parse_schedule_time("invalid")
+
+    # 3. Status retrieval and formatting
+    status = get_schedule_status()
+    assert "scheduled_time" in status
+    formatted = format_schedule_status(status)
+    assert "Paper Daily 本地定时调度服务状态" in formatted
+    assert "com.user.paperdaily" in formatted
+
+
+def test_paper_library_schedule_cli(monkeypatch, capsys):
+    from paper_daily.library.bridge import main as bridge_main
+
+    # Test status via CLI
+    monkeypatch.setattr("sys.argv", ["paper-library", "schedule", "--json"])
+    bridge_main()
+    out = capsys.readouterr().out
+    assert "scheduled_time" in out
+    assert "com.user.paperdaily" in out
+
+
 
 
 

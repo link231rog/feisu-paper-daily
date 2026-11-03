@@ -100,6 +100,10 @@ notebooklm:
   attach_email: true
   attach_telegram: true
 
+schedule:
+  time: "09:00" # Local daily scheduled execution time (HH:MM)
+  daemon: "launchd" # "launchd" (macOS) | "n8n"
+
 agent_reach:
   enabled: false # Optional external social & multimedia intelligence assembly (Panniantong/Agent-Reach)
   channels: ["bilibili", "youtube", "github"] # Channels to probe for top deep-read papers

@@ -76,6 +76,10 @@ notebooklm:
   attach_email: ${oc.env:NOTEBOOKLM_ATTACH_EMAIL,true}
   attach_telegram: ${oc.env:NOTEBOOKLM_ATTACH_TELEGRAM,true}
 
+schedule:
+  time: ${oc.env:SCHEDULE_TIME,"09:00"}
+  daemon: ${oc.env:SCHEDULE_DAEMON,"launchd"}
+
 agent_reach:
   enabled: ${oc.env:AGENT_REACH_ENABLED,false}
   channels: ["bilibili", "youtube", "github"]

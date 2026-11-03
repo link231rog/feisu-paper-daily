@@ -1462,6 +1462,13 @@ def main() -> None:
     p_gallery.add_argument("--refresh", action="store_true", help="Force re-extraction and VLM evaluation")
     p_gallery.add_argument("--json", action="store_true", help="Output raw JSON summary")
 
+    p_sched = sub.add_parser("schedule", help="Inspect and configure local daily scheduled automation (macOS launchd & n8n)")
+    p_sched.add_argument("--time", "-t", default=None, help="Set daily scheduled run time (e.g. '09:00', '9', '18:30')")
+    p_sched.add_argument("--status", action="store_true", help="Display current launchd & n8n scheduling status (default)")
+    p_sched.add_argument("--enable", action="store_true", help="Enable and load the local launchd scheduled service")
+    p_sched.add_argument("--disable", action="store_true", help="Disable and unload the local launchd scheduled service")
+    p_sched.add_argument("--json", action="store_true", help="Output raw JSON summary")
+
     args = parser.parse_args()
     if args.cmd == "init":
         from ..init_wizard import handle_init_cli
@@ -1614,6 +1621,48 @@ def main() -> None:
                     print(f"  • {p['title'][:45]}... (图表: {p['figures_count']} 幅{has_p})")
             else:
                 print(f"[画廊同步提示] {res.get('message')}")
+    elif args.cmd == "schedule":
+        from .scheduler import (
+            get_schedule_status,
+            set_schedule_time,
+            enable_schedule,
+            disable_schedule,
+            format_schedule_status,
+        )
+
+        if args.time:
+            try:
+                res = set_schedule_time(args.time)
+                if args.json:
+                    print(json.dumps(res, ensure_ascii=False, indent=2))
+                else:
+                    print(f"[定时更新成功] 已将本地每日自动运行时间设置为: {res.get('updated_time')}")
+                    print(format_schedule_status(res))
+            except Exception as exc:
+                if args.json:
+                    print(json.dumps({"status": "error", "message": str(exc)}, ensure_ascii=False, indent=2))
+                else:
+                    print(f"[更新失败] {exc}")
+        elif args.enable:
+            res = enable_schedule()
+            if args.json:
+                print(json.dumps(res, ensure_ascii=False, indent=2))
+            else:
+                print("[服务启用成功] macOS launchd 本地调度服务已加载就绪")
+                print(format_schedule_status(res))
+        elif args.disable:
+            res = disable_schedule()
+            if args.json:
+                print(json.dumps(res, ensure_ascii=False, indent=2))
+            else:
+                print("[服务停用成功] macOS launchd 本地调度服务已卸载停用")
+                print(format_schedule_status(res))
+        else:
+            status = get_schedule_status()
+            if args.json:
+                print(json.dumps(status, ensure_ascii=False, indent=2))
+            else:
+                print(format_schedule_status(status))
 
 
 if __name__ == "__main__":
