@@ -85,7 +85,7 @@ class DigestStage(PipelineStage):
             logger.info(f"Generating framework diagrams / visual posters for top {len(candidates)} papers (after digest)...")
             for p in candidates:
                 try:
-                    p_img = generate_paper_poster(p, context.config, force=context.force_rerun_today)
+                    p_img = generate_paper_poster(p, context.config, force=getattr(context, "force_rerun_today", False))
                     if p_img and p_img.is_file():
                         p.poster_path = str(p_img)
                         logger.info(f"Attached visual framework diagram to '{p.title[:40]}': {p_img}")

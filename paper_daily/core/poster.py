@@ -80,8 +80,36 @@ def build_framework_prompt(paper: Paper) -> str:
     elif isinstance(mech, str):
         pipeline_str = mech
 
+    # If pipeline contains Chinese, translate key technical terms to English for superior image generation
     if pipeline_str:
-        flow_points.append(f"Core pipeline: {pipeline_str}")
+        has_cjk = any("\u4e00" <= ch <= "\u9fff" for ch in pipeline_str)
+        if has_cjk:
+            cjk_translations = [
+                ("输入", "Input Data"),
+                ("输出", "Output Prediction"),
+                ("检索", "Retrieval & Memory Index"),
+                ("过滤", "Quality Filter"),
+                ("排序", "Reranker"),
+                ("决策", "Decision Policy Network"),
+                ("规划", "Task Planner"),
+                ("执行", "Action Execution"),
+                ("验证", "Verifier & Critic"),
+                ("反思", "Self-Reflection"),
+                ("记忆", "Memory Store"),
+                ("特征", "Feature Extraction"),
+                ("编码", "Encoder"),
+                ("解码", "Decoder"),
+                ("奖励", "Reward Model"),
+                ("状态", "State Tracker"),
+                ("优化", "Optimizer"),
+                ("协同", "Multi-Agent Coordinator"),
+            ]
+            clean_pipe = pipeline_str
+            for cn, en in cjk_translations:
+                clean_pipe = clean_pipe.replace(cn, en)
+            flow_points.append(f"Core pipeline: {clean_pipe}")
+        else:
+            flow_points.append(f"Core pipeline: {pipeline_str}")
     elif delta:
         flow_points.append(f"Delta innovation: {str(delta)[:180]}")
     elif paper.abstract:

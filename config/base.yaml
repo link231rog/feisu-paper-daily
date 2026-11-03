@@ -115,13 +115,14 @@ poster:
   model: "gpt-image-2.5-sunburst"
   size: "1792x1024" # 16:9 widescreen publication figure
   proxy_url: null # Optional HTTP/SOCKS5 proxy, e.g. "http://127.0.0.1:7897"
-  max_papers: 3 # Top N deep-read papers to generate framework diagrams for
+  max_papers: 6 # Top N deep-read & radar papers to generate framework diagrams for
   output_dir: "data/posters"
   attach_feishu: true # Mount visual framework diagram in Feishu daily report
 
 figures:
   enabled: true # Optional VLM figure quality evaluation & exemplar extraction (Option B)
   min_score: 4.0 # Quality score threshold (1-5 scale) to qualify as exemplar
+  max_papers_to_evaluate: 6 # Max papers to evaluate exemplar figures for
   max_candidates_per_paper: 5 # Max candidate figures to evaluate per paper
   max_selected_per_paper: 2 # Max top exemplar figures to retain per paper
   vlm_model: "nvidia/nemotron-3.5-super-vl:free" # Multimodal VLM for visual quality evaluation

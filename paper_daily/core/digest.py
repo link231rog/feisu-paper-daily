@@ -444,8 +444,8 @@ CRITICAL_PAPER_DIGEST_SYSTEM_PROMPT = """# Role
 {
   "delta": "一句话说明：相比已知基线（优先生效已知基线列表中的相关工作），本文最核心的改动变量是什么？（限 50 字内）",
   "mechanism": {
-    "pipeline": "输入 X -> 模块 A (做什么) -> 模块 B (做什么) -> 输出 Y",
-    "core_formula": "核心公式的 LaTeX 字符串（若仅有 Abstract 则填 'N/A (需查正文)'）",
+    "pipeline": "提取核心方法或 Pipeline 的 3-5 步英文/中英文技术流转（例如：Query -> Memory Index -> Verification -> Dispatch，优先使用英文技术词以便下游架构图生图）",
+    "core_formula": "核心公式（尽量精简为主要目标函数或损失函数），若仅有 Abstract 且无公式则填 'N/A (需查正文)'",
     "symbol_dict": "公式中核心变量符号的极简释义"
   },
   "evidence_and_cost": {

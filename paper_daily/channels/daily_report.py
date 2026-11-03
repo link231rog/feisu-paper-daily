@@ -191,17 +191,27 @@ DEFAULT_MARKDOWN_TEMPLATE = """# {{ title }}
 
 {% if paper.has_digest %}
 > **[审稿评级]**：**{{ paper.review_badge }}** *(复用度: {{ paper.r_grade }} | 证据支撑: {{ paper.s_grade }} | 基线公平: {{ paper.f_grade }})*
-{% if paper.rubric_summary %}> **[四维评分]**：{{ paper.rubric_summary }}{% endif %}
+{% if paper.rubric_summary %}
+> **[四维评分]**：{{ paper.rubric_summary }}
+{% endif %}
 > - **核心增量 (Delta)**：{{ paper.delta }}
 > - **方法链路 (Mechanism)**：`{{ paper.pipeline }}`
-{% if paper.core_formula and paper.core_formula != 'N/A' and paper.core_formula != 'N/A (需查正文)' %}> - **核心公式**：`{{ paper.core_formula }}`{% endif %}
-{% if paper.symbol_dict and paper.symbol_dict != 'N/A' and paper.symbol_dict != 'N/A (需查正文)' %}> - **符号释义**：{{ paper.symbol_dict }}{% endif %}
+{% if paper.core_formula and paper.core_formula != 'N/A' and paper.core_formula != 'N/A (需查正文)' %}
+> - **核心公式**：{{ paper.core_formula }}
+{% endif %}
+{% if paper.symbol_dict and paper.symbol_dict != 'N/A' and paper.symbol_dict != 'N/A (需查正文)' %}
+> - **符号释义**：{{ paper.symbol_dict }}
+{% endif %}
 > - **实验真相 (Truth & Cost)**：{{ paper.truth_metrics }}
-{% if paper.truth_costs %}> - **代价与边界**：{{ paper.truth_costs }}{% endif %}
+{% if paper.truth_costs %}
+> - **代价与边界**：{{ paper.truth_costs }}
+{% endif %}
 > - **启发与待查**：{{ paper.action_or_check }}
 {% else %}
 - **核心摘要**：{{ paper.tldr }}
-{% if paper.judge_reason %}- **推荐理由**：{{ paper.judge_reason }}{% endif %}
+{% if paper.judge_reason %}
+- **推荐理由**：{{ paper.judge_reason }}
+{% endif %}
 {% endif %}
 
 {% if paper.annotated_markdown %}
@@ -224,6 +234,88 @@ class DailyReport:
     digest: str
     inline_images: dict[str, str] = field(default_factory=dict)
     markdown: str = ""
+
+
+def format_academic_formula(latex_str: str) -> str:
+    """Formats raw LaTeX formula into clean, readable math symbols for email and Markdown."""
+    if not latex_str or latex_str.strip() in ("N/A", "N/A (需查正文)", "null", "None"):
+        return ""
+
+    text = latex_str.strip().strip("$")
+
+    # Replace common LaTeX operators and symbols with clean Unicode
+    replacements = [
+        (r"\\sum_\{([^}]+)\}", r"∑_{\1}"),
+        (r"\\sum", r"∑"),
+        (r"\\prod_\{([^}]+)\}", r"∏_{\1}"),
+        (r"\\prod", r"∏"),
+        (r"\\in", r"∈"),
+        (r"\\notin", r"∉"),
+        (r"\\forall", r"∀"),
+        (r"\\exists", r"∃"),
+        (r"\\to", r"→"),
+        (r"\\rightarrow", r"→"),
+        (r"\\Rightarrow", r"⇒"),
+        (r"\\leftarrow", r"←"),
+        (r"\\leftrightarrow", r"↔"),
+        (r"\\leq", r"≤"),
+        (r"\\le\b", r"≤"),
+        (r"\\geq", r"≥"),
+        (r"\\ge\b", r"≥"),
+        (r"\\neq", r"≠"),
+        (r"\\approx", r"≈"),
+        (r"\\sim", r"∼"),
+        (r"\\times", r"×"),
+        (r"\\cdot", r"·"),
+        (r"\\pm", r"±"),
+        (r"\\alpha", r"α"),
+        (r"\\beta", r"β"),
+        (r"\\gamma", r"γ"),
+        (r"\\delta", r"δ"),
+        (r"\\epsilon", r"ε"),
+        (r"\\theta", r"θ"),
+        (r"\\lambda", r"λ"),
+        (r"\\mu", r"μ"),
+        (r"\\sigma", r"σ"),
+        (r"\\tau", r"τ"),
+        (r"\\phi", r"ϕ"),
+        (r"\\omega", r"ω"),
+        (r"\\Delta", r"Δ"),
+        (r"\\Sigma", r"Σ"),
+        (r"\\Omega", r"Ω"),
+        (r"\\infty", r"∞"),
+        (r"\\mathbb\{R\}", r"ℝ"),
+        (r"\\mathbb\{E\}", r"𝔼"),
+        (r"\\mathcal\{L\}", r"ℒ"),
+        (r"\\mathcal\{D\}", r"𝒟"),
+        (r"\\quad", r"  "),
+        (r"\\qquad", r"    "),
+        (r"\\,", r" "),
+        (r"\\;", r" "),
+        (r"\\!", r""),
+        (r"\\\{", r"{"),
+        (r"\\\}", r"}"),
+        (r"\\text\{([^}]+)\}", r"\1"),
+        (r"\\mathbf\{([^}]+)\}", r"\1"),
+        (r"\\mathrm\{([^}]+)\}", r"\1"),
+        (r"\\operatorname\{([^}]+)\}", r"\1"),
+        (r"\\ell", r"ℓ"),
+    ]
+
+    for pat, rep in replacements:
+        text = re.sub(pat, rep, text)
+
+    # Fractions: \frac{a}{b} -> (a / b)
+    text = re.sub(r"\\frac\{([^}]+)\}\{([^}]+)\}", r"(\1 / \2)", text)
+    # Square roots: \sqrt{a} -> √(a)
+    text = re.sub(r"\\sqrt\{([^}]+)\}", r"√(\1)", text)
+    # Clean redundant braces around single symbols: x_{i} -> x_i
+    text = re.sub(r"_\{([a-zA-Z0-9])\}", r"_\1", text)
+    text = re.sub(r"\^\{([a-zA-Z0-9])\}", r"^\1", text)
+    # Strip any remaining backslashes before plain letters: \argmax -> argmax
+    text = re.sub(r"\\([a-zA-Z]+)", r"\1", text)
+
+    return f"<code>{text.strip()}</code>"
 
 
 def _text(value: object, limit: int = 1200) -> str:
@@ -414,7 +506,7 @@ def _prepare_view_models(
             "rubric_summary": format_rubric_summary_line(p),
             "delta": _text(cd.get("delta") or p.tldr_zh or p.tldr or "暂无核心增量记录", 800),
             "pipeline": _text(mech.get("pipeline", "N/A"), 500),
-            "core_formula": _text(mech.get("core_formula", "N/A"), 300),
+            "core_formula": format_academic_formula(str(mech.get("core_formula") or "")),
             "symbol_dict": _text(mech.get("symbol_dict", "N/A"), 500),
             "truth_metrics": _text(ev.get("metrics", "N/A"), 500),
             "truth_costs": _text(ev.get("cost_and_limits", ""), 500),

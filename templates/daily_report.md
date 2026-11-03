@@ -47,17 +47,27 @@
 
 {% if paper.has_digest %}
 > **[审稿评级]**：**{{ paper.review_badge }}** *(复用度: {{ paper.r_grade }} | 证据支撑: {{ paper.s_grade }} | 基线公平: {{ paper.f_grade }})*
-{% if paper.rubric_summary %}> **[四维评分]**：{{ paper.rubric_summary }}{% endif %}
+{% if paper.rubric_summary %}
+> **[四维评分]**：{{ paper.rubric_summary }}
+{% endif %}
 > - **核心增量 (Delta)**：{{ paper.delta }}
 > - **方法链路 (Mechanism)**：`{{ paper.pipeline }}`
-{% if paper.core_formula and paper.core_formula != 'N/A' and paper.core_formula != 'N/A (需查正文)' %}> - **核心公式**：`{{ paper.core_formula }}`{% endif %}
-{% if paper.symbol_dict and paper.symbol_dict != 'N/A' and paper.symbol_dict != 'N/A (需查正文)' %}> - **符号释义**：{{ paper.symbol_dict }}{% endif %}
+{% if paper.core_formula and paper.core_formula != 'N/A' and paper.core_formula != 'N/A (需查正文)' %}
+> - **核心公式**：{{ paper.core_formula }}
+{% endif %}
+{% if paper.symbol_dict and paper.symbol_dict != 'N/A' and paper.symbol_dict != 'N/A (需查正文)' %}
+> - **符号释义**：{{ paper.symbol_dict }}
+{% endif %}
 > - **实验真相 (Truth & Cost)**：{{ paper.truth_metrics }}
-{% if paper.truth_costs %}> - **代价与边界**：{{ paper.truth_costs }}{% endif %}
+{% if paper.truth_costs %}
+> - **代价与边界**：{{ paper.truth_costs }}
+{% endif %}
 > - **启发与待查**：{{ paper.action_or_check }}
 {% else %}
 - **核心摘要**：{{ paper.tldr }}
-{% if paper.judge_reason %}- **推荐理由**：{{ paper.judge_reason }}{% endif %}
+{% if paper.judge_reason %}
+- **推荐理由**：{{ paper.judge_reason }}
+{% endif %}
 {% endif %}
 
 {% if paper.annotated_markdown %}
