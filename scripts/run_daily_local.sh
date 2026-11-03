@@ -5,10 +5,11 @@
 # ==============================================================================
 set -euo pipefail
 
-# 1. Environment and PATH initialization
-export PATH="/Users/huangzixuan/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+# 1. Environment and PATH initialization (portable, no hardcoded user paths)
+export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH:-}"
 
-PROJECT_DIR="/Users/huangzixuan/Dev/feisu-paper-daily"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 LOG_DIR="$PROJECT_DIR/data/logs"
 mkdir -p "$LOG_DIR"
 
@@ -21,13 +22,16 @@ echo "================================================================="
 
 cd "$PROJECT_DIR"
 
-# 2. Check local CPA daemon (cli-proxy-api) on port 8317
+# 2. Check local CPA daemon (cli-proxy-api) on port 8317 if installed
 if ! /usr/bin/nc -z 127.0.0.1 8317 2>/dev/null; then
-    echo "[WARN] CPA daemon is not listening on 127.0.0.1:8317."
-    echo "[INFO] Attempting to start cli-proxy-api in background..."
-    if [ -x "/Users/huangzixuan/.local/bin/cli-proxy-api" ]; then
-        nohup /Users/huangzixuan/.local/bin/cli-proxy-api -config /Users/huangzixuan/.cli-proxy-api/config.yaml > "$LOG_DIR/cpa.log" 2>&1 &
-        sleep 2
+    CPA_BIN="$(command -v cli-proxy-api || echo "$HOME/.local/bin/cli-proxy-api")"
+    if [ -x "$CPA_BIN" ]; then
+        CPA_CONFIG_PATH="${CPA_CONFIG:-$HOME/.cli-proxy-api/config.yaml}"
+        if [ -f "$CPA_CONFIG_PATH" ]; then
+            echo "[INFO] Starting local cli-proxy-api daemon in background..."
+            nohup "$CPA_BIN" -config "$CPA_CONFIG_PATH" > "$LOG_DIR/cpa.log" 2>&1 &
+            sleep 2
+        fi
     fi
 fi
 

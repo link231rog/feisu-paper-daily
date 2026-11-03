@@ -211,6 +211,142 @@ def generate_diagram_with_gpt_image(
     return None
 
 
+def generate_diagram_with_gemini_image(
+    paper: Paper,
+    api_base: Optional[str] = None,
+    api_key: Optional[str] = None,
+    model: Optional[str] = None,
+    aspect_ratio: str = "16:9",
+    resolution: str = "1K",
+    output_dir: Path | str = "data/posters",
+    proxies_list: Optional[list[Optional[dict[str, str]]]] = None,
+) -> Optional[Path]:
+    """Generates an academic architecture flowchart via gemini-image CLI or Gemini CPA endpoint."""
+    out_path = Path(output_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+
+    slug = _sanitize_slug(paper.arxiv_id or paper.title)
+    dest_file = out_path / f"{slug}_framework.png"
+
+    # 1. Reuse existing valid cache
+    for cand in [dest_file, dest_file.with_suffix(".jpg")]:
+        if cand.is_file() and cand.stat().st_size > 5000:
+            logger.info(f"Reusing cached framework diagram: {cand}")
+            return cand
+
+    prompt = build_framework_prompt(paper)
+
+    # 2. Try gemini-image CLI if available in PATH
+    gemini_cli = shutil.which("gemini-image")
+    if gemini_cli:
+        try:
+            # If out_path ends with 'posters', pass parent so gemini-image -g posters creates out_path
+            target_parent = out_path.parent if out_path.name == "posters" else out_path
+            cmd = [
+                gemini_cli,
+                "-p", prompt,
+                "-g", "posters",
+                "-o", str(target_parent),
+                "-a", aspect_ratio,
+                "-r", resolution,
+                "-f", f"{slug}_framework.jpg",
+                "--json",
+            ]
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            if res.returncode == 0:
+                data = json.loads(res.stdout)
+                p_file = Path(data.get("file_path", ""))
+                if p_file.is_file():
+                    logger.info(f"Generated framework diagram via gemini-image CLI: {p_file}")
+                    return p_file
+        except Exception as cli_exc:
+            logger.debug(f"gemini-image CLI invocation failed ({cli_exc}); falling back to HTTP API.")
+
+    # 3. Direct OpenAI-compatible chat completion with modalities=['image', 'text']
+    base_endpoint = (
+        api_base
+        or os.environ.get("GEMINI_IMAGE_BASE_URL")
+        or os.environ.get("POSTER_API_BASE")
+        or "http://127.0.0.1:8317/v1"
+    ).rstrip("/")
+    endpoint = f"{base_endpoint}/chat/completions"
+
+    resolved_key = (
+        api_key
+        or os.environ.get("GEMINI_IMAGE_API_KEY")
+        or os.environ.get("POSTER_API_KEY")
+        or ""
+    )
+    resolved_model = (
+        model
+        or os.environ.get("GEMINI_IMAGE_MODEL")
+        or os.environ.get("POSTER_MODEL")
+        or "gemini-3.1-flash-image"
+    )
+
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "PaperDaily-Poster/1.0",
+    }
+    if resolved_key:
+        headers["Authorization"] = f"Bearer {resolved_key}"
+
+    payload = {
+        "model": resolved_model,
+        "messages": [{"role": "user", "content": prompt}],
+        "modalities": ["image", "text"],
+        "image_config": {
+            "aspect_ratio": aspect_ratio,
+            "resolution": resolution,
+        },
+        "stream": False,
+    }
+
+    if not proxies_list:
+        proxies_list = [None]
+
+    last_exc: Optional[Exception] = None
+    for px in proxies_list:
+        try:
+            resp = requests.post(endpoint, headers=headers, json=payload, proxies=px, timeout=90)
+            if resp.status_code == 200:
+                res_json = resp.json()
+                choices = res_json.get("choices") or []
+                if not choices:
+                    continue
+                message = choices[0].get("message", {})
+                images = message.get("images", [])
+                if not images:
+                    continue
+                first_img = images[0]
+                img_url = first_img.get("image_url", {}).get("url", "") if isinstance(first_img, dict) else str(first_img)
+                if not img_url:
+                    continue
+
+                if img_url.startswith("data:image/"):
+                    header, b64_data = img_url.split(",", 1)
+                    target_file = dest_file.with_suffix(".png" if "png" in header else ".jpg")
+                    target_file.write_bytes(base64.b64decode(b64_data))
+                    logger.info(f"Generated and saved Gemini framework diagram to: {target_file}")
+                    return target_file
+                else:
+                    r_img = requests.get(img_url, timeout=30, proxies=px)
+                    if r_img.status_code == 200:
+                        target_file = dest_file.with_suffix(".jpg")
+                        target_file.write_bytes(r_img.content)
+                        logger.info(f"Downloaded Gemini framework diagram to: {target_file}")
+                        return target_file
+            else:
+                logger.debug(f"Gemini image endpoint returned status {resp.status_code}: {resp.text[:200]}")
+        except Exception as exc:
+            last_exc = exc
+            continue
+
+    if last_exc:
+        logger.warning(f"Failed to generate Gemini framework diagram for '{paper.title}': {last_exc}")
+    return None
+
+
 def _resolve_arxiv_id(paper: Paper) -> Optional[str]:
     """Resolves clean arXiv ID from paper.arxiv_id or URL patterns."""
     if paper.arxiv_id and re.match(r"^\d{4}\.\d{4,5}(v\d+)?$", paper.arxiv_id.strip()):
@@ -284,8 +420,10 @@ def extract_source_method_figure(paper: Paper, output_dir: Path | str = "data/po
     candidate_scripts = [
         Path.home() / ".claude/skills/paper2assets/scripts/source_figures.py",
         Path.home() / ".agents/skills/paper2assets/scripts/source_figures.py",
-        Path("/Users/huangzixuan/Documents/Dev/ResearchStudio/ResearchStudio-Reel/skills/paper2assets/scripts/source_figures.py"),
     ]
+    custom_script = os.environ.get("PAPER2ASSETS_SCRIPT")
+    if custom_script:
+        candidate_scripts.insert(0, Path(custom_script))
     script_path = next((p for p in candidate_scripts if p.is_file()), None)
     if not script_path:
         return None
@@ -740,9 +878,9 @@ def generate_paper_poster(paper: Paper, config: Any, force: bool = False) -> Opt
     if not enabled and os.environ.get("POSTER_ENABLED", "").strip().lower() not in ("true", "1", "yes"):
         return None
 
-    engine = "paper2poster"
-    if hasattr(poster_cfg, "get"):
-        engine = str(poster_cfg.get("engine", "paper2poster")).strip().lower()
+    engine = "gemini-image"
+    if hasattr(poster_cfg, "get") and poster_cfg.get("engine"):
+        engine = str(poster_cfg.get("engine")).strip().lower()
     elif hasattr(poster_cfg, "engine"):
         engine = str(poster_cfg.engine).strip().lower()
     engine = os.environ.get("POSTER_ENGINE", engine).strip().lower()
@@ -751,7 +889,8 @@ def generate_paper_poster(paper: Paper, config: Any, force: bool = False) -> Opt
     if hasattr(poster_cfg, "get") and poster_cfg.get("output_dir"):
         output_dir = poster_cfg.get("output_dir")
 
-    api_base = "https://sub.umapis.com/v1"
+    # Generic configuration resolution with environment variable fallbacks
+    api_base = None
     if hasattr(poster_cfg, "get") and poster_cfg.get("api_base"):
         api_base = poster_cfg.get("api_base")
     api_base = os.environ.get("POSTER_API_BASE", api_base)
@@ -760,7 +899,7 @@ def generate_paper_poster(paper: Paper, config: Any, force: bool = False) -> Opt
     if not api_key and hasattr(poster_cfg, "get") and poster_cfg.get("api_key"):
         api_key = str(poster_cfg.get("api_key") or "")
 
-    model = "gpt-image-2.5-sunburst"
+    model = None
     if hasattr(poster_cfg, "get") and poster_cfg.get("model"):
         model = str(poster_cfg.get("model"))
     model = os.environ.get("POSTER_MODEL", model)
@@ -772,23 +911,36 @@ def generate_paper_poster(paper: Paper, config: Any, force: bool = False) -> Opt
 
     proxies_list = _resolve_poster_proxies(config)
 
-    # 1. Primary: If engine is explicitly gpt-image or API key is available, generate modern AI framework flowchart
-    if (engine == "gpt-image" or (engine in ("paper2poster", "auto") and api_key)) and api_key:
-        result_path = generate_diagram_with_gpt_image(
+    result_path: Optional[Path] = None
+
+    # 1. Gemini Image engine (via CLI gemini-image or CPA / OpenAI-compatible endpoint)
+    if engine in ("gemini-image", "gemini_image") or (engine == "auto" and (shutil.which("gemini-image") or os.environ.get("GEMINI_IMAGE_BASE_URL"))):
+        result_path = generate_diagram_with_gemini_image(
             paper,
             api_base=api_base,
             api_key=api_key,
             model=model,
+            output_dir=output_dir,
+            proxies_list=proxies_list,
+        )
+
+    # 2. GPT-Image engine if requested or as fallback
+    if not result_path and (engine == "gpt-image" or (engine == "auto" and api_key and "umapis" in (api_base or ""))):
+        result_path = generate_diagram_with_gpt_image(
+            paper,
+            api_base=api_base or "https://sub.umapis.com/v1",
+            api_key=api_key,
+            model=model or "gpt-image-2.5-sunburst",
             size=size,
             output_dir=output_dir,
             proxies_list=proxies_list,
         )
 
-    # 2. Fallback to raw author figure extraction if AI generation was unavailable
+    # 3. Fallback to raw author figure extraction if AI generation was unavailable
     if not result_path:
         result_path = extract_source_method_figure(paper, output_dir=output_dir)
 
-    # 3. Only fall back to browser poster if explicitly requested as paper2poster and no image was found
+    # 4. Only fall back to browser poster if explicitly requested as paper2poster and no image was found
     if not result_path and engine in ("paper2poster", "academic_poster"):
         result_path = render_structured_academic_poster(paper, output_dir=output_dir, force=force)
 

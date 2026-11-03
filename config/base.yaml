@@ -113,10 +113,10 @@ agent_reach:
 
 poster:
   enabled: false # Optional visual framework diagram / academic poster generation
-  engine: "gpt-image" # "gpt-image" (AI visual architecture flowchart via gpt-image-2.5-sunburst) | "source_figures" | "paper2poster"
-  api_base: "https://sub.umapis.com/v1"
+  engine: "gemini-image" # "gemini-image" (Gemini via CPA/CLI) | "gpt-image" | "source_figures" | "paper2poster"
+  api_base: null # Optional API endpoint (defaults by engine: gemini-image -> CPA, gpt-image -> OpenAI-compatible)
   api_key: null
-  model: "gpt-image-2.5-sunburst"
+  model: null # Optional model name (defaults by engine: gemini-image -> gemini-3.1-flash-image, gpt-image -> gpt-image-2.5-sunburst)
   size: "1792x1024" # 16:9 widescreen publication figure
   proxy_url: null # Optional HTTP/SOCKS5 proxy, e.g. "http://127.0.0.1:7897"
   max_papers: 6 # Top N deep-read & radar papers to generate framework diagrams for

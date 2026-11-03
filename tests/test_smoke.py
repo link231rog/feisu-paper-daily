@@ -2455,6 +2455,65 @@ def test_paper_library_schedule_cli(monkeypatch, capsys):
     assert "com.user.paperdaily" in out
 
 
+def test_generate_diagram_with_gemini_image(monkeypatch, tmp_path):
+    import base64
+    from paper_daily.core.poster import generate_diagram_with_gemini_image
+    from paper_daily.protocol import Paper
+
+    p = Paper(
+        source="arxiv",
+        title="Dynamic Routing in LLM Agents",
+        authors=["Author"],
+        abstract="A novel policy routing framework.",
+        url="https://arxiv.org/abs/2610.77777",
+        arxiv_id="2610.77777",
+    )
+
+    dummy_png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 6000
+    b64_dummy = base64.b64encode(dummy_png).decode("ascii")
+
+    class MockResp:
+        def __init__(self, status_code=200):
+            self.status_code = status_code
+            self.text = "ok"
+
+        def json(self):
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "images": [
+                                {"image_url": {"url": f"data:image/png;base64,{b64_dummy}"}}
+                            ]
+                        }
+                    }
+                ]
+            }
+
+    def mock_post(url, **kwargs):
+        assert "chat/completions" in url
+        payload = kwargs.get("json", {})
+        assert "modalities" in payload
+        assert "image_config" in payload
+        return MockResp(200)
+
+    monkeypatch.setattr("requests.post", mock_post)
+    monkeypatch.setattr("shutil.which", lambda cmd: None)
+
+    out_dir = tmp_path / "posters"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    img_path = generate_diagram_with_gemini_image(
+        p,
+        api_base="http://127.0.0.1:8317/v1",
+        api_key="mock_key",
+        output_dir=out_dir,
+    )
+    assert img_path is not None
+    assert img_path.is_file()
+    assert img_path.stat().st_size > 5000
+
+
 
 
 

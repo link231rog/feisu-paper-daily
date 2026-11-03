@@ -89,10 +89,10 @@ agent_reach:
 
 poster:
   enabled: ${oc.env:POSTER_ENABLED,false}
-  engine: ${oc.env:POSTER_ENGINE,"gpt-image"}
-  api_base: ${oc.env:POSTER_API_BASE,"https://sub.umapis.com/v1"}
+  engine: ${oc.env:POSTER_ENGINE,"gemini-image"}
+  api_base: ${oc.env:POSTER_API_BASE,null}
   api_key: ${oc.env:POSTER_API_KEY,null}
-  model: ${oc.env:POSTER_MODEL,"gpt-image-2.5-sunburst"}
+  model: ${oc.env:POSTER_MODEL,null}
   size: ${oc.env:POSTER_SIZE,"1792x1024"}
   proxy_url: ${oc.env:POSTER_PROXY_URL,${oc.env:ALL_PROXY,null}}
   max_papers: ${oc.env:POSTER_MAX_PAPERS,6}

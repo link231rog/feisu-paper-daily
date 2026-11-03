@@ -112,28 +112,50 @@ def get_schedule_status() -> dict[str, Any]:
     }
 
 
+def build_user_launchd_plist(hour: int = 9, minute: int = 0) -> dict[str, Any]:
+    """Dynamically builds the launchd plist structure for the current user and repository path."""
+    home_dir = str(Path.home())
+    repo_dir = str(REPO_ROOT)
+    runner_script = str(REPO_ROOT / "scripts" / "run_daily_local.sh")
+    stdout_log = str(REPO_ROOT / "data" / "logs" / "launchd_stdout.log")
+    stderr_log = str(REPO_ROOT / "data" / "logs" / "launchd_stderr.log")
+
+    return {
+        "Label": LAUNCHD_LABEL,
+        "ProgramArguments": ["/bin/bash", runner_script],
+        "StartCalendarInterval": {"Hour": hour, "Minute": minute},
+        "WorkingDirectory": repo_dir,
+        "StandardOutPath": stdout_log,
+        "StandardErrorPath": stderr_log,
+        "EnvironmentVariables": {
+            "HOME": home_dir,
+            "PATH": f"{home_dir}/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+        },
+    }
+
+
 def set_schedule_time(time_str: str) -> dict[str, Any]:
     """Updates the scheduled trigger time across LaunchAgent plist and n8n workflow, reloading launchctl."""
     hour, minute = parse_schedule_time(time_str)
     formatted_time = f"{hour:02d}:{minute:02d}"
 
-    # 1. Update repo plist
-    if not REPO_PLIST_PATH.is_file():
-        raise FileNotFoundError(f"Template plist not found at {REPO_PLIST_PATH}")
+    # 1. Update repo template plist keeping clean generic variables
+    if REPO_PLIST_PATH.is_file():
+        try:
+            with open(REPO_PLIST_PATH, "rb") as f:
+                template_data = plistlib.load(f)
+            template_data["StartCalendarInterval"] = {"Hour": hour, "Minute": minute}
+            with open(REPO_PLIST_PATH, "wb") as f:
+                plistlib.dump(template_data, f, fmt=plistlib.FMT_XML)
+            logger.info(f"Updated template plist at {REPO_PLIST_PATH} to {formatted_time}")
+        except Exception as t_err:
+            logger.debug(f"Template plist update: {t_err}")
 
-    with open(REPO_PLIST_PATH, "rb") as f:
-        plist_data = plistlib.load(f)
-
-    plist_data["StartCalendarInterval"] = {"Hour": hour, "Minute": minute}
-
-    with open(REPO_PLIST_PATH, "wb") as f:
-        plistlib.dump(plist_data, f, fmt=plistlib.FMT_XML)
-    logger.info(f"Updated template plist at {REPO_PLIST_PATH} to {formatted_time}")
-
-    # 2. Update user LaunchAgent plist
+    # 2. Generate concrete user LaunchAgent plist for macOS launchd
+    user_plist_data = build_user_launchd_plist(hour, minute)
     USER_LAUNCHAGENTS_DIR.mkdir(parents=True, exist_ok=True)
     with open(USER_PLIST_PATH, "wb") as f:
-        plistlib.dump(plist_data, f, fmt=plistlib.FMT_XML)
+        plistlib.dump(user_plist_data, f, fmt=plistlib.FMT_XML)
     logger.info(f"Updated user LaunchAgent at {USER_PLIST_PATH} to {formatted_time}")
 
     # 3. Update n8n workflow file if present
@@ -181,16 +203,17 @@ def set_schedule_time(time_str: str) -> dict[str, Any]:
 
 
 def enable_schedule() -> dict[str, Any]:
-    """Copies plist to ~/Library/LaunchAgents and loads it into launchd."""
-    if not REPO_PLIST_PATH.is_file():
-        raise FileNotFoundError(f"Template plist not found at {REPO_PLIST_PATH}")
+    """Generates the LaunchAgent plist for current user/repo and loads it into launchd."""
+    hour, minute = 9, 0
+    current_status = get_schedule_status()
+    if current_status.get("hour") is not None:
+        hour = current_status["hour"]
+        minute = current_status.get("minute", 0)
 
-    with open(REPO_PLIST_PATH, "rb") as f:
-        plist_data = plistlib.load(f)
-
+    user_plist_data = build_user_launchd_plist(hour, minute)
     USER_LAUNCHAGENTS_DIR.mkdir(parents=True, exist_ok=True)
     with open(USER_PLIST_PATH, "wb") as f:
-        plistlib.dump(plist_data, f, fmt=plistlib.FMT_XML)
+        plistlib.dump(user_plist_data, f, fmt=plistlib.FMT_XML)
 
     subprocess.run(["launchctl", "unload", "-w", str(USER_PLIST_PATH)], capture_output=True, check=False)
     load_proc = subprocess.run(["launchctl", "load", "-w", str(USER_PLIST_PATH)], capture_output=True, text=True, check=False)

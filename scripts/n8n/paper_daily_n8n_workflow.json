@@ -39,7 +39,7 @@
     },
     {
       "parameters": {
-        "command": "/bin/bash /Users/huangzixuan/Dev/feisu-paper-daily/scripts/run_daily_local.sh"
+        "command": "/bin/bash -c 'SCRIPT=\"$(find \"$HOME\" -maxdepth 4 -path \"*/feisu-paper-daily/scripts/run_daily_local.sh\" 2>/dev/null | head -n 1)\"; if [ -n \"$SCRIPT\" ] && [ -x \"$SCRIPT\" ]; then bash \"$SCRIPT\"; elif [ -f \"./scripts/run_daily_local.sh\" ]; then bash ./scripts/run_daily_local.sh; else uv run paper-daily; fi'"
       },
       "id": "execute-command-01",
       "name": "Execute Local Paper Daily Runner",
