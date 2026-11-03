@@ -201,8 +201,8 @@ translation:
 
 poster:
   enabled: false                 # 开启学术框架全景图生成
-  engine: "gpt-image"            # "gpt-image" (调用 sub.umapis.com) | "source_figures"
-  model: "gpt-image-2.5-sunburst"
+  engine: "gemini-image"         # "gemini-image" (本地 Gemini via CPA/CLI) | "gpt-image" | "source_figures"
+  model: "gemini-3.1-flash-image"
 ```
 
 ### 6. 本地引擎 (macOS LaunchAgent) 与 n8n 自动化工作流调度
@@ -210,19 +210,22 @@ poster:
 除了全免服的 GitHub Actions 云端调度，系统完整支持本地私有运行与自动化编排：
 
 - **macOS 原生常驻调度（LaunchAgent）**：
-  通过系统原生 `launchd` 守护进程实现每日定时触发（默认 09:15），合盖休眠唤醒后自动补发执行：
+  通过系统原生 `launchd` 守护进程实现每日定时触发（默认 09:00），合盖休眠唤醒后自动补发执行：
   ```bash
-  # 载入并启用本地定时任务
-  launchctl load -w ~/Library/LaunchAgents/com.user.paperdaily.plist
+  # 1. 一键启用/更新本地定时调度 (自动生成用户隔离的 LaunchAgent 配置文件)
+  uv run paper-library schedule --enable --time 09:00
 
-  # 查看定时常驻状态
-  launchctl list | grep paperdaily
+  # 2. 查看当前调度状态与日志路径
+  uv run paper-library schedule
+
+  # 3. 停用本地定时调度
+  uv run paper-library schedule --disable
   ```
 - **本地高效大模型 (CPA / Gemini 3.8 Flash)**：
   本地运行优先复用本机已常驻的 `CLIProxyAPI`（监听在 `http://127.0.0.1:8317/v1`），在 `.env` 中配置使用 `gemini-3.8-flash` 作为生成与评分裁判模型，实现秒级高质量深度研读与图表生成。
 - **n8n 自动化工作流支持**：
   项目预置了标准的工作流定义文件 `scripts/n8n/paper_daily_n8n_workflow.json`。在 n8n 控制台点击 **Import from File** 即可直接载入，内置：
-  1. **Daily 09:15 Cron 触发节点**
+  1. **Daily 09:00 Cron 触发节点**
   2. **POST /webhook/paper-daily HTTP 触发节点**
   3. **Execute Command 宿主机直接调用节点**
 - **统一双轨 CLI 触发**：

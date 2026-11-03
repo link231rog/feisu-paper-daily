@@ -263,6 +263,20 @@ def generate_diagram_with_gemini_image(
             logger.debug(f"gemini-image CLI invocation failed ({cli_exc}); falling back to HTTP API.")
 
     # 3. Direct OpenAI-compatible chat completion with modalities=['image', 'text']
+    is_default_localhost = not (
+        api_base
+        or os.environ.get("GEMINI_IMAGE_BASE_URL")
+        or os.environ.get("POSTER_API_BASE")
+    )
+    if is_default_localhost:
+        import socket
+        try:
+            with socket.create_connection(("127.0.0.1", 8317), timeout=0.2):
+                pass
+        except OSError:
+            logger.debug("Local CPA daemon (127.0.0.1:8317) is not active; skipping Gemini image API.")
+            return None
+
     base_endpoint = (
         api_base
         or os.environ.get("GEMINI_IMAGE_BASE_URL")
