@@ -8,7 +8,7 @@ set -euo pipefail
 # 1. Environment and PATH initialization
 export PATH="/Users/huangzixuan/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 
-PROJECT_DIR="/Users/huangzixuan/Documents/Dev/feisu-paper-daily"
+PROJECT_DIR="/Users/huangzixuan/Dev/feisu-paper-daily"
 LOG_DIR="$PROJECT_DIR/data/logs"
 mkdir -p "$LOG_DIR"
 

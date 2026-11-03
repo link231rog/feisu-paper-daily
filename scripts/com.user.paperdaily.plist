@@ -7,7 +7,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/huangzixuan/Documents/Dev/feisu-paper-daily/scripts/run_daily_local.sh</string>
+        <string>/Users/huangzixuan/Dev/feisu-paper-daily/scripts/run_daily_local.sh</string>
     </array>
     <key>StartCalendarInterval</key>
     <dict>
@@ -17,11 +17,11 @@
         <integer>15</integer>
     </dict>
     <key>WorkingDirectory</key>
-    <string>/Users/huangzixuan/Documents/Dev/feisu-paper-daily</string>
+    <string>/Users/huangzixuan/Dev/feisu-paper-daily</string>
     <key>StandardOutPath</key>
-    <string>/Users/huangzixuan/Documents/Dev/feisu-paper-daily/data/logs/launchd_stdout.log</string>
+    <string>/Users/huangzixuan/Dev/feisu-paper-daily/data/logs/launchd_stdout.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/huangzixuan/Documents/Dev/feisu-paper-daily/data/logs/launchd_stderr.log</string>
+    <string>/Users/huangzixuan/Dev/feisu-paper-daily/data/logs/launchd_stderr.log</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
