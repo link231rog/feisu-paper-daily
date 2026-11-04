@@ -12,8 +12,6 @@ on:
         default: false
   repository_dispatch:
     types: [paper-daily, paper_daily, ingest]
-  schedule:
-    - cron: '15 1 * * *' # 09:15 Beijing Time (01:15 UTC): Daily literature recommendation & ingestion (Once per day)
 
 permissions:
   contents: read
