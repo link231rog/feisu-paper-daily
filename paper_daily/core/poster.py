@@ -65,14 +65,115 @@ def _resolve_poster_proxies(config: Any) -> list[Optional[dict[str, str]]]:
     return proxies_list
 
 
+def _clean_term_for_poster(text: str) -> str:
+    """Cleans up text and converts CJK technical terms to English for crisp poster rendering."""
+    if not text:
+        return ""
+    has_cjk = any("\u4e00" <= ch <= "\u9fff" for ch in text)
+    if not has_cjk:
+        return " ".join(str(text).split())
+
+    cjk_translations = [
+        ("输入特征", "Input Features"),
+        ("输入数据", "Input Data"),
+        ("输入", "Input Data"),
+        ("输出预测", "Output Prediction"),
+        ("输出", "Output Prediction"),
+        ("检索与索引", "Retrieval & Indexing"),
+        ("检索", "Retrieval"),
+        ("过滤", "Quality Filter"),
+        ("排序", "Reranker"),
+        ("决策网络", "Decision Policy Network"),
+        ("决策策略", "Decision Policy"),
+        ("决策模型", "Decision Model"),
+        ("决策", "Decision Policy"),
+        ("任务规划", "Task Planning"),
+        ("规划器", "Planner"),
+        ("规划", "Planner"),
+        ("动作执行", "Action Execution"),
+        ("执行器", "Executor"),
+        ("执行", "Execution"),
+        ("验证器", "Verifier & Critic"),
+        ("验证", "Verification & Critic"),
+        ("反思机制", "Self-Reflection Loop"),
+        ("反思", "Self-Reflection"),
+        ("记忆池", "Memory Pool"),
+        ("记忆库", "Memory Store"),
+        ("记忆", "Memory Store"),
+        ("特征提取", "Feature Extraction"),
+        ("特征", "Features"),
+        ("编码器", "Encoder"),
+        ("编码", "Encoding"),
+        ("解码器", "Decoder"),
+        ("解码", "Decoding"),
+        ("奖励模型", "Reward Model"),
+        ("奖励", "Reward"),
+        ("状态追踪", "State Tracking"),
+        ("状态", "State"),
+        ("优化器", "Optimizer"),
+        ("优化", "Optimization"),
+        ("多智能体协同", "Multi-Agent Coordination"),
+        ("智能体", "Agent"),
+        ("协同", "Coordination"),
+        ("局部聚类", "Local Clustering"),
+        ("聚类", "Clustering"),
+        ("矢量量化", "Vector Quantization"),
+        ("码本映射", "Codebook Mapping"),
+        ("码本", "Codebook"),
+        ("似然估计", "Likelihood Estimation"),
+        ("似然", "Likelihood"),
+        ("置信度校准", "Confidence Calibration"),
+        ("校准误差", "Calibration Error"),
+        ("校准", "Calibration"),
+        ("多分类", "Multiclass"),
+        ("分类概率", "Classification Probabilities"),
+        ("概率", "Probabilities"),
+        ("对比基线", "Baseline Comparison"),
+        ("基线", "Baselines"),
+        ("温度缩放", "Temperature Scaling"),
+        ("显著降低", "Significantly Reduced"),
+        ("降低", "Reduced by"),
+        ("显著提升", "Significantly Improved"),
+        ("提升", "Improved by"),
+        ("稀疏类别", "Sparse Classes"),
+        ("稀疏类", "Sparse Classes"),
+        ("低支持度样本", "Low-Support Samples"),
+        ("低支持样本", "Low-Support Samples"),
+        ("过度自信", "Overconfidence"),
+        ("高风险场景", "High-Stakes Scenarios"),
+        ("高风险", "High-Stakes"),
+        ("端到端", "End-to-End"),
+        ("无微调", "Training-Free"),
+        ("预训练模型", "Pretrained Model"),
+        ("大语言模型", "Large Language Model"),
+        ("多模态", "Multimodal"),
+        ("鲁棒性", "Robustness"),
+        ("自适应", "Adaptive"),
+        ("消融实验", "Ablation Study"),
+        ("真实环境", "Real-world Deployment"),
+    ]
+    res = str(text)
+    for cn, en in cjk_translations:
+        res = res.replace(cn, en)
+    punc_map = {"，": ", ", "。": ". ", "、": ", ", "；": "; ", "：": ": ", "（": " (", "）": ") ", "【": " [", "】": "] "}
+    for cp, ep in punc_map.items():
+        res = res.replace(cp, ep)
+    res = re.sub(r"[\u4e00-\u9fff]+", " ", res)
+    return " ".join(res.split())
+
+
 def build_framework_prompt(paper: Paper) -> str:
-    """Builds a high-quality, professional technical prompt for academic framework flowchart generation."""
+    """Builds a publication-grade Academic Research Poster prompt (Option 1) for image models."""
     title = (paper.title or "Research Paper").strip()
-    flow_points: list[str] = []
+    venue = str(paper.venue or "").strip()
+    if not venue or venue.lower() in ("arxiv", "none", "n/a"):
+        venue = f"arXiv {paper.published_year or 2026}" if paper.arxiv_id else "Top-tier AI Conference"
 
     digest = getattr(paper, "critical_digest", None) or {}
-    delta = digest.get("delta") or ""
+    delta = digest.get("delta") or paper.tldr_zh or paper.tldr or (paper.abstract[:180] if paper.abstract else "")
     mech = digest.get("mechanism") or {}
+    ev = digest.get("evidence_and_cost") or {}
+    takeaways = digest.get("action_or_check") or "Practical deployment insights and domain adoption guidelines."
 
     pipeline_str = ""
     if isinstance(mech, dict):
@@ -80,52 +181,33 @@ def build_framework_prompt(paper: Paper) -> str:
     elif isinstance(mech, str):
         pipeline_str = mech
 
-    # If pipeline contains Chinese, translate key technical terms to English for superior image generation
-    if pipeline_str:
-        has_cjk = any("\u4e00" <= ch <= "\u9fff" for ch in pipeline_str)
-        if has_cjk:
-            cjk_translations = [
-                ("输入", "Input Data"),
-                ("输出", "Output Prediction"),
-                ("检索", "Retrieval & Memory Index"),
-                ("过滤", "Quality Filter"),
-                ("排序", "Reranker"),
-                ("决策", "Decision Policy Network"),
-                ("规划", "Task Planner"),
-                ("执行", "Action Execution"),
-                ("验证", "Verifier & Critic"),
-                ("反思", "Self-Reflection"),
-                ("记忆", "Memory Store"),
-                ("特征", "Feature Extraction"),
-                ("编码", "Encoder"),
-                ("解码", "Decoder"),
-                ("奖励", "Reward Model"),
-                ("状态", "State Tracker"),
-                ("优化", "Optimizer"),
-                ("协同", "Multi-Agent Coordinator"),
-            ]
-            clean_pipe = pipeline_str
-            for cn, en in cjk_translations:
-                clean_pipe = clean_pipe.replace(cn, en)
-            flow_points.append(f"Core pipeline: {clean_pipe}")
-        else:
-            flow_points.append(f"Core pipeline: {pipeline_str}")
-    elif delta:
-        flow_points.append(f"Delta innovation: {str(delta)[:180]}")
-    elif paper.abstract:
-        flow_points.append(f"Problem & solution: {paper.abstract[:180]}")
+    if not pipeline_str:
+        pipeline_str = "Input Data -> Multi-Stage Processing Modules -> Verification & Policy -> Optimized Output"
 
-    flow_desc = "; ".join(flow_points) if flow_points else "Input Data -> Multi-Stage Processing Modules -> Verification & Policy -> Optimized Output"
+    metrics_str = ""
+    if isinstance(ev, dict):
+        metrics_str = str(ev.get("metrics") or "")
+    elif isinstance(ev, str):
+        metrics_str = ev
+    if not metrics_str:
+        metrics_str = "Significant empirical improvement over competitive baselines across standard benchmarks."
+
+    delta_clean = _clean_term_for_poster(str(delta))[:200]
+    pipeline_clean = _clean_term_for_poster(pipeline_str)
+    metrics_clean = _clean_term_for_poster(metrics_str)[:200]
+    takeaways_clean = _clean_term_for_poster(str(takeaways))[:180]
 
     prompt = (
-        f"A professional technical architecture flowchart and scientific mechanism diagram for: '{title}'. "
-        f"System workflow logic: {flow_desc}. "
-        "Visual style: high-end top-tier AI conference (NeurIPS/ICLR/CVPR) publication diagram, "
-        "crisp modern flat vector graphic with distinct pastel colored functional blocks "
-        "(Input, Policy Network, Reasoning Router, Memory Store, Decision Engine, Output), "
-        "sharp directional arrows illustrating dataflow and feedback loops, clean legible English labels, "
-        "minimalist enterprise tech aesthetics, pure clean white background, high contrast, wide 16:9 aspect ratio, "
-        "no messy text, no photorealistic humans, highly structured schematic layout."
+        f"A professional, publication-grade academic research poster presentation (16:9 widescreen landscape) for the paper: '{title}'. "
+        f"Conference / Venue: {venue}. "
+        "Poster Layout & Modular Sections: "
+        f"1. HEADER BANNER: Top full-width header banner with prominent large bold title text: '{title}', conference badge '{venue}', and author affiliations. "
+        "2. THREE-COLUMN RESEARCH POSTER GRID: "
+        f"- LEFT COLUMN ('1. MOTIVATION & PROBLEM'): Highlighting research challenge and Core Innovation Delta: '{delta_clean}'. "
+        f"- CENTER COLUMN (HERO '2. SYSTEM ARCHITECTURE & PIPELINE'): Hero technical framework diagram showing workflow: '{pipeline_clean}'. Clean vector graphic functional blocks with sharp directional arrows, feedback loops, and distinct soft pastel module colors. "
+        f"- RIGHT COLUMN ('3. BENCHMARKS & TAKEAWAYS'): Benchmark performance card with quantitative metrics: '{metrics_clean}', and practical takeaways card: '{takeaways_clean}'. "
+        "Visual Style: Top-tier AI conference (NeurIPS/ICLR/CVPR) spotlight research poster presentation board. "
+        "Clean modern academic vector graphic layout, high contrast, pure crisp white canvas, elegant typography, professional scientific infographic aesthetics, 16:9 wide aspect ratio, sharp edges, modular cards with subtle borders, perfectly organized layout, no blurry artifacts."
     )
     return prompt
 
